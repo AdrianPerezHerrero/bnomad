@@ -21,3 +21,7 @@ Before publishing, review repository URLs while retaining original attribution,
 licenses and citation. Add an empty repository URL with `git remote add origin URL`
 and push the reviewed branch yourself. No publication was performed by this task.
 See docs/release_checklist.md and docs/migration_0_3/report.md for release status.
+
+The installable wheel stays minimal. The source repository also keeps tests and
+reproducibility evidence; only the optional small record 100 remains for tutorials.
+Final installed/tutorial rechecks were deferred at the user's request.

@@ -19,28 +19,37 @@ DATA_HASHES = {
 }
 
 
-def load_record():
-    """Load only record 100; fetch at most 3.3 MB if no local copy is present."""
+def load_record(record_name="100"):
+    """Load the specified MIT-BIH record; fetch at most 3.3 MB if no local copy is present."""
+    data_file = f"{record_name}.npy"
+    labels_file = f"{record_name}_labels.npy"
+    required_files = [data_file, labels_file]
+    
     candidates = [p / 'hdpgpc/data/mitbih' for p in
                   (Path(__file__).resolve().parents[1], Path.cwd(), *Path.cwd().parents)]
-    directory = next((p for p in candidates if (p / '100.npy').exists()),
+    directory = next((p for p in candidates if (p / data_file).exists()),
                      Path.cwd() / '.tutorial-data')
     directory.mkdir(parents=True, exist_ok=True)
-    for name, expected in DATA_HASHES.items():
+    
+    for name in required_files:
+        expected = DATA_HASHES.get(name)
         path = directory / name
         if not path.exists():
             url = f'https://raw.githubusercontent.com/AdrianPerezHerrero/HDP-GPC/{DATA_REVISION}/hdpgpc/data/mitbih/{name}'
-            print(f'Downloading only {name} from the pinned repository record')
+            print(f'Downloading {name} from the pinned repository record')
             with urlopen(url, timeout=60) as response:
                 payload = response.read(3_400_001)
-            if len(payload) > 3_400_000 or hashlib.sha256(payload).hexdigest() != expected:
-                raise ValueError('Record download size or checksum mismatch')
+            if len(payload) > 3_400_000:
+                raise ValueError('Record download size exceeded')
+            if expected and hashlib.sha256(payload).hexdigest() != expected:
+                raise ValueError('Record checksum mismatch')
             path.write_bytes(payload)
-        if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+        if expected and hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             raise ValueError(f'Unexpected record bytes: {path}')
-    data = np.load(directory / '100.npy', allow_pickle=False)
-    annotations = np.load(directory / '100_labels.npy', allow_pickle=False)
-    assert data.shape == (2272, 90, 2) and annotations.shape == (2273,)
+            
+    data = np.load(directory / data_file, allow_pickle=False)
+    annotations = np.load(directory / labels_file, allow_pickle=False)
+    
     print('Waveforms:', data.shape, data.dtype, '; annotations:', annotations.shape)
     print('Annotation lengths differ: no ground-truth pairing or accuracy claim.')
     return data, annotations
@@ -59,7 +68,7 @@ def plot_input(raw, grid, values):
     for i in range(min(3, len(raw))):
         axes[0].plot(np.arange(raw.shape[1]), raw[i, :, 0], label=f'Beat {1700+i}')
         axes[1].plot(grid.ravel(), values[i, :, 0], marker='.', label=f'Beat {1700+i}')
-    axes[0].set(xlabel='Original point index', ylabel='Stored amplitude', title='Record 100: channel 0')
+    axes[0].set(xlabel='Original point index', ylabel='Stored amplitude', title='Record channel 0')
     axes[1].set(xlabel='Rescaled coordinate (0–4)', ylabel='Scaled amplitude', title='15-point teaching input')
     axes[0].legend(frameon=False)
     return fig
@@ -113,9 +122,9 @@ def snapshot(model):
     return dict(labels=model.labels_.tolist(), n_clusters=model.n_clusters_, components=components)
 
 
-def save_report(name, model, values, config, versions, seconds, extra=None):
+def save_report(name, model, values, config, versions, seconds, extra=None, record_name="100"):
     report = dict(config=config.to_dict(), environment=versions, inference_seconds=seconds,
-                  data_revision=DATA_REVISION, record_sha256=DATA_HASHES['100.npy'],
+                  data_revision=DATA_REVISION, record_sha256=DATA_HASHES.get(f'{record_name}.npy', 'unknown_hash'),
                   input_sha256=hashlib.sha256(np.ascontiguousarray(values).tobytes()).hexdigest(),
                   scientific_result=snapshot(model), extra=extra or {})
     path = Path('tutorial-results') / (name + '.json')

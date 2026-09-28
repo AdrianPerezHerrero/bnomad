@@ -1,27 +1,37 @@
-# 0.3 migration checkpoint
+# Final migration checkpoint
 
-Work ONLY in npdc-0.3.0. npdc, npdc.zip and HDP-GPC remain untouched references.
+Status: implementation migration finished in npdc-0.3.0. User explicitly stopped
+further testing on 2026-09-28. Do not run tests, benchmarks or notebooks unless
+the user later authorizes them. See report.md for exact completed/deferred evidence.
 
-Completed:
-- Inventory and ownership map before production edits (inventory.md/json).
-- Baseline: 221 tests, 217 pass/4 skips; all eight notebooks twice, exact repeat reports.
-- Stage 1 committed 7d02e40: native emission, prior/training and AMTGP components. 99 numerical + 57 boundary tests pass (one hardware skip).
-- Stage 2 committed 5bd27ed: typed native state, cluster lifecycle, HMM messages, objective scoring and output weights. All scientific traces pass. Eight old API assertion errors in its first full run were replaced with six passing engine-contract tests.
-- Legacy root modules and old study scripts/notebooks deleted. Removed APIs/codecs/aliases; explicit native alignment policy. Native whole-model engines update/update_fast/fit/classify_batch/fit_labels.
-- Full deleted-file source suite: 221 tests in 303.146s, 217 pass/4 skips (native-tests.log).
-- Four new architecture tests pass (native-architecture-tests.log); fixture bytes untouched.
-- 127 extracted function ASTs match reference after documented renames/docstring exclusion (source_equivalence.json).
-- Six workload hashes exactly match; runtime -1.48% to +3.66%, peak RSS difference <3 MB (benchmark_comparison.json).
-- 0.3 wheel/sdist build and twine/artifact checks passed. A first sandboxed build failed only because network was denied; approved isolated build succeeded.
+Completed: inventory; baseline; native GP/alignment; native state and responsibility
+modules; legacy deletion; API/configuration migration; source 221-test pass plus
+four architecture tests; 127-function AST equivalence; six exact benchmark hashes;
+wheel/sdist build/metadata checks; fresh source install in ../.release-030.
 
-Current:
-- Installing pinned dependencies plus the unpacked SOURCE archive in a new .release-030 environment (no system-site-packages). See install.log/install-report.json. Source archive unpacked outside checkout at ../.release-030-source/hdpgpc-0.3.0.
+Original npdc/npdc.zip/HDP-GPC are untouched. Local stage commits:
+ca8b8cf baseline inventory; 7d02e40 emission/alignment ownership;
+5bd27ed native state/orchestration; final deletion/documentation commit follows.
 
-Remaining:
-1. Finish install; run tools/verify_installed.py from the extracted source using .release-030 Python, output an external fresh evidence directory. This runs console, isolated examples, full installed tests, 3 exact determinism captures and performance smoke sequentially. New suite should be 225 tests, 222 pass/3 CUDA skips when installed.
-2. Execute tools/validate_tutorials.py from release checkout with .release-030 Python, output docs/migration_0_3/final-notebooks. Helper now requires hdpgpc 0.3.0. Compare scientific results with baseline notebooks, not just repeat equality.
-3. Complete docs/migration_0_3/report.md, release checklist, remaining-reference audit, compact notebook/installed evidence copies. Rebuild final sdist for updated docs (wheel scientific sources unchanged), check artifacts, build Colab bundle, checksum artifacts.
-4. Commit final deletion/verification stage and produce standalone npdc-0.3.0.zip without Git/env/build/cache/scratch notebooks; keep old npdc.zip untouched.
+The installed source copy is ../.release-030-source/hdpgpc-0.3.0.
+Large baseline executed notebooks are outside the package in
+../migration-0.3-evidence/baseline-notebooks; compact summary is baseline_notebooks.json.
 
-Do NOT re-run workspace migration_stage1.py, migration_stage2.py, migration_tests2.py or migration_finalize.py: all have already been applied. They are one-shot audit helpers, not runtime dependencies.
-No frozen fixtures/tolerances may change. No inference optimization is part of this release. Preserve known failure cases. Do not claim clean-install/tutorial verification until it finishes.
+Deferred by user: installed execution/regression verification, final 0.3 tutorial
+executions and repeat captures. If explicitly authorized in a future task:
+1. Use .release-030 Python and tools/verify_installed.py from the unpacked source,
+   with a new external evidence directory (no PYTHONPATH, HDPGPC_TEST_INSTALLED=1).
+2. Use that same installed Python with tools/validate_tutorials.py, output a new
+   folder outside the minimal release; compare scientific reports with baseline.
+3. Record results without modifying fixture numbers or tolerances.
+No remote release/CI/tag/push was performed. Review declared Python/OS matrix before
+publication. Keep the wheel minimal; test/evidence/tutorial assets are source-only.
+
+Do NOT re-run migration_stage1.py, migration_stage2.py, migration_tests2.py or
+migration_finalize.py: all one-shot transformations have already been applied.
+
+Final delivery: ../npdc-0.3.0.zip and its .sha256; wheel/source archive in
+ dist/; optional tutorials/bundles/hdpgpc-colab.zip. Archives are construction
+ artifacts, not additional verification evidence. Final packaging used a fresh
+ build directory. Source ZIP excludes environments, Git internals, build output,
+ caches and optional datasets; the Colab bundle carries only record 100.

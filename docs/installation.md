@@ -58,8 +58,8 @@ python -m pip check
 ```
 
 Those constraints are not a complete transitive lock. Archive `pip freeze` with
-each experiment. The historical `hdpgpc/docs/requirements.txt` is an old complete
-development snapshot, not the installation procedure for this release.
+each experiment. The original 0.2 folder retains its historical `hdpgpc/docs/requirements.txt`
+development snapshot; it is not included or required in this release.
 
 For source development, editable installation remains available with
 `python -m pip install -e '.[dev]'`. Release verification always uses a noneditable

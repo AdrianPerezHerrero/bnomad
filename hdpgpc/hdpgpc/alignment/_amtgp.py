@@ -1,7 +1,7 @@
 """Original active AMTGP warper; optimization, scoring and caches moved intact.
 
-Legacy imports and pickle class names are maintained by amtgp_warping_system.
-The older warping_system implementation is separate and is not selected here.
+This native module owns the active warper implementation and pickle class path.
+Retired root modules and the inactive alternate warper are not required.
 """
 
 # amtgp_warping_system.py

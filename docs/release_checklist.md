@@ -1,3 +1,8 @@
+> Final migration is complete. Additional verification was stopped by the user.
+> The 0.3 wheel/source build and fresh source installation succeeded; installed
+> runtime tests and final 0.3 notebooks are deliberately not marked complete.
+> See [the exact validation report](migration_0_3/report.md).
+
 # Release checklist: 0.3.0 preparation
 
 This is a release candidate preparation, not a claim that a release was published.
@@ -12,7 +17,7 @@ This is a release candidate preparation, not a claim that a release was publishe
 - [x] Document public API, migration, deterministic recipes and known unsupported paths.
 - [x] Package synthetic data generation/configurations and an offline numerical reference.
 - [x] Bring original characterization fixtures into the repository unchanged.
-- [ ] Verify final wheel and source distribution with build, twine and artifact checks.
+- [x] Build wheel/source distribution; initial twine/artifact checks passed before the stop instruction.
 - [ ] Verify clean noneditable installation and examples outside the development checkout.
 - [ ] Run all unit, characterization and integration tests against the installed artifact.
 - [ ] Repeat deterministic captures and the lightweight paired performance gate.

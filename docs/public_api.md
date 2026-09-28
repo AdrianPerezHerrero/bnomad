@@ -118,7 +118,7 @@ the new facade has been characterized on CPU only.
 - `update` cannot continue an offline fit. The two schedules use different state
   caches, so the facade does not silently switch between them.
 - Normal fitting/updating requires `classify=False`. Advanced classification,
-  label reload and classification-learning stay on the legacy research API.
+  label reload and classification-learning use the advanced native engines described below.
 
 `labels_` uses the most recent recorded label vector, never the possibly stale
 `resp_last` cache. The one-observation offline exit does not append that vector;
