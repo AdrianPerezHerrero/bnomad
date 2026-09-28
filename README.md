@@ -1,9 +1,9 @@
-# HDP-GPC
+# BNOMAD
 
-Hierarchical Dirichlet Process Gaussian Process Clustering for waveform sequences,
+BNOMAD: Bayesian NOnparametric Mixtures of Aligned Dynamic Clusters based on the Hierarchical Dirichlet Process Gaussian Process Clustering for waveform sequences,
 with static or LDS dynamics and optional GP temporal alignment.
 
-**Version 0.3.0 - native modular implementation.** Author: Adrian Perez Herrero.
+**Version 0.1.0 - native modular implementation.** Author: Adrian Perez Herrero.
 
 ## Install and reproduce a small experiment
 
