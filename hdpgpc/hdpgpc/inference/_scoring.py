@@ -21,9 +21,11 @@ from ..hdp._entropy import state_entropy_terms, pair_entropy_terms
 
 
 def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, post=False,
-                   one_sample=False, verb=True):
+                   one_sample=False, verb=None):
     """ Method to compute ELBO terms.
     """
+    if verb is None:
+        verb = self.verbose
     if one_sample:
         n_points = 1
     else:

@@ -6,6 +6,12 @@ import torch
 from ..alignment import _components as _alignment
 
 
+def _log(self, *args, **kwargs):
+    """Print offline diagnostics only when the model's verbose mode is enabled."""
+    if self.verbose:
+        print(*args, **kwargs)
+
+
 def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     """
     Include the batch of samples received and restimate all the parameters of the
@@ -25,12 +31,12 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     # self.startAlpha = 0.1
     # self.kappa = 0.0
     self.warp = _alignment.configured(self).enabled(warp)
-    print("------ HDP Hyperparameters ------", flush=True)
-    print("gamma: " + str(self.gamma))
-    print("transAlpha: " + str(self.transAlpha))
-    print("startAlpha: " + str(self.startAlpha))
-    print("kappa: " + str(self.kappa))
-    print("---------------------------------", flush=True)
+    _log(self, "------ HDP Hyperparameters ------", flush=True)
+    _log(self, "gamma: " + str(self.gamma))
+    _log(self, "transAlpha: " + str(self.transAlpha))
+    _log(self, "startAlpha: " + str(self.startAlpha))
+    _log(self, "kappa: " + str(self.kappa))
+    _log(self, "---------------------------------", flush=True)
     if self.reduce_outputs:
         y_trains = self.reduce_num_outputs(y_trains)
     n_samples = np.array(y_trains).shape[0]
@@ -56,6 +62,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     resp[:, 0] = resp[:, 0] + 1.0
     y_trains_w = torch.clone(y_trains)
     warp_computed = False
+    previous_elbo = None
     # Initial estimation of full group and conditioning the covariance matrices.
     if self.reestimate_initial_params:
         self.redefine_default(x_trains, y_trains, resp)
@@ -77,6 +84,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                 self.rho, self.omega = self.find_optimum_rhoOmega()
         if end:
             break
+        self._iteration_birth_candidates = []
         resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains,
                                                                                                    y_trains,
                                                                                                    y_trains_w,
@@ -108,20 +116,30 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         # Update transition matrix
         transPi = self.hdp.stored_log_transitions(M, self.transTheta)
         self.trans_A = transPi
+        resp_group = torch.sum(resp, dim=0).detach().cpu().tolist()
+        if not self.verbose:
+            print(f"Iteration {iteration + 1}: responsibility sums={resp_group}", flush=True)
         # Compute ELBO and start steps of EM
         # TODO: adapt this option to full cuda implementation.
         if self.T > 1:
             elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                  respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
-            print('\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
+            _log(self, '\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
             if iteration == 14:
-                print("STOP")
+                _log(self, "STOP")
             q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                   self.gpmodels, self.M, snr='saved', post=False)
             elbo_ = elbo_ + elbo_lin + q_obs
-            print("ELBO + Nonlinear: " + str(elbo_))
+            if self.verbose:
+                delta = "n/a" if previous_elbo is None else f"{(elbo_ - previous_elbo).item():+.6g}"
+                proposed = getattr(self, '_iteration_birth_candidates', [])
+                print(f"Iteration {iteration + 1}: clusters={self.M}, "
+                      f"responsibility sums={resp_group}, "
+                      f"proposed birth samples (1-based)={[i + 1 for i in proposed]}, "
+                      f"ELBO={elbo_.item():.6g}, delta_ELBO={delta}", flush=True)
+            previous_elbo = elbo_
+            del self._iteration_birth_candidates
             iteration = iteration + 1
-            print('\n-------Start lower Bound Iteration ' + str(iteration) + '-------')
             if it_limit is not None and iteration >= it_limit:
                 self.train_elbo.append(elbo_)
                 self.resp_assigned.append(torch.where(resp == 1.0)[1])
@@ -185,11 +203,11 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                   self.gpmodels, self.M, snr='saved', post=False)
         i = i + 1
-        print("First resp: " + str(torch.sum(resp, dim=0).int().numpy()))
+        _log(self, "First resp: " + str(torch.sum(resp, dim=0).int().numpy()))
     else:
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                               self.gpmodels, self.M, snr='saved', post=False)
-        print("Not first estimated q.")
+        _log(self, "Not first estimated q.")
     q_def__, elbo_def__ = torch.clone(q_bas), torch.clone(elbo_bas)
     if not reallocate:
         while True:
@@ -206,7 +224,7 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
                 q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
                                                         self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
                                                         post=False)
-            print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
+            _log(self, "ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
             if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post, rtol=1e-5) and i > 0) or i == 10:  # or reparam:
                 if not reparam:
                     reparam = True
@@ -264,7 +282,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
     snr_temp = torch.zeros(y_trains.shape[0], M, self.n_outputs)
     for ld in range(self.n_outputs):
         if self.verbose:
-            print("\n-----------Lead " + str(ld + 1) + "-----------")
+            _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
         for m in range(M):
             gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
             if gp.fitted:
@@ -302,10 +320,10 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         gpmodels_temp = [[] for _ in range(self.n_outputs)]
         for ld in range(self.n_outputs):
             if self.verbose:
-                print("\n-----------Lead " + str(ld + 1) + "-----------")
+                _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
             for m in range(M):
                 if self.verbose:
-                    print("\n   -----------Model " + str(m + 1) + "-----------")
+                    _log(self, "\n   -----------Model " + str(m + 1) + "-----------")
                 if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
                     gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                     if gp.fitted:
@@ -350,7 +368,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux,
                                                     post=False)
-            print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
+            _log(self, "ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
             if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                               rtol=1e-5) and i__ > 0) or i__ == 20:  # or reparam:
                 break
@@ -359,11 +377,11 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             i__ = i__ + 1
 
         new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-        print(">>> Prev -------")
+        _log(self, ">>> Prev -------")
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                               self.weight_mean(q_lat_, snr_),
                                               self.gpmodels, M, snr=snr_, post=False)
-        print(">>> Post -------")
+        _log(self, ">>> Post -------")
         q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux),
                                                     gpmodels_temp, M, snr=snr_aux, post=False)
@@ -371,9 +389,9 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] == 0):
             if q_bas < q_bas_post:
                 if not q_bas + elbo_bas < q_bas_post + elbo_post:
-                    print("Possibly better q_obs but worse elbo.")
+                    _log(self, "Possibly better q_obs but worse elbo.")
             if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
-                print("Reallocating beats into existing groups.")
+                _log(self, "Reallocating beats into existing groups.")
                 reallocate = True
                 self.gpmodels = gpmodels_temp
                 self.x_w = x_w[:, :, :, reorder]
@@ -414,14 +432,14 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     snr_aux = snr_
                 return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
             else:
-                print("Not reallocating, trying to generate new group.")
+                _log(self, "Not reallocating, trying to generate new group.")
         else:
-            print(">>> Possible emergency reallocation. Prev ----")
+            _log(self, ">>> Possible emergency reallocation. Prev ----")
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                   self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                   snr=snr_, post=False)
             if q_bas + elbo_bas < q_bas_ + elbo_bas_:
-                print("Emergency reallocation and removing last group.")
+                _log(self, "Emergency reallocation and removing last group.")
                 reallocate = True
                 for ld in range(self.n_outputs):
                     gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
@@ -436,7 +454,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 self.f_ind_old = self.f_ind_old[reorder]
                 return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
             else:
-                print("Bad estimation")
+                _log(self, "Bad estimation")
                 empty_estimation = True
     # f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
     q_sim_s = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
@@ -538,6 +556,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     some_new_index = True
                     break
             if some_new_index:
+                if hasattr(self, '_iteration_birth_candidates'):
+                    self._iteration_birth_candidates.append(int(f_ind_new.item()))
                 if not empty_estimation:
                     f_ind_old_temp = f_ind_old.clone()
                     f_ind_old_temp[-1] = f_ind_new
@@ -550,7 +570,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q, q_lat, snr_aux = torch.clone(q_def), torch.clone(q_lat_def), torch.clone(snr_aux_def)
                     q__, q_lat__, snr__ = torch.clone(q__def), torch.clone(q_lat__def), torch.clone(snr__def)
                     last_indexes = potential_ind[f_ind_new.item()]
-                    print("Step " + str(step + 1) + "/" + str(n_steps) + "- Trying to divide: " + str(
+                    _log(self, "Step " + str(step + 1) + "/" + str(n_steps) + "- Trying to divide: " + str(
                         m_chosen) + " with beat " + str(f_ind_new.item()))
                     step = step + 1
                     for ld in range(self.n_outputs):
@@ -648,15 +668,15 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                                                         snr=snr_aux, post=True)
                 if torch.argmax(
                         torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
-                    print("Bad estimation")
+                    _log(self, "Bad estimation")
                     continue
                 if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0):
-                    print(">>> Possible emergency reallocation. Prev ----")
+                    _log(self, ">>> Possible emergency reallocation. Prev ----")
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                           self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                           snr=snr_, post=False)
                     if q_bas + elbo_bas < q_bas_ + elbo_bas_:
-                        print("Emergency reallocation and removing last group.")
+                        _log(self, "Emergency reallocation and removing last group.")
                         reallocate = True
                         for ld in range(self.n_outputs):
                             gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
@@ -673,7 +693,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                             self.snr_norm = self.normalize_snr(snr_aux)
                         return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                     else:
-                        print("Bad estimation")
+                        _log(self, "Bad estimation")
                         continue
                 q_def__, elbo_def__ = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                           self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
@@ -700,7 +720,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=post_)
-                    print("ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
+                    _log(self, "ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
                     if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                                       rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:
                         break
@@ -709,13 +729,13 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     i__ = i__ + 1
 
                 # new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
-                print("- Trying to divide: " + str(
+                _log(self, "- Trying to divide: " + str(
                     m_chosen) + " with beat " + str(f_ind_new.item()))
-                print(">>> Prev -------")
+                _log(self, ">>> Prev -------")
                 q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                       self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                       snr=snr_, post=False)
-                print(">>> Post -------")
+                _log(self, ">>> Post -------")
                 q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=post_)
@@ -726,9 +746,9 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                         torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
                     if q_bas < q_bas_post:
                         if not q_bas + elbo_bas < q_bas_post + elbo_post:
-                            print("Possibly better q_obs but worse elbo.")
+                            _log(self, "Possibly better q_obs but worse elbo.")
                     if q_bas + elbo_bas < q_bas_post + elbo_post:
-                        print("Chosen to divide: " + str(m_chosen) + " with beat " + str(f_ind_new.item()))
+                        _log(self, "Chosen to divide: " + str(m_chosen) + " with beat " + str(f_ind_new.item()))
                         self.gpmodels = gpmodels_temp
                         for ld in range(self.n_outputs):
                             self.wp_sys[ld].append(self.create_wp_sys_default())
@@ -769,7 +789,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                             snr_aux = snr_
                         return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                 else:
-                    print("Bad estimation")
+                    _log(self, "Bad estimation")
     reallocate = True
     return resp, respPair, q_, q_lat_, snr_, y_trains_w_, reallocate
 
@@ -811,10 +831,10 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     gpmodels_temp = [[] for _ in range(self.n_outputs)]
     for ld in range(self.n_outputs):
         if self.verbose:
-            print("\n-----------Lead " + str(ld + 1) + "-----------")
+            _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
         for m in range(M):
             if self.verbose:
-                print("\n   -----------Model " + str(m + 1) + "-----------")
+                _log(self, "\n   -----------Model " + str(m + 1) + "-----------")
             indexes_[ld].append(torch.where(resp_temp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].int())
             if len(gpmodels[ld]) > reorder[m]:
                 gp = gpmodels[ld][reorder[m]]
@@ -860,7 +880,7 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
                     snr_aux[:, m, ld] = torch.zeros(snr_.shape[0])
             gpmodels_temp[ld].append(gp)
 
-    print(">>> Q_all_loop -------")
+    _log(self, ">>> Q_all_loop -------")
     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                           self.weight_mean(q_lat_, snr_), gpmodels, self.M, snr=snr_, post=post)
     q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
@@ -868,7 +888,7 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
                                                 post=post)
     update_snr = True
     if torch.any(torch.sum(resp_temp, dim=1) > 2.0):
-        print("STOP")
+        _log(self, "STOP")
     if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
         if q_bas + elbo_bas < q_bas_post + elbo_post:
             # self.gpmodels = gpmodels_temp
@@ -885,9 +905,9 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
         else:
             return resp, respPair, q_, q_lat_, snr_, y_trains_w_, gpmodels
     else:
-        print(f">>> Possible emergency reallocation. Prev ----:\n Q_em: {q_def}, Elbo: {elbo_def}")
+        _log(self, f">>> Possible emergency reallocation. Prev ----:\n Q_em: {q_def}, Elbo: {elbo_def}")
         if (q_def + elbo_def < q_bas_post + elbo_post) and (q_bas + elbo_bas < q_bas_post + elbo_post):
-            print("Emergency reallocation and removing last group.")
+            _log(self, "Emergency reallocation and removing last group.")
             reallocate = True
             for ld in range(self.n_outputs):
                 gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
@@ -902,7 +922,7 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
             self.f_ind_old = self.f_ind_old[reorder]
             return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
         else:
-            print("Bad estimation")
+            _log(self, "Bad estimation")
             return resp, respPair, q_, q_lat_, snr_, y_trains_w, gpmodels
 
 
@@ -974,10 +994,10 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
         gpmodels_temp = [[] for _ in range(self.n_outputs)]
         for ld in range(self.n_outputs):
             if self.verbose:
-                print("\n-----------Lead " + str(ld + 1) + "-----------")
+                _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
             for m in range(self.M):
                 if self.verbose:
-                    print("\n   -----------Model " + str(m + 1) + "-----------")
+                    _log(self, "\n   -----------Model " + str(m + 1) + "-----------")
                 gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                 if gp.fitted:
                     gp.reinit_LDS(save_last=False)
@@ -1043,13 +1063,13 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
             if self.T > 1:
                 elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                      respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
-                print('\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
+                _log(self, '\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
                 q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                       self.gpmodels, self.M, snr='saved', post=False)
                 elbo_ = elbo_ + elbo_lin + q_obs
-                print("ELBO + Nonlinear: " + str(elbo_))
+                _log(self, "ELBO + Nonlinear: " + str(elbo_))
                 iteration = iteration + 1
-                print('\n-------Start lower Bound Iteration ' + str(iteration) + '-------')
+                _log(self, '\n-------Start lower Bound Iteration ' + str(iteration) + '-------')
                 if it_limit is not None and iteration >= it_limit:
                     self.train_elbo.append(elbo_)
                     self.resp_assigned.append(torch.where(resp == 1.0)[1])
@@ -1160,6 +1180,6 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
     q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                           self.gpmodels, self.M, snr='saved', post=False)
     elbo_ = elbo_ + elbo_lin + q_obs
-    print('\n-------ELBO:' + str(elbo_) + '-------')
+    _log(self, '\n-------ELBO:' + str(elbo_) + '-------')
     self.elbo_last = elbo_
 

@@ -13,6 +13,7 @@ tutorial-results/
 tutorials/.validation/
 tutorials/bundles/
 .ipython-worker/
+agents/
 
 docs/migration_0_3/baseline-notebooks/
 docs/migration_0_3/final-notebooks/
