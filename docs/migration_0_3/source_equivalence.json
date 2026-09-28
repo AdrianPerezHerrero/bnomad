@@ -1,0 +1,767 @@
+{
+  "comparison": "AST of complete function definitions, ignoring docstrings and explicit symbol renames only; no expression simplification",
+  "functions": [
+    {
+      "original": "GPI_HDP.keep_last_all",
+      "current": "model/_clusters.py:keep_last_all",
+      "identical": true,
+      "sha256": "fda366222b84e4f2505e23d9e743af507f6863a00ddbbf6992ddb4252a3a5eec"
+    },
+    {
+      "original": "GPI_HDP.set_default_options",
+      "current": "model/_clusters.py:set_default_options",
+      "identical": true,
+      "sha256": "84da70a601d8ec7b403de059a5f6d7e3357c44de010749891c7f5c1c99253e8a"
+    },
+    {
+      "original": "GPI_HDP.get_default_options",
+      "current": "model/_clusters.py:get_default_options",
+      "identical": true,
+      "sha256": "e6b4f89490451ca027190b309795ff6f2a421a4d2fdc513ba7d71dfee78c6572"
+    },
+    {
+      "original": "GPI_HDP.create_gp_default",
+      "current": "model/_clusters.py:create_gp_default",
+      "identical": true,
+      "sha256": "ac21702050dfb3ef874ca3110205e562d28a6d958ee6de9be302d8eb7a612fbd"
+    },
+    {
+      "original": "GPI_HDP.create_wp_sys_default",
+      "current": "model/_clusters.py:create_wp_sys_default",
+      "identical": true,
+      "sha256": "18e1a056cbc67a62bf6c2347db14337b8aa2c7dd7c7fca3edaa76a780920c7d7"
+    },
+    {
+      "original": "GPI_HDP.refill",
+      "current": "model/_clusters.py:refill",
+      "identical": true,
+      "sha256": "280fe68a4d54a73c8e382f0efe198ba6035b6ca373651485cfd58be6eb409443"
+    },
+    {
+      "original": "GPI_HDP.reorder",
+      "current": "model/_clusters.py:reorder",
+      "identical": true,
+      "sha256": "33be22131c8567471563b7a96ca5a2a981cae471c4c2fae07e2f60e60915bcf6"
+    },
+    {
+      "original": "GPI_HDP.new_group",
+      "current": "model/_clusters.py:new_group",
+      "identical": true,
+      "sha256": "2f0d8f7d23b5f74dc63a3b450330a6c4155c957e529741c03947d6a0a288188d"
+    },
+    {
+      "original": "GPI_HDP.remove_last_group",
+      "current": "model/_clusters.py:remove_last_group",
+      "identical": true,
+      "sha256": "7484d07812eab9ee652ccf8495eba757c57fd45075fe7f3b4bcc75b93f49f659"
+    },
+    {
+      "original": "GPI_HDP.redefine_default",
+      "current": "model/_clusters.py:redefine_default",
+      "identical": true,
+      "sha256": "08335d755ff2dee7f5bb55644ca770067522bf7b7f4c5814610d5773b9a552ae"
+    },
+    {
+      "original": "GPI_HDP.update_initial_sigma",
+      "current": "model/_clusters.py:update_initial_sigma",
+      "identical": true,
+      "sha256": "f791fc9d1ecdaf257b6dd7dab85c7dbe4aad14218a68c3bc866a8735617e8ebc"
+    },
+    {
+      "original": "GPI_HDP.return_model_of_sample",
+      "current": "model/_clusters.py:return_model_of_sample",
+      "identical": true,
+      "sha256": "df55d3545fbc0ab6bdf1ae918286e88917f93eafe075324cfe342510dca431f1"
+    },
+    {
+      "original": "GPI_HDP.selected_gpmodels",
+      "current": "model/_clusters.py:selected_gpmodels",
+      "identical": true,
+      "sha256": "311f7e55b34deef708d98dfb71da7cbbbc64802c58436715f8a4075ab4d55ff9"
+    },
+    {
+      "original": "GPI_HDP.gpmodel_deepcopy",
+      "current": "model/_clusters.py:gpmodel_deepcopy",
+      "identical": true,
+      "sha256": "395602e2c6f9d4ffa99be34b6ad54c81e22b9411e537a9aa077aa8e9b4b05424"
+    },
+    {
+      "original": "GPI_HDP._safe_exp",
+      "current": "inference/_messages.py:_safe_exp",
+      "identical": true,
+      "sha256": "01b632beceb20873c2dd4cc26df96a89571e5529d0d04b4f4c13e42d27a4145b"
+    },
+    {
+      "original": "GPI_HDP.variational_local_terms",
+      "current": "inference/_messages.py:variational_local_terms",
+      "identical": true,
+      "sha256": "7a7ec07a1a848cbd152b9919395590c36f62f98e23ad58fc6859f6a2227bde46"
+    },
+    {
+      "original": "GPI_HDP.LogLik",
+      "current": "inference/_messages.py:LogLik",
+      "identical": true,
+      "sha256": "051391f454d2b6d5b4caba2d27e4e609fa01961c391d4e0de0c813c593ab6754"
+    },
+    {
+      "original": "GPI_HDP.forward",
+      "current": "inference/_messages.py:forward",
+      "identical": true,
+      "sha256": "b6d4321c20d600f2ddf681f4b15df1bb9d77c72a8da0be05d785f347abd176b6"
+    },
+    {
+      "original": "GPI_HDP.backward",
+      "current": "inference/_messages.py:backward",
+      "identical": true,
+      "sha256": "942d768b4e9cd3bd13dae8ad67488309cc596ede163a5064f5766119c0c62d0d"
+    },
+    {
+      "original": "GPI_HDP.coupled_state_coef",
+      "current": "inference/_messages.py:coupled_state_coef",
+      "identical": true,
+      "sha256": "f36ea7917fbc115da378976283829343467a4c0b86e775756eaa1bcf2d426d19"
+    },
+    {
+      "original": "GPI_HDP.sum_coupled_state_coef",
+      "current": "inference/_messages.py:sum_coupled_state_coef",
+      "identical": true,
+      "sha256": "e0288997ebee4e0317e97357bbfadb9198a3daf39bb5a9cf57d8e93fd586ab23"
+    },
+    {
+      "original": "GPI_HDP.compute_h",
+      "current": "inference/_messages.py:compute_h",
+      "identical": true,
+      "sha256": "c906be093f731da688d8c6b638ab7fb150d6bf2565b7a215f18e16b2260adf0b"
+    },
+    {
+      "original": "GPI_HDP.baum_welch",
+      "current": "inference/_messages.py:baum_welch",
+      "identical": true,
+      "sha256": "ea65c9e93c8dbf32345141ae9fd15e2ae28c669cc288b2c0bc8f0bacc2e2c9bd"
+    },
+    {
+      "original": "GPI_HDP.normalize_log",
+      "current": "inference/_messages.py:normalize_log",
+      "identical": true,
+      "sha256": "13f0bbf317c315aebe63a8360d9665142fc5569e8b5e30dc6ee40f6e64b0ecd0"
+    },
+    {
+      "original": "GPI_HDP.signaltonoise",
+      "current": "emissions/_weights.py:signaltonoise",
+      "identical": true,
+      "sha256": "d6ff20c347f4f6c485c819c731e64f762011757a486a34cde640cd7ccbfc49c9"
+    },
+    {
+      "original": "GPI_HDP.rolling_snr",
+      "current": "emissions/_weights.py:rolling_snr",
+      "identical": true,
+      "sha256": "3519314da5d756d0ad63554eab36da01631c37a140ebe06ed4338371e47dc7a7"
+    },
+    {
+      "original": "GPI_HDP.weight_mean",
+      "current": "emissions/_weights.py:weight_mean",
+      "identical": true,
+      "sha256": "f05aa94c017e62149c6a495dba75f9a0901ee754c493fdffc6bd5a63a8baa5d8"
+    },
+    {
+      "original": "GPI_HDP.reduce_num_outputs",
+      "current": "emissions/_weights.py:reduce_num_outputs",
+      "identical": true,
+      "sha256": "ab0fd55df8df8024885ba135d7792ae946a6fc1d4129f9444c2ad8445486cf1a"
+    },
+    {
+      "original": "GPI_HDP.compute_snr_ini",
+      "current": "emissions/_weights.py:compute_snr_ini",
+      "identical": true,
+      "sha256": "de3d4b7c2a51defedbe2b35138e992f8523b1d61630c9038a977cd2d8348bfdb"
+    },
+    {
+      "original": "GPI_HDP.compute_snr",
+      "current": "emissions/_weights.py:compute_snr",
+      "identical": true,
+      "sha256": "e9c859a9e6060c27e3dea47a68c085397753a2ff27ad8a9a5e0fbbffe854fbf4"
+    },
+    {
+      "original": "GPI_HDP.normalize_snr",
+      "current": "emissions/_weights.py:normalize_snr",
+      "identical": true,
+      "sha256": "0f7437a4355e94a1f4c278d136f7ca63f13dd1088e4463bb09e30c69e4629737"
+    },
+    {
+      "original": "GPI_HDP.compute_joint_xy_q",
+      "current": "emissions/_weights.py:compute_joint_xy_q",
+      "identical": true,
+      "sha256": "bda8b70f68baf7fa94532be01c4ea4701a779e8da0a761652d9d84b695991271"
+    },
+    {
+      "original": "GPI_HDP.compute_q_elbo",
+      "current": "inference/_scoring.py:compute_q_elbo",
+      "identical": true,
+      "sha256": "f31f5100a27ca86bfbc419b6efeeed6a1d2a9255f713bc7e2fa19a25433b45b8"
+    },
+    {
+      "original": "GPI_HDP.full_LDS_elbo",
+      "current": "inference/_scoring.py:full_LDS_elbo",
+      "identical": true,
+      "sha256": "2d9a1b144602d779dbfceaf2127ce5b714319ab873831c2907c05526cb7a5775"
+    },
+    {
+      "original": "GPI_HDP.estimate_new",
+      "current": "inference/_scoring.py:estimate_new",
+      "identical": true,
+      "sha256": "4a87728cb93102658fab6a4112b3e7421d697f1c6e61f2701a7980551e19c29d"
+    },
+    {
+      "original": "GPI_HDP.compute_q",
+      "current": "inference/_scoring.py:compute_q",
+      "identical": true,
+      "sha256": "989d6f3f3399ce99c42365c967b38c236e6da02397e89846b44e9c03b9c25fbd"
+    },
+    {
+      "original": "GPI_HDP.cond_to_torch",
+      "current": "model/_conversion.py:cond_to_torch",
+      "identical": true,
+      "sha256": "ebb678e38f883a00dcc11450419a10e662359adddcd73e9d6f347924145d4a7a"
+    },
+    {
+      "original": "GPI_HDP.cond_to_numpy",
+      "current": "model/_conversion.py:cond_to_numpy",
+      "identical": true,
+      "sha256": "0f190ef4ddeb3b3d40c1e3f1ab0ee81974ebf96e10c693c7571289d0c9abb29f"
+    },
+    {
+      "original": "GPI_HDP.cond_cuda",
+      "current": "model/_conversion.py:cond_cuda",
+      "identical": true,
+      "sha256": "9b786b25c8b4434b7d3c608305b541ecd226f93fa492960348d5be0c24a361cc"
+    },
+    {
+      "original": "GPI_HDP.cond_cpu",
+      "current": "model/_conversion.py:cond_cpu",
+      "identical": true,
+      "sha256": "de7c85deaf1dba2518d2381162c97269e9978d6c2c9b7ea29a5bff8a82c34812"
+    },
+    {
+      "original": "GPI_HDP.cond_detach",
+      "current": "model/_conversion.py:cond_detach",
+      "identical": true,
+      "sha256": "fede2753a45279ea3ddd3dcd6fb33f6828d47fffffb963d14a756c61a5e14ae1"
+    },
+    {
+      "original": "GPI_HDP.full_model_to_numpy",
+      "current": "model/_conversion.py:full_model_to_numpy",
+      "identical": true,
+      "sha256": "56b661df961f42e9a2d148d0dd6606c5d6c93755796073be9730cccc6d9e9c57"
+    },
+    {
+      "original": "GPI_HDP.full_model_to_torch",
+      "current": "model/_conversion.py:full_model_to_torch",
+      "identical": true,
+      "sha256": "00230caa4b9bf854e8ca6d5201ee2f1f448b8f4fdb57ebb5b6dbaecc2ee59fac"
+    },
+    {
+      "original": "GPI_HDP.full_model_to_cuda",
+      "current": "model/_conversion.py:full_model_to_cuda",
+      "identical": true,
+      "sha256": "bf54c45fa806a9a3c0ee943aeea63b8a8c4ccbd400258d2c899afb573a4e3f02"
+    },
+    {
+      "original": "GPI_HDP.full_model_to_cpu",
+      "current": "model/_conversion.py:full_model_to_cpu",
+      "identical": true,
+      "sha256": "200a83732ddf701c3f124c4dfc08819ad8017f22247047d1ec803123654ce3a7"
+    },
+    {
+      "original": "GPI_HDP.save_swgp",
+      "current": "model/_conversion.py:save_swgp",
+      "identical": true,
+      "sha256": "da814ad3ed690e47224a4c35db589746cd09469614bdbc8445180a9c59330b7a"
+    },
+    {
+      "original": "GPI.__init__",
+      "current": "emissions/_prior.py:__init__",
+      "identical": true,
+      "sha256": "a20d08770a1366d62f8f92915cfb17ec5cd65987d68a817fafd41f0682934d1b"
+    },
+    {
+      "original": "GPI.posterior",
+      "current": "emissions/_prior.py:posterior",
+      "identical": true,
+      "sha256": "36729c82b60dd562df6c9addc608775c62ddb6cd2e6d38fbb0a1ef6b72928845"
+    },
+    {
+      "original": "GPI.projection_matrix",
+      "current": "emissions/_prior.py:projection_matrix",
+      "identical": true,
+      "sha256": "7ef0f0ea68dccf12da2993f14672800c1e0ae62aaffd0595c48f5c3033e43b6e"
+    },
+    {
+      "original": "GPI.project_y",
+      "current": "emissions/_prior.py:project_y",
+      "identical": true,
+      "sha256": "35eea6a5c328e0876822d87cef78c07ded8482396d47209b3b6a6b45e90ef45b"
+    },
+    {
+      "original": "GPI.backward",
+      "current": "emissions/_prior.py:backward",
+      "identical": true,
+      "sha256": "92bbf222950b63378abef7fcfa6bf349d3fe8f3f347dc6429dab29ef55d5c396"
+    },
+    {
+      "original": "GPI.backward_notrange",
+      "current": "emissions/_prior.py:backward_notrange",
+      "identical": true,
+      "sha256": "f80a1637d0a6b2a1673e87b857541fbb94cec30820f28174574249c1a20eca57"
+    },
+    {
+      "original": "GPI.new_params_LDS",
+      "current": "emissions/_prior.py:new_params_LDS",
+      "identical": true,
+      "sha256": "9822c2c591cea5dd740b91fe7c0ffe6b4f4f30f0adf476fdc93290fa099eb712"
+    },
+    {
+      "original": "GPI.pred_dist",
+      "current": "emissions/_prior.py:pred_dist",
+      "identical": true,
+      "sha256": "efae228460c9186fa40678ad79ca7b70f70e6bc204aef9b5764babfd4eabec4e"
+    },
+    {
+      "original": "GPI.pred_latent_dist",
+      "current": "emissions/_prior.py:pred_latent_dist",
+      "identical": true,
+      "sha256": "a01df873b7aa411e7def88a9fdfbce9569e10a0f3adb6a1a98ba76c17515d13f"
+    },
+    {
+      "original": "GPI.sample_y",
+      "current": "emissions/_prior.py:sample_y",
+      "identical": true,
+      "sha256": "c1a3fbbbec47e2b9fe0661e8f9680d28020306d24cbea7e56a674bf573720489"
+    },
+    {
+      "original": "GPI.KL_divergence",
+      "current": "emissions/_prior.py:KL_divergence",
+      "identical": true,
+      "sha256": "c5ff4139699bd234e3103ef2db0e436bac09dc303b6d4cf59a58ac9001ae2cf9"
+    },
+    {
+      "original": "GPI.compute_mean",
+      "current": "emissions/_prior.py:compute_mean",
+      "identical": true,
+      "sha256": "a5df9cf9e14deafb5ec59975fb52d0c76fbe779a6eba0d4fafdb2e10c6464ebb"
+    },
+    {
+      "original": "GPI.plotGP",
+      "current": "emissions/_prior.py:plotGP",
+      "identical": true,
+      "sha256": "86b739a5371b96734622db121e2b87ca1c56e8d1c32b684142ca6f98262fbfd9"
+    },
+    {
+      "original": "GPI.log_det",
+      "current": "emissions/_prior.py:log_det",
+      "identical": true,
+      "sha256": "cca0b02e2a1bf103ab77a35616b35d14b5415f102d3bad3a19b67b605fc78670"
+    },
+    {
+      "original": "GPI.inv_r",
+      "current": "emissions/_prior.py:inv_r",
+      "identical": true,
+      "sha256": "a613864ed955706e11584d765c668777c24e45d27e04721f4c2e1babb0efcc72"
+    },
+    {
+      "original": "GPI.assign_alpha_ini",
+      "current": "emissions/_prior.py:assign_alpha_ini",
+      "identical": true,
+      "sha256": "52972279f0702c9be9ba80b9160f10c2707c9305c7afedf94416cb88854e89c2"
+    },
+    {
+      "original": "GPI.cond_to_numpy",
+      "current": "emissions/_prior.py:cond_to_numpy",
+      "identical": true,
+      "sha256": "f79717faa3c4ce30b045f0bc7005a204c6dd42981ca6ebc8d6bd7fc738fc5602"
+    },
+    {
+      "original": "GPI.cond_to_torch",
+      "current": "emissions/_prior.py:cond_to_torch",
+      "identical": true,
+      "sha256": "7eaecbd42c70f35c1fcb793e2443ee1decf51674f0559ff51f316ac5de895f52"
+    },
+    {
+      "original": "GPI.fit_torch",
+      "current": "emissions/_training.py:fit_torch",
+      "identical": true,
+      "sha256": "80369465c181badc4e3472f27d4db81f14474ad4b9206a71170ac62448df7ca9"
+    },
+    {
+      "original": "GPI.fit",
+      "current": "emissions/_training.py:fit",
+      "identical": true,
+      "sha256": "37b86de6f6d4260445f091bb99a109cda573326674d8515fabaf4913c9cdda2f"
+    },
+    {
+      "original": "GPI.log_likelihood",
+      "current": "emissions/_training.py:log_likelihood",
+      "identical": true,
+      "sha256": "47e35a3b5dcfe7c17884ee497425eee4c39dd37750d72538252580cda3105a28"
+    },
+    {
+      "original": "GPI.log_marginal_likelihood",
+      "current": "emissions/_training.py:log_marginal_likelihood",
+      "identical": true,
+      "sha256": "e9a3ffd968f955c0ddee759f14cf18960d9635cac3cfe0ae268648d5bbd3b904"
+    },
+    {
+      "original": "GPI._constrained_optimization",
+      "current": "emissions/_training.py:_constrained_optimization",
+      "identical": true,
+      "sha256": "68da02ab7fded06b7f6ddf034b581540d07b7d0146408eeb7bb3cc2d9825fd67"
+    },
+    {
+      "original": "GPI_model.__init__",
+      "current": "emissions/_gaussian_process.py:__init__",
+      "identical": true,
+      "sha256": "4500e76f1db8edc6ca73e2451d3cfe09ae302c2b7250bb813d399d938dde28c4"
+    },
+    {
+      "original": "GPI_model._eye_cached",
+      "current": "emissions/_gaussian_process.py:_eye_cached",
+      "identical": true,
+      "sha256": "afa659429b55993a9d12d5660f549bb02d008c12054c29bae9aeb5a804c5f853"
+    },
+    {
+      "original": "GPI_model._chol_spd",
+      "current": "emissions/_gaussian_process.py:_chol_spd",
+      "identical": true,
+      "sha256": "5dcf545fc19fec57c5cf988d9feee73287f8477d7569778343cd3abcaac7446a"
+    },
+    {
+      "original": "GPI_model._log2pi",
+      "current": "emissions/_gaussian_process.py:_log2pi",
+      "identical": true,
+      "sha256": "2f671fac00b65f1c04a003bfffd3815381268e5464979db8b6d4c1836d12b012"
+    },
+    {
+      "original": "GPI_model._gaussian_score_shared_cov",
+      "current": "emissions/_gaussian_process.py:_gaussian_score_shared_cov",
+      "identical": true,
+      "sha256": "f0aefbca8696ad286718e9ecef58f8e587b738d20019e18108e472ed9b07f2ab"
+    },
+    {
+      "original": "GPI_model.initial_conditions",
+      "current": "emissions/_gaussian_process.py:initial_conditions",
+      "identical": true,
+      "sha256": "2cbe6042ac84af88000b10e7b2fb81e796ffdbc78dff4651eea46c18ecba7921"
+    },
+    {
+      "original": "GPI_model.GPR_static",
+      "current": "emissions/_gaussian_process.py:GPR_static",
+      "identical": true,
+      "sha256": "775beb9d760bcdcd23f7a8ab4448478894ba5952e4d19684d06389d416f11e9b"
+    },
+    {
+      "original": "GPI_model.GPR_dynamic",
+      "current": "emissions/_gaussian_process.py:GPR_dynamic",
+      "identical": true,
+      "sha256": "211ad43b10fcd9f1c10634eaeee76e035fc992321008ec23c28cca51e7fca709"
+    },
+    {
+      "original": "GPI_model.fit_kernel_params",
+      "current": "emissions/_gaussian_process.py:fit_kernel_params",
+      "identical": true,
+      "sha256": "a7ecf15bdc86839941a91526cc4c6fdb9baf9e3ba0083e982139e6c3361c324a"
+    },
+    {
+      "original": "GPI_model.log_lik_sample",
+      "current": "emissions/_gaussian_process.py:log_lik_sample",
+      "identical": true,
+      "sha256": "f4e300aa4a37a91794f0c4e4242ad540b5e29bd859901f6c4d2cb42080c8983d"
+    },
+    {
+      "original": "GPI_model.log_sq_error",
+      "current": "emissions/_gaussian_process.py:log_sq_error",
+      "identical": true,
+      "sha256": "99cacaaac66adff1c642b29e5e6323914f3f321a4c014795a2f72a54c8f66206"
+    },
+    {
+      "original": "GPI_model.log_lat_error",
+      "current": "emissions/_gaussian_process.py:log_lat_error",
+      "identical": true,
+      "sha256": "7da01a00daaea12a328baace5f346a959a03653a78dff5cf7c55acf00a271772"
+    },
+    {
+      "original": "GPI_model.include_sample",
+      "current": "emissions/_gaussian_process.py:condition_observation",
+      "identical": true,
+      "sha256": "4dc392c034c9bb7a6ecf1b9ef6fca12e27ecc3933312d73768c7b6bbe57f0238"
+    },
+    {
+      "original": "GPI_model.include_weighted_sample",
+      "current": "emissions/_gaussian_process.py:include_weighted_sample",
+      "identical": true,
+      "sha256": "23fe34a83a0eb4ebabf11835c62b59ef86d038af3f53925aad9fddb44fc07c94"
+    },
+    {
+      "original": "GPI_model.full_pass_weighted",
+      "current": "emissions/_gaussian_process.py:full_pass_weighted",
+      "identical": true,
+      "sha256": "714d83f41664f87832f60a532f0d8429aa3756ce42a75adaf75f93c6bf03da8c"
+    },
+    {
+      "original": "GPI_model.reinit_GP",
+      "current": "emissions/_gaussian_process.py:reinit_GP",
+      "identical": true,
+      "sha256": "1897498ff0ce1b04ed7cc647a86ebcc16e97d7c6370619a258d251d834c0dbf7"
+    },
+    {
+      "original": "GPI_model.reinit_LDS",
+      "current": "emissions/_gaussian_process.py:reinit_LDS",
+      "identical": true,
+      "sha256": "da55748b4476df409338af8db3f0d394061ab770dff9823af8f5aca5c3de1174"
+    },
+    {
+      "original": "GPI_model.return_LDS_param_likelihood",
+      "current": "emissions/_gaussian_process.py:return_LDS_param_likelihood",
+      "identical": true,
+      "sha256": "e9a24469b508062c16ef9b830a705339d9534907f07147d6e557377a7d36663e"
+    },
+    {
+      "original": "GPI_model.compute_sq_err_all",
+      "current": "emissions/_gaussian_process.py:compute_sq_err_all",
+      "identical": true,
+      "sha256": "fe60de46b710276dc196e24fc037ade780b7095e54a57a339079465b87e2589c"
+    },
+    {
+      "original": "GPI_model.compute_q_lat_all",
+      "current": "emissions/_gaussian_process.py:compute_q_lat_all",
+      "identical": true,
+      "sha256": "1431d6e124ed96b356cc4d4798397b681c06784cb904077e27b1627f66f102b0"
+    },
+    {
+      "original": "GPI_model.posterior_weighted",
+      "current": "emissions/_gaussian_process.py:posterior_weighted",
+      "identical": true,
+      "sha256": "dbdb0f9b2dadd29953cb5da373c2c05dd191847a858c9e2496319148e3fd4a8b"
+    },
+    {
+      "original": "GPI_model.find_closest_lower",
+      "current": "emissions/_gaussian_process.py:find_closest_lower",
+      "identical": true,
+      "sha256": "d744e4455aa9d01bb53c8c8f2012764c042e40ed50eda394a25d77e0eb225e5c"
+    },
+    {
+      "original": "GPI_model.step_forward_last",
+      "current": "emissions/_gaussian_process.py:step_forward_last",
+      "identical": true,
+      "sha256": "cb6a7501973ca803260390656ba3ac0955133220aea60ad53b3c1f750495ea36"
+    },
+    {
+      "original": "GPI_model.observe_last",
+      "current": "emissions/_gaussian_process.py:observe_last",
+      "identical": true,
+      "sha256": "6b7b4d19d8ef8a7bf7fece5279bbc5a619b083e0da482597587422f795894283"
+    },
+    {
+      "original": "GPI_model.observe",
+      "current": "emissions/_gaussian_process.py:observe",
+      "identical": true,
+      "sha256": "2f4a6f10a2563d5523192f5b190a30021cadbbf3c9716cff36b06569cde1c051"
+    },
+    {
+      "original": "GPI_model.get_params",
+      "current": "emissions/_gaussian_process.py:get_params",
+      "identical": true,
+      "sha256": "6012e38b0ae08fe58a7ffd60ba530362b8986437e9f83e742d4bc435b53dd87f"
+    },
+    {
+      "original": "GPI_model.resample_latent_mean",
+      "current": "emissions/_gaussian_process.py:resample_latent_mean",
+      "identical": true,
+      "sha256": "fba3ee85dd2d6fd33fd066c33d2bf17c0bd51b995d173577ca516d536af086cb"
+    },
+    {
+      "original": "GPI_model.backwards",
+      "current": "emissions/_gaussian_process.py:backwards",
+      "identical": true,
+      "sha256": "f6b64b033a758cbbe993b56376822852506d388e298be52beab44d6f5945f4f9"
+    },
+    {
+      "original": "GPI_model.backwards_pair",
+      "current": "emissions/_gaussian_process.py:backwards_pair",
+      "identical": true,
+      "sha256": "96881673e265a10e30cc71722e1513d285bb1af70616a94afce0694e9bfa2565"
+    },
+    {
+      "original": "GPI_model.smoother_weighted",
+      "current": "emissions/_gaussian_process.py:smoother_weighted",
+      "identical": true,
+      "sha256": "671c3534b6482d8d47de4138a5e831a5e434cc37cdc198c456a3594bdcdee387"
+    },
+    {
+      "original": "GPI_model.smoother_weighted_index",
+      "current": "emissions/_gaussian_process.py:smoother_weighted_index",
+      "identical": true,
+      "sha256": "eba90ab0806bd067493b5b7cf95c862e9f690ee3b11725480df7d3d98f7e7c27"
+    },
+    {
+      "original": "GPI_model.new_params",
+      "current": "emissions/_gaussian_process.py:new_params",
+      "identical": true,
+      "sha256": "f92e1e77e10b89d18b4ed7cff830f3abf8eb85bc9a9869a53abc51250ed2b90d"
+    },
+    {
+      "original": "GPI_model.check_bound_sigma",
+      "current": "emissions/_gaussian_process.py:check_bound_sigma",
+      "identical": true,
+      "sha256": "b2e92086992880d47e0b4b9093d7a9b8352a90f588415b06daa1e1aeba7d4b52"
+    },
+    {
+      "original": "GPI_model.new_params_weighted",
+      "current": "emissions/_gaussian_process.py:new_params_weighted",
+      "identical": true,
+      "sha256": "918c0f0443990e60931008986cad9dd1e27d23bdf927a63624ad77db83409ecc"
+    },
+    {
+      "original": "GPI_model.revise_constraint_noise_step",
+      "current": "emissions/_gaussian_process.py:revise_constraint_noise_step",
+      "identical": true,
+      "sha256": "4cdc3ee9d032a126bb1940a3634eb22f8237f18452a80dbe69989ba90e9ba775"
+    },
+    {
+      "original": "GPI_model.KL_divergence",
+      "current": "emissions/_gaussian_process.py:KL_divergence",
+      "identical": true,
+      "sha256": "159090fcff727b0f3df835de70d70194842bd5b10af2e7338e6aa6511e09663a"
+    },
+    {
+      "original": "GPI_model.compute_mean",
+      "current": "emissions/_gaussian_process.py:compute_mean",
+      "identical": true,
+      "sha256": "93ef70812bb22564c8af35e0aa0e8db7def47ec2f921cc59e70555762600e589"
+    },
+    {
+      "original": "GPI_model.plot_last",
+      "current": "emissions/_gaussian_process.py:plot_last",
+      "identical": true,
+      "sha256": "b95f2e20d623aa9071adf97b8019cb66e3857533bbd7c348cb0d56f9276baacb"
+    },
+    {
+      "original": "GPI_model.sample_last",
+      "current": "emissions/_gaussian_process.py:sample_last",
+      "identical": true,
+      "sha256": "11c4cd8a13ae735bfc4ff5b4ffd34e922516eef362b01fff28d25d9544a1317d"
+    },
+    {
+      "original": "GPI_model.reduce_noise_matrix",
+      "current": "emissions/_gaussian_process.py:reduce_noise_matrix",
+      "identical": true,
+      "sha256": "2f99c79c3c281a28272676edcc67df0a555873e247343f2565e807a2b327e65a"
+    },
+    {
+      "original": "GPI_model.bayesian_new_params",
+      "current": "emissions/_gaussian_process.py:bayesian_new_params",
+      "identical": true,
+      "sha256": "ac424ca62977cc9deb6e5ec7be3dedaa36863dbe9a93819258818dcc34198497"
+    },
+    {
+      "original": "GPI_model.cond_to_numpy",
+      "current": "emissions/_gaussian_process.py:cond_to_numpy",
+      "identical": true,
+      "sha256": "eeda9e0aed01e3c73deefbf44c4da5961374bcd90b7e4d3a00ac02bbf1c2e971"
+    },
+    {
+      "original": "GPI_model.cond_to_torch",
+      "current": "emissions/_gaussian_process.py:cond_to_torch",
+      "identical": true,
+      "sha256": "b189bf785036bb833baa365db4fef5d5c033bccf64c5ef8673322acda3d0e929"
+    },
+    {
+      "original": "GPI_model.cond_to_cuda",
+      "current": "emissions/_gaussian_process.py:cond_to_cuda",
+      "identical": true,
+      "sha256": "526b3297181c419d8616a83a7c8735d4e1501d81965169b1e114e714fed10933"
+    },
+    {
+      "original": "GPI_model.cond_to_cpu",
+      "current": "emissions/_gaussian_process.py:cond_to_cpu",
+      "identical": true,
+      "sha256": "37137721fa8711659d31c6cbceec80e19f2e18c08b2af3549633324cc56ef0d0"
+    },
+    {
+      "original": "GPI_model.model_to_numpy",
+      "current": "emissions/_gaussian_process.py:model_to_numpy",
+      "identical": true,
+      "sha256": "1d053812b08b5103553f8f7b323efb4720e6fc02c2b0d2d4b460b616718693c0"
+    },
+    {
+      "original": "GPI_model.model_to_torch",
+      "current": "emissions/_gaussian_process.py:model_to_torch",
+      "identical": true,
+      "sha256": "5a0b636e77ede1c6a736317173dff6abf6f50114c8bf69bb455dfe56fe7655fc"
+    },
+    {
+      "original": "GPI_model.model_to_cuda",
+      "current": "emissions/_gaussian_process.py:model_to_cuda",
+      "identical": true,
+      "sha256": "b235d355b0534410827fe5beba05d94e3299af1304860037dd69bef0bc5ec8de"
+    },
+    {
+      "original": "GPI_model.model_to_cpu",
+      "current": "emissions/_gaussian_process.py:model_to_cpu",
+      "identical": true,
+      "sha256": "56f6fe8a021e7b8b05eed44b3cfd62b99644ef9411e4480ef1dba1a49403e054"
+    },
+    {
+      "original": "Warping_system.__init__",
+      "current": "alignment/_amtgp.py:__init__",
+      "identical": true,
+      "sha256": "1dcbbeb718915deec182cf3413f5e01dee20002f44e2339f40bd3a3a82b4b765"
+    },
+    {
+      "original": "Warping_system._expand_ctrl_to_T",
+      "current": "alignment/_amtgp.py:_expand_ctrl_to_T",
+      "identical": true,
+      "sha256": "71ef86d1394ce6032da21de09842c9e43c0059bb934597f5d046aaea746258fc"
+    },
+    {
+      "original": "Warping_system._monotonic_grid",
+      "current": "alignment/_amtgp.py:_monotonic_grid",
+      "identical": true,
+      "sha256": "c2a258a1da699d3589a391656313822a643f142e5f31085e3a93fe9c3c80fd49"
+    },
+    {
+      "original": "Warping_system._second_diff_penalty",
+      "current": "alignment/_amtgp.py:_second_diff_penalty",
+      "identical": true,
+      "sha256": "bf65d1a268cfc71a6d622dc99aca3fb89ca9f3b8fb526e117ffde00d93f82c38"
+    },
+    {
+      "original": "Warping_system._theta_to_lambdas",
+      "current": "alignment/_amtgp.py:_theta_to_lambdas",
+      "identical": true,
+      "sha256": "4c00b7c9472de8a74e004cca9c7f695813ae02866316379f2aeaad8ea70c4d3b"
+    },
+    {
+      "original": "Warping_system.compute_warp",
+      "current": "alignment/_amtgp.py:compute_warp",
+      "identical": true,
+      "sha256": "721337e145ef38248e5a0e850fb33b46777a96baaa587e6061e31cdd6e3b9941"
+    },
+    {
+      "original": "Warping_system.update_warp",
+      "current": "alignment/_amtgp.py:update_warp",
+      "identical": true,
+      "sha256": "48046176145b6748d287ea5f738dea6aab28916a3d52edf09a37bc942d0c4df3"
+    },
+    {
+      "original": "Warping_system.reset",
+      "current": "alignment/_amtgp.py:reset",
+      "identical": true,
+      "sha256": "163ccff518ca207086747129be7ade3bb970a4792c3efe7819ce4ab120fb370f"
+    },
+    {
+      "original": "Warping_system.compute_warp_batch",
+      "current": "alignment/_amtgp.py:compute_warp_batch",
+      "identical": true,
+      "sha256": "417b909c8b0a1f342e4c9d8cd63b0d4345f619144b01eaa04bcca62f82d5c855"
+    }
+  ]
+}

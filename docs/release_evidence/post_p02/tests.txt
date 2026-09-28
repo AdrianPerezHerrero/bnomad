@@ -1,0 +1,518 @@
+test_emission_dynamic (characterization.test_regression.CharacterizationTests.test_emission_dynamic)
+Protect the recorded emission_dynamic path (see docs/characterization_tests.md). ... ok
+test_emission_static (characterization.test_regression.CharacterizationTests.test_emission_static)
+Protect the recorded emission_static path (see docs/characterization_tests.md). ... ok
+test_hdp_messages (characterization.test_regression.CharacterizationTests.test_hdp_messages)
+Protect the recorded hdp_messages path (see docs/characterization_tests.md). ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_known_failure_online_multi (characterization.test_regression.CharacterizationTests.test_known_failure_online_multi)
+Protect the recorded known_failure_online_multi path (see docs/characterization_tests.md). ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_known_failure_online_warp (characterization.test_regression.CharacterizationTests.test_known_failure_online_warp)
+Protect the recorded known_failure_online_warp path (see docs/characterization_tests.md). ... ok
+test_offline_dynamic (characterization.test_regression.CharacterizationTests.test_offline_dynamic)
+Protect the recorded offline_dynamic path (see docs/characterization_tests.md). ... ok
+test_offline_multi (characterization.test_regression.CharacterizationTests.test_offline_multi)
+Protect the recorded offline_multi path (see docs/characterization_tests.md). ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_multi_snr (characterization.test_regression.CharacterizationTests.test_offline_multi_snr)
+Protect the recorded offline_multi_snr path (see docs/characterization_tests.md). ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_static (characterization.test_regression.CharacterizationTests.test_offline_static)
+Protect the recorded offline_static path (see docs/characterization_tests.md). ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_warp (characterization.test_regression.CharacterizationTests.test_offline_warp)
+Protect the recorded offline_warp path (see docs/characterization_tests.md). ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_online_dynamic (characterization.test_regression.CharacterizationTests.test_online_dynamic)
+Protect the recorded online_dynamic path (see docs/characterization_tests.md). ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_online_fast (characterization.test_regression.CharacterizationTests.test_online_fast)
+Protect the recorded online_fast path (see docs/characterization_tests.md). ... ok
+test_online_static (characterization.test_regression.CharacterizationTests.test_online_static)
+Protect the recorded online_static path (see docs/characterization_tests.md). ... ok
+test_warper_batch (characterization.test_regression.CharacterizationTests.test_warper_batch)
+Protect the recorded warper_batch path (see docs/characterization_tests.md). ... ok
+test_warper_scalar (characterization.test_regression.CharacterizationTests.test_warper_scalar)
+Protect the recorded warper_scalar path (see docs/characterization_tests.md). ... ok
+test_cached_identity_retains_legacy_absolute_grid_and_expanded_views (test_alignment.AlignmentComponentTests.test_cached_identity_retains_legacy_absolute_grid_and_expanded_views) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_disabled_model_never_constructs_active_warper_and_survives_cluster_factory (test_alignment.AlignmentComponentTests.test_disabled_model_never_constructs_active_warper_and_survives_cluster_factory) ... ok
+test_identity_has_no_optimizer_and_preserves_values_storage_and_gradients (test_alignment.AlignmentComponentTests.test_identity_has_no_optimizer_and_preserves_values_storage_and_gradients) ... ok
+test_missing_alignment_field_uses_legacy_default_and_cache_reset_scope (test_alignment.AlignmentComponentTests.test_missing_alignment_field_uses_legacy_default_and_cache_reset_scope) ... ok
+test_monotone_output_step_count_and_warm_memory_reset (test_alignment.AlignmentComponentTests.test_monotone_output_step_count_and_warm_memory_reset) ... ok
+test_public_alias_and_legacy_pickle_identity (test_alignment.AlignmentComponentTests.test_public_alias_and_legacy_pickle_identity) ... ok
+test_batch_changed_grid (test_alignment.AlignmentRegressionTests.test_batch_changed_grid) ... ok
+test_batch_irregular (test_alignment.AlignmentRegressionTests.test_batch_irregular) ... ok
+test_batch_no_recursion_no_prior_penalty (test_alignment.AlignmentRegressionTests.test_batch_no_recursion_no_prior_penalty) ... ok
+test_batch_recursive (test_alignment.AlignmentRegressionTests.test_batch_recursive) ... ok
+test_model_cached (test_alignment.AlignmentRegressionTests.test_model_cached) ... ok
+test_model_candidates (test_alignment.AlignmentRegressionTests.test_model_candidates) ... ok
+test_model_forced_candidate (test_alignment.AlignmentRegressionTests.test_model_forced_candidate) ... ok
+test_prior_cache (test_alignment.AlignmentRegressionTests.test_prior_cache) ... ok
+test_reference_inventory (test_alignment.AlignmentRegressionTests.test_reference_inventory) ... ok
+test_scalar_changed_grid (test_alignment.AlignmentRegressionTests.test_scalar_changed_grid) ... ok
+test_scalar_irregular (test_alignment.AlignmentRegressionTests.test_scalar_irregular) ... ok
+test_scalar_no_recursion_no_prior_penalty (test_alignment.AlignmentRegressionTests.test_scalar_no_recursion_no_prior_penalty) ... ok
+test_scalar_recursive (test_alignment.AlignmentRegressionTests.test_scalar_recursive) ... ok
+test_offline_constructor_disabling_matches_disabled_single_multi_static (test_alignment.DisabledAlignmentInferenceTests.test_offline_constructor_disabling_matches_disabled_single_multi_static) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_online_constructor_disabling_matches_disabled_dynamic_static_fast (test_alignment.DisabledAlignmentInferenceTests.test_online_constructor_disabling_matches_disabled_dynamic_static_fast) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_custom_epsilon_is_used_in_both_pair_positions (test_calculations.EntropyTests.test_custom_epsilon_is_used_in_both_pair_positions) ... ok
+test_legacy_objective_calls_terms_without_model_state (test_calculations.EntropyTests.test_legacy_objective_calls_terms_without_model_state) ... ok
+test_pair_terms_preserve_joint_weights_and_input (test_calculations.EntropyTests.test_pair_terms_preserve_joint_weights_and_input) ... ok
+test_state_term_sums_all_rows_without_normalizing (test_calculations.EntropyTests.test_state_term_sums_all_rows_without_normalizing) ... ok
+test_zero_and_empty_counts_retain_shapes_and_finite_results (test_calculations.EntropyTests.test_zero_and_empty_counts_retain_shapes_and_finite_results) ... ok
+test_any_infinite_maximum_bypasses_entire_input (test_calculations.MaxShiftTests.test_any_infinite_maximum_bypasses_entire_input) ... ok
+test_legacy_method_remains_callable_without_model_state (test_calculations.MaxShiftTests.test_legacy_method_remains_callable_without_model_state) ... ok
+test_nonfinite_nan_is_not_an_infinite_maximum (test_calculations.MaxShiftTests.test_nonfinite_nan_is_not_an_infinite_maximum) ... ok
+test_numpy_axes_dtype_and_no_mutation (test_calculations.MaxShiftTests.test_numpy_axes_dtype_and_no_mutation) ... ok
+test_one_dimensional_numpy_scalar_special_case (test_calculations.MaxShiftTests.test_one_dimensional_numpy_scalar_special_case) ... ok
+test_other_axis_returns_original_and_reduction (test_calculations.MaxShiftTests.test_other_axis_returns_original_and_reduction) ... ok
+test_tensor_values_gradient_and_device (test_calculations.MaxShiftTests.test_tensor_values_gradient_and_device) ... ok
+test_batch_original_values_dtype_and_gradients_exactly (test_calculations.MonotoneGridTests.test_batch_original_values_dtype_and_gradients_exactly) ... ok
+test_scalar_and_batch_interpolation_remain_distinct (test_calculations.MonotoneGridTests.test_scalar_and_batch_interpolation_remain_distinct) ... ok
+test_scalar_original_values_and_control_gradients_exactly (test_calculations.MonotoneGridTests.test_scalar_original_values_and_control_gradients_exactly) ... ok
+test_zero_controls_on_irregular_grid_are_not_identity (test_calculations.MonotoneGridTests.test_zero_controls_on_irregular_grid_are_not_identity) ... ok
+test_cuda_covariance_retains_device_and_gradient (test_calculations.WarpCovarianceTests.test_cuda_covariance_retains_device_and_gradient) ... skipped 'CUDA is unavailable; CPU goldens are the reference'
+test_degenerate_grid_retains_finite_constant_kernel (test_calculations.WarpCovarianceTests.test_degenerate_grid_retains_finite_constant_kernel) ... ok
+test_original_covariance_and_gradients_exactly (test_calculations.WarpCovarianceTests.test_original_covariance_and_gradients_exactly) ... ok
+test_original_prior_wrapper_and_cache_still_own_factorization (test_calculations.WarpCovarianceTests.test_original_prior_wrapper_and_cache_still_own_factorization) ... ok
+test_all_experiment_constructor_keywords_are_representable (test_config.ConfigurationTests.test_all_experiment_constructor_keywords_are_representable) ... ok
+test_configured_schedule_matches_legacy_entry_point (test_config.ConfigurationTests.test_configured_schedule_matches_legacy_entry_point) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_defaults_do_not_reset_runtime (test_config.ConfigurationTests.test_defaults_do_not_reset_runtime) ... ok
+test_dict_and_yaml_roundtrips (test_config.ConfigurationTests.test_dict_and_yaml_roundtrips) ... ok
+test_every_constructor_default_and_parameter_is_preserved (test_config.ConfigurationTests.test_every_constructor_default_and_parameter_is_preserved) ... ok
+test_examples_roundtrip_and_run (test_config.ConfigurationTests.test_examples_roundtrip_and_run) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_explicit_runtime_settings (test_config.ConfigurationTests.test_explicit_runtime_settings) ... ok
+test_factory_preserves_initial_state_and_does_not_mutate_recipe (test_config.ConfigurationTests.test_factory_preserves_initial_state_and_does_not_mutate_recipe) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_kernel_and_array_types_preserve_values_and_shapes (test_config.ConfigurationTests.test_kernel_and_array_types_preserve_values_and_shapes) ... ok
+test_policy_roundtrip_and_no_alignment_override (test_config.ConfigurationTests.test_policy_roundtrip_and_no_alignment_override) ... ok
+test_shared_parameter_objects_survive_serialization (test_config.ConfigurationTests.test_shared_parameter_objects_survive_serialization) ... ok
+test_unsafe_or_unknown_serialized_values_rejected (test_config.ConfigurationTests.test_unsafe_or_unknown_serialized_values_rejected) ... ok
+test_validation_rejects_inconsistent_options (test_config.ConfigurationTests.test_validation_rejects_inconsistent_options) ... ok
+test_known_failure_forced_reuse (test_config.SerializedConfigurationCharacterizationTests.test_known_failure_forced_reuse) ... ok
+test_known_failure_online_multi (test_config.SerializedConfigurationCharacterizationTests.test_known_failure_online_multi) ... ok
+test_known_failure_online_warp (test_config.SerializedConfigurationCharacterizationTests.test_known_failure_online_warp) ... ok
+test_offline_dynamic (test_config.SerializedConfigurationCharacterizationTests.test_offline_dynamic) ... ok
+test_offline_limit (test_config.SerializedConfigurationCharacterizationTests.test_offline_limit) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_multi (test_config.SerializedConfigurationCharacterizationTests.test_offline_multi) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_multi_snr (test_config.SerializedConfigurationCharacterizationTests.test_offline_multi_snr) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_single (test_config.SerializedConfigurationCharacterizationTests.test_offline_single) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_static (test_config.SerializedConfigurationCharacterizationTests.test_offline_static) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_warp (test_config.SerializedConfigurationCharacterizationTests.test_offline_warp) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_online_dynamic (test_config.SerializedConfigurationCharacterizationTests.test_online_dynamic) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_online_fast (test_config.SerializedConfigurationCharacterizationTests.test_online_fast) ... ok
+test_online_static (test_config.SerializedConfigurationCharacterizationTests.test_online_static) ... ok
+test_reload_labels (test_config.SerializedConfigurationCharacterizationTests.test_reload_labels) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_cuda_values_and_gradients (test_control_interpolation.ControlInterpolationTests.test_cuda_values_and_gradients) ... skipped 'CUDA unavailable'
+test_custom_control_expansion_is_honored (test_control_interpolation.ControlInterpolationTests.test_custom_control_expansion_is_honored) ... ok
+test_exact_uniform_and_irregular_values_and_gradients (test_control_interpolation.ControlInterpolationTests.test_exact_uniform_and_irregular_values_and_gradients) ... ok
+test_one_preparation_per_call_and_changed_grid (test_control_interpolation.ControlInterpolationTests.test_one_preparation_per_call_and_changed_grid) ... ok
+test_zero_steps_and_coordinate_gradient_use_original_path (test_control_interpolation.ControlInterpolationTests.test_zero_steps_and_coordinate_gradient_use_original_path) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\alignment\_amtgp.py:335: UserWarning:
+
+Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\torch\csrc\autograd\generated\python_variable_methods.cpp:837.)
+
+ok
+test_initializers_follow_existing_global_dtype_and_do_not_change_it (test_dynamics.DynamicsComponentTests.test_initializers_follow_existing_global_dtype_and_do_not_change_it) ... ok
+test_pair_smoothing_preserves_float32_and_autograd (test_dynamics.DynamicsComponentTests.test_pair_smoothing_preserves_float32_and_autograd) ... ok
+test_public_static_and_linear_operations_match_pre_extraction_reference (test_dynamics.DynamicsComponentTests.test_public_static_and_linear_operations_match_pre_extraction_reference) ... ok
+test_smoothing_retains_list_mutation_and_last_tensor_identity (test_dynamics.DynamicsComponentTests.test_smoothing_retains_list_mutation_and_last_tensor_identity) ... ok
+test_static_ml_sets_identity_and_zero_process_covariance (test_dynamics.DynamicsComponentTests.test_static_ml_sets_identity_and_zero_process_covariance) ... ok
+test_static_uses_real_filter_and_reduces_posterior_uncertainty (test_dynamics.DynamicsComponentTests.test_static_uses_real_filter_and_reduces_posterior_uncertainty) ... ok
+test_linear_estimate (test_dynamics.DynamicsRegressionTests.test_linear_estimate) ... ok
+test_linear_filter_gradients (test_dynamics.DynamicsRegressionTests.test_linear_filter_gradients) ... ok
+test_linear_filter_prior (test_dynamics.DynamicsRegressionTests.test_linear_filter_prior) ... ok
+test_linear_filter_regular (test_dynamics.DynamicsRegressionTests.test_linear_filter_regular) ... ok
+test_linear_filter_warped (test_dynamics.DynamicsRegressionTests.test_linear_filter_warped) ... ok
+test_linear_initial (test_dynamics.DynamicsRegressionTests.test_linear_initial) ... ok
+test_linear_smooth (test_dynamics.DynamicsRegressionTests.test_linear_smooth) ... ok
+test_linear_smooth_pair (test_dynamics.DynamicsRegressionTests.test_linear_smooth_pair) ... ok
+test_reference_inventory_and_known_failures_are_explicit (test_dynamics.DynamicsRegressionTests.test_reference_inventory_and_known_failures_are_explicit) ... ok
+test_static_estimate (test_dynamics.DynamicsRegressionTests.test_static_estimate) ... ok
+test_static_filter_gradients (test_dynamics.DynamicsRegressionTests.test_static_filter_gradients) ... ok
+test_static_filter_prior (test_dynamics.DynamicsRegressionTests.test_static_filter_prior) ... ok
+test_static_filter_regular (test_dynamics.DynamicsRegressionTests.test_static_filter_regular) ... ok
+test_static_filter_warped (test_dynamics.DynamicsRegressionTests.test_static_filter_warped) ... ok
+test_static_initial (test_dynamics.DynamicsRegressionTests.test_static_initial) ... ok
+test_static_smooth (test_dynamics.DynamicsRegressionTests.test_static_smooth) ... ok
+test_static_smooth_pair (test_dynamics.DynamicsRegressionTests.test_static_smooth_pair) ... ok
+test_trajectory_linear_full_data (test_dynamics.DynamicsRegressionTests.test_trajectory_linear_full_data) ... ok
+test_trajectory_linear_full_smoother (test_dynamics.DynamicsRegressionTests.test_trajectory_linear_full_smoother) ... ok
+test_trajectory_linear_gates (test_dynamics.DynamicsRegressionTests.test_trajectory_linear_gates) ... ok
+test_trajectory_linear_reset (test_dynamics.DynamicsRegressionTests.test_trajectory_linear_reset) ... ok
+test_trajectory_linear_reset_likelihood (test_dynamics.DynamicsRegressionTests.test_trajectory_linear_reset_likelihood) ... ok
+test_trajectory_static_full_data (test_dynamics.DynamicsRegressionTests.test_trajectory_static_full_data) ... ok
+test_trajectory_static_full_smoother (test_dynamics.DynamicsRegressionTests.test_trajectory_static_full_smoother) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\dynamics\_kalman.py:116: UserWarning:
+
+The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\aten\src\ATen\native\TensorShape.cpp:4419.)
+
+ok
+test_trajectory_static_gates (test_dynamics.DynamicsRegressionTests.test_trajectory_static_gates) ... ok
+test_trajectory_static_reset (test_dynamics.DynamicsRegressionTests.test_trajectory_static_reset) ... ok
+test_trajectory_static_reset_likelihood (test_dynamics.DynamicsRegressionTests.test_trajectory_static_reset_likelihood) ... ok
+test_exact_grid_returns_covariance_by_identity_and_dtype (test_emissions.EmissionTests.test_exact_grid_returns_covariance_by_identity_and_dtype) ... ok
+test_identity_cache_reuse_dtype_separation_and_batch_scores (test_emissions.EmissionTests.test_identity_cache_reuse_dtype_separation_and_batch_scores) ... ok
+test_pre_extraction_instance_pickle_loads_with_identical_predictions (test_emissions.EmissionTests.test_pre_extraction_instance_pickle_loads_with_identical_predictions) ... ok
+test_prediction_equal_diagonal_shortcut_ignores_off_diagonals (test_emissions.EmissionTests.test_prediction_equal_diagonal_shortcut_ignores_off_diagonals) ... ok
+test_prior_white_noise_and_static_dynamic_initialization (test_emissions.EmissionTests.test_prior_white_noise_and_static_dynamic_initialization) ... ok
+test_public_identity_and_structural_interface (test_emissions.EmissionTests.test_public_identity_and_structural_interface) ... ok
+test_real_training_predictions_states_and_optimizer_match_original (test_emissions.EmissionTests.test_real_training_predictions_states_and_optimizer_match_original) ... ok
+test_responsibility_and_snr_gates_preserve_history_aliases (test_emissions.EmissionTests.test_responsibility_and_snr_gates_preserve_history_aliases) ... ok
+test_score_omits_log_determinant (test_emissions.EmissionTests.test_score_omits_log_determinant) ... ok
+test_concentration_profiles_and_unknown_profile_noop (test_hdp.HDPComponentTests.test_concentration_profiles_and_unknown_profile_noop) ... ok
+test_expected_log_variants_against_pre_extraction_values (test_hdp.HDPComponentTests.test_expected_log_variants_against_pre_extraction_values) ... ok
+test_full_theta_ignores_last_counts_and_does_not_mutate_input (test_hdp.HDPComponentTests.test_full_theta_ignores_last_counts_and_does_not_mutate_input) ... ok
+test_growth_preserves_old_prefix_without_committing_or_creating_models (test_hdp.HDPComponentTests.test_growth_preserves_old_prefix_without_committing_or_creating_models) ... ok
+test_invalid_beta_length_and_shared_optimizer_caches (test_hdp.HDPComponentTests.test_invalid_beta_length_and_shared_optimizer_caches) ... ok
+test_live_state_and_legacy_model_serialization (test_hdp.HDPComponentTests.test_live_state_and_legacy_model_serialization) ... ok
+test_optimizer_bounds_and_in_place_omega_contract (test_hdp.HDPComponentTests.test_optimizer_bounds_and_in_place_omega_contract) ... ok
+test_optimizer_model_fallback_keeps_values_or_uses_prior (test_hdp.HDPComponentTests.test_optimizer_model_fallback_keeps_values_or_uses_prior) ... ok
+test_restart_factr_sequence_and_fallback_initialization (test_hdp.HDPComponentTests.test_restart_factr_sequence_and_fallback_initialization) ... ok
+test_scipy_warnflag_one_is_accepted_two_raises (test_hdp.HDPComponentTests.test_scipy_warnflag_one_is_accepted_two_raises) ... ok
+test_stateless_legacy_calls_still_accept_no_owner (test_hdp.HDPComponentTests.test_stateless_legacy_calls_still_accept_no_owner) ... ok
+test_expected_logs (test_hdp.HDPRegressionTests.test_expected_logs) ... ok
+test_growth_and_prune_arrays (test_hdp.HDPRegressionTests.test_growth_and_prune_arrays) ... ok
+test_initial_five (test_hdp.HDPRegressionTests.test_initial_five) ... ok
+test_initial_one (test_hdp.HDPRegressionTests.test_initial_one) ... ok
+test_initial_three (test_hdp.HDPRegressionTests.test_initial_three) ... ok
+test_objectives (test_hdp.HDPRegressionTests.test_objectives) ... ok
+test_objectives_sticky (test_hdp.HDPRegressionTests.test_objectives_sticky) ... ok
+test_optimize_regular (test_hdp.HDPRegressionTests.test_optimize_regular) ... ok
+test_optimize_sticky (test_hdp.HDPRegressionTests.test_optimize_sticky) ... ok
+test_optimizer_prior (test_hdp.HDPRegressionTests.test_optimizer_prior) ... ok
+test_optimizer_regular (test_hdp.HDPRegressionTests.test_optimizer_regular) ... ok
+test_optimizer_separate (test_hdp.HDPRegressionTests.test_optimizer_separate) ... ok
+test_optimizer_sticky (test_hdp.HDPRegressionTests.test_optimizer_sticky) ... ok
+test_reference_inventory (test_hdp.HDPRegressionTests.test_reference_inventory) ... ok
+test_refill_empty (test_hdp.HDPRegressionTests.test_refill_empty) ... ok
+test_reinitialize_and_grow (test_hdp.HDPRegressionTests.test_reinitialize_and_grow) ... ok
+test_stick_transforms (test_hdp.HDPRegressionTests.test_stick_transforms) ... ok
+test_theta_full (test_hdp.HDPRegressionTests.test_theta_full) ... ok
+test_theta_posterior (test_hdp.HDPRegressionTests.test_theta_posterior) ... ok
+test_theta_truncated (test_hdp.HDPRegressionTests.test_theta_truncated) ... ok
+test_binding_does_not_initialize_or_copy_state (test_inference.InferenceEngineTests.test_binding_does_not_initialize_or_copy_state) ... ok
+test_direct_engines_match_pre_extraction_boundaries (test_inference.InferenceEngineTests.test_direct_engines_match_pre_extraction_boundaries) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_divergence_reports_first_field_and_bypasses_broad_fallbacks (test_inference.InferenceEngineTests.test_divergence_reports_first_field_and_bypasses_broad_fallbacks) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_existing_pickle_and_owner_fields_are_unchanged_by_binding (test_inference.InferenceEngineTests.test_existing_pickle_and_owner_fields_are_unchanged_by_binding) ... ok
+test_legacy_entry_points_forward_once_and_return_same_object (test_inference.InferenceEngineTests.test_legacy_entry_points_forward_once_and_return_same_object) ... ok
+test_old_signatures_match_explicit_engines (test_inference.InferenceEngineTests.test_old_signatures_match_explicit_engines) ... ok
+test_fixture_inventory (test_inference.InferenceScheduleTests.test_fixture_inventory) ... ok
+test_known_failure_forced_reuse (test_inference.InferenceScheduleTests.test_known_failure_forced_reuse) ... ok
+test_known_failure_online_multi (test_inference.InferenceScheduleTests.test_known_failure_online_multi) ... ok
+test_known_failure_online_warp (test_inference.InferenceScheduleTests.test_known_failure_online_warp) ... ok
+test_offline_dynamic (test_inference.InferenceScheduleTests.test_offline_dynamic) ... ok
+test_offline_limit (test_inference.InferenceScheduleTests.test_offline_limit) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_multi (test_inference.InferenceScheduleTests.test_offline_multi) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_multi_snr (test_inference.InferenceScheduleTests.test_offline_multi_snr) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_single (test_inference.InferenceScheduleTests.test_offline_single) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_static (test_inference.InferenceScheduleTests.test_offline_static) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_warp (test_inference.InferenceScheduleTests.test_offline_warp) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_online_dynamic (test_inference.InferenceScheduleTests.test_online_dynamic) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_online_fast (test_inference.InferenceScheduleTests.test_online_fast) ... ok
+test_online_static (test_inference.InferenceScheduleTests.test_online_static) ... ok
+test_reload_labels (test_inference.InferenceScheduleTests.test_reload_labels) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_exact_cuda_values (test_message_rows.MessageRowTests.test_exact_cuda_values) ... skipped 'CUDA unavailable'
+test_exact_float32_float64_lengths_and_cluster_counts (test_message_rows.MessageRowTests.test_exact_float32_float64_lengths_and_cluster_counts) ... ok
+test_gradient_inputs_use_original_indexed_path (test_message_rows.MessageRowTests.test_gradient_inputs_use_original_indexed_path) ... ok
+test_noncontiguous_and_nonfinite_scores (test_message_rows.MessageRowTests.test_noncontiguous_and_nonfinite_scores) ... ok
+test_tensor_subclass_uses_original_indexed_path (test_message_rows.MessageRowTests.test_tensor_subclass_uses_original_indexed_path) ... ok
+test_alignment_policies_do_not_construct_or_import_active_engine (test_package_structure.PackageStructureTests.test_alignment_policies_do_not_construct_or_import_active_engine) ... ok
+test_dynamics_components_do_not_import_model_or_emission (test_package_structure.PackageStructureTests.test_dynamics_components_do_not_import_model_or_emission) ... ok
+test_hdp_component_does_not_import_emissions_or_model (test_package_structure.PackageStructureTests.test_hdp_component_does_not_import_emissions_or_model) ... ok
+test_inference_engines_do_not_initialize_components_or_numerics (test_package_structure.PackageStructureTests.test_inference_engines_do_not_initialize_components_or_numerics) ... ok
+test_namespace_imports_do_not_initialize_numerics (test_package_structure.PackageStructureTests.test_namespace_imports_do_not_initialize_numerics) ... ok
+test_public_aliases_preserve_legacy_identity_in_both_import_orders (test_package_structure.PackageStructureTests.test_public_aliases_preserve_legacy_identity_in_both_import_orders) ... ok
+test_dynamic_fit_and_interpolated_prediction (test_public_api.PublicUsageTests.test_dynamic_fit_and_interpolated_prediction) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_existing_online_multi_output_failure_is_not_hidden (test_public_api.PublicUsageTests.test_existing_online_multi_output_failure_is_not_hidden) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_fast_online (test_public_api.PublicUsageTests.test_fast_online) ... ok
+test_grid_validation_and_failed_validation_keep_fitted_results (test_public_api.PublicUsageTests.test_grid_validation_and_failed_validation_keep_fitted_results) ... ok
+test_input_and_snapshot_isolation (test_public_api.PublicUsageTests.test_input_and_snapshot_isolation) ... ok
+test_minimal_static_fit_and_labels (test_public_api.PublicUsageTests.test_minimal_static_fit_and_labels) ... ok
+test_no_silent_switch_from_explicit_offline_or_classification (test_public_api.PublicUsageTests.test_no_silent_switch_from_explicit_offline_or_classification) ... ok
+test_online_fit_can_continue_streaming_and_refit_resets (test_public_api.PublicUsageTests.test_online_fit_can_continue_streaming_and_refit_resets) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_single_sample_and_early_offline_exit_have_labels (test_public_api.PublicUsageTests.test_single_sample_and_early_offline_exit_have_labels) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_static_streaming_birth_reuse_and_optional_results (test_public_api.PublicUsageTests.test_static_streaming_birth_reuse_and_optional_results) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_unspecified_schedule_selects_by_operation (test_public_api.PublicUsageTests.test_unspecified_schedule_selects_by_operation) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_warping_and_multi_output_use_public_surface (test_public_api.PublicUsageTests.test_warping_and_multi_output_use_public_surface) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_known_failure_online_multi (test_public_api_regression.PublicFacadeRegressionTests.test_known_failure_online_multi) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_known_failure_online_warp (test_public_api_regression.PublicFacadeRegressionTests.test_known_failure_online_warp) ... ok
+test_observation_predictions_and_latent_snapshots_copy_legacy_quantities (test_public_api_regression.PublicFacadeRegressionTests.test_observation_predictions_and_latent_snapshots_copy_legacy_quantities) ... ok
+test_offline_dynamic (test_public_api_regression.PublicFacadeRegressionTests.test_offline_dynamic) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_limit (test_public_api_regression.PublicFacadeRegressionTests.test_offline_limit) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_multi (test_public_api_regression.PublicFacadeRegressionTests.test_offline_multi) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_multi_snr (test_public_api_regression.PublicFacadeRegressionTests.test_offline_multi_snr) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_single (test_public_api_regression.PublicFacadeRegressionTests.test_offline_single) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_static (test_public_api_regression.PublicFacadeRegressionTests.test_offline_static) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_offline_warp (test_public_api_regression.PublicFacadeRegressionTests.test_offline_warp) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_online_dynamic (test_public_api_regression.PublicFacadeRegressionTests.test_online_dynamic) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+test_online_fast (test_public_api_regression.PublicFacadeRegressionTests.test_online_fast) ... ok
+test_online_static (test_public_api_regression.PublicFacadeRegressionTests.test_online_static) ... ok
+test_installed_distribution (test_release.ReleaseTests.test_installed_distribution) ... ok
+test_packaged_recipes_round_trip (test_release.ReleaseTests.test_packaged_recipes_round_trip) ... ok
+test_public_examples_and_repeatability (test_release.ReleaseTests.test_public_examples_and_repeatability) ... C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\GPI_HDP.py:244: PendingDeprecationWarning:
+
+the matrix subclass is not the recommended way to represent matrices or deal with linear algebra (see https://docs.scipy.org/doc/numpy/user/numpy-for-matlab-users.html). Please adjust your code to use regular ndarray.
+
+ok
+
+----------------------------------------------------------------------
+Ran 221 tests in 304.008s
+
+OK (skipped=3)

@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=77,<83", "wheel>=0.45,<1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hdpgpc"
+version = "0.3.0"
+description = "Hierarchical Dirichlet Process Gaussian Process Clustering (HDP-GPC)"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+license = "GPL-3.0-only"
+license-files = ["LICENSE", "NOTICE.md", "licenses/*.txt"]
+authors = [
+    { name = "Adrian Pérez Herrero", email = "adrianperezherrero1997@outlook.es" }
+]
+keywords = ["HDP", "Gaussian Process", "Clustering", "Machine Learning"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Mathematics"
+]
+dependencies = [
+    "numpy>=1.26.4,<2",
+    "scipy>=1.14.1,<1.15",
+    "torch>=2.9.0,<2.9.1",
+    "gpytorch>=1.13,<1.14",
+    "linear-operator>=0.5.3,<0.6",
+    "pyro-ppl>=1.8.6,<1.9",
+    "scikit-learn>=1.5.2,<1.6",
+    "torchmetrics>=1.6.0,<1.7",
+    "pandas>=2.2.3,<2.3",
+    "matplotlib>=3.9.2,<3.10",
+    "plotly>=5.24.1,<6",
+    "tqdm>=4.67,<5",
+    "threadpoolctl>=3.5,<4"
+]
+
+[project.urls]
+homepage = "https://github.com/AdrianPerezHerrero/HDP-GPC"
+repository = "https://github.com/AdrianPerezHerrero/HDP-GPC"
+documentation = "https://github.com/AdrianPerezHerrero/HDP-GPC/tree/main/docs"
+issues = "https://github.com/AdrianPerezHerrero/HDP-GPC/issues"
+
+[project.optional-dependencies]
+datasets = ["wfdb>=4.1.2,<4.2", "soundfile>=0.12.1,<0.14"]
+examples = ["jupyterlab>=4,<5", "PyYAML>=6,<7"]
+tutorials = ["nbformat>=5.10,<6", "nbclient>=0.10,<1", "ipykernel>=6.29,<7"]
+yaml = ["PyYAML>=6,<7"]
+test = ["pytest>=8,<9", "packaging>=24,<27"]
+dev = ["pytest>=8,<9", "build>=1.2,<2", "twine>=6,<7", "psutil>=6,<8", "PyYAML>=6,<7"]
+
+[project.scripts]
+hdpgpc-reference = "hdpgpc.examples.reference:main"
+
+[tool.setuptools]
+package-dir = {"" = "hdpgpc"}
+
+[tool.setuptools.packages.find]
+where = ["hdpgpc"]
+include = ["hdpgpc", "hdpgpc.*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"hdpgpc.examples" = ["configurations/*.yaml", "reference_offline.json"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "--strict-markers"
+testpaths = ["tests"]

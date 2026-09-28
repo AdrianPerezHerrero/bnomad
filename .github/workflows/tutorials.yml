@@ -1,0 +1,37 @@
+name: Public tutorials
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tutorials/**'
+      - 'examples/colab_setup.py'
+      - 'examples/tutorial_utils.py'
+      - 'tools/*tutorials.py'
+      - 'hdpgpc/hdpgpc/**'
+      - 'pyproject.toml'
+      - '.github/workflows/tutorials.yml'
+jobs:
+  notebooks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      OPENBLAS_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install CPU package and notebook tools
+        run: |
+          python -m pip install torch==2.9.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install '.[tutorials]'
+      - name: Execute every notebook twice
+        run: python tools/validate_tutorials.py --output tutorials/.validation/ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: executed-tutorials
+          path: tutorials/.validation/ci
+          include-hidden-files: true

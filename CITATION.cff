@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "Please cite this software and record the version or Git commit used in your experiment."
+type: software
+title: "HDP-GPC: Hierarchical Dirichlet Process Gaussian Process Clustering"
+version: 0.3.0
+authors:
+  - family-names: "Pérez Herrero"
+    given-names: "Adrián"
+repository-code: "https://github.com/AdrianPerezHerrero/HDP-GPC"
+url: "https://github.com/AdrianPerezHerrero/HDP-GPC"
+license: GPL-3.0-only
+keywords:
+  - Gaussian processes
+  - hierarchical Dirichlet process
+  - time series clustering

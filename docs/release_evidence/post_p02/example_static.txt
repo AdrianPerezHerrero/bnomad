@@ -1,0 +1,104 @@
+------ HDP Hyperparameters ------
+gamma: 1.0
+transAlpha: 1.0
+startAlpha: 0.1
+kappa: 0.0
+---------------------------------
+Group responsability estimated: [6]
+---Kernel estimated---
+0.386**2 * RBF(length_scale=1.2) + WhiteKernel(noise_level=0.00504)
+Step 1/2- Trying to divide: 0 with beat 3
+---Kernel estimated---
+0.509**2 * RBF(length_scale=1.2) + WhiteKernel(noise_level=0.00502)
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+Sum resp_temp: [6] - Total samples: 6
+Q_em: -203.59, Q_lat: 0.00, Elbo_linear: 0.28, Elbo_LDS: -250.00
+>>> Q_all_loop -------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+ELBO_reduction: 0.0
+>>> Q_all_loop -------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+ELBO_reduction: 0.0
+- Trying to divide: 0 with beat 3
+>>> Prev -------
+Sum resp_temp: [6] - Total samples: 6
+Q_em: -203.59, Q_lat: 0.00, Elbo_linear: 0.28, Elbo_LDS: -250.00
+>>> Post -------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+Chosen to divide: 0 with beat 3
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+First resp: [3 3]
+>>> Q_all_loop -------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -78.50, Elbo_LDS: -125.00
+ELBO_reduction: 0.0
+
+-------End Lower Bound Iteration 0-------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+ELBO + Nonlinear: tensor([-182.8772])
+
+-------Start lower Bound Iteration 1-------
+Group responsability estimated: [3 3]
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+>>> Q_all_loop -------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+ELBO_reduction: 0.0
+>>> Q_all_loop -------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+ELBO_reduction: 0.0
+>>> Prev -------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+>>> Post -------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+Not reallocating, trying to generate new group.
+Step 1/2- Trying to divide: 0 with beat 1
+Sum resp_temp: [3 3 0] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -46.57, Elbo_LDS: -125.00
+>>> Possible emergency reallocation. Prev ----
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+Bad estimation
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+First resp: [3 3]
+
+-------End Lower Bound Iteration 1-------
+Sum resp_temp: [3 3] - Total samples: 6
+Q_em: -28.08, Q_lat: 0.00, Elbo_linear: -29.79, Elbo_LDS: -125.00
+ELBO + Nonlinear: tensor([-182.8772])
+
+-------Start lower Bound Iteration 2-------
+[0 0 1 1 0 1]

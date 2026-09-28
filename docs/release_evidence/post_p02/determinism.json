@@ -1,0 +1,76 @@
+{
+  "all_identical": true,
+  "comparison": "byte-for-byte snapshots, no numerical tolerance",
+  "python_executable": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Scripts\\python.exe",
+  "runs": [
+    {
+      "different_from_baseline": [],
+      "reverse_order": false,
+      "run": 1,
+      "seconds": 33.833,
+      "sha256": {
+        "emission_dynamic.json": "a28b4a9d4e604cc35df032b5fdf40befd5679e5ffebb7eda9bbf94bbd78aa189",
+        "emission_static.json": "fbed649a597894a1b738a70a6a060d38b66b04f80be31aab353a18c81897c7e4",
+        "hdp_messages.json": "107e237785d7f67ab0bcf5e5a20af4ce73f766fd0862001a42d596fce2fa6c63",
+        "known_failure_online_multi.json": "f186f1d185772a3d7368d78d963bfaea3a4161267a7a18e07d165bf8e6dc5724",
+        "known_failure_online_warp.json": "480bff5e51900715b32378e8ee4e52cb347ce4a54010e538b87a309f6321e69f",
+        "offline_dynamic.json": "a99d705355b732c4559ef07ea73ac15ad2d81c35588396cab437ec30fe8cadcb",
+        "offline_multi.json": "3eabfdee75ed3da0690dd46c581faead742afba58c63f6adda0fb805cee5d310",
+        "offline_multi_snr.json": "27bab9d6ae09f238f9b225cb6ad72b6a6a33ce65fdfe466a3b9414a408d16217",
+        "offline_static.json": "6341e1fd117e7963859fc0f1852bbce8ba62884d03021a3419709c1bf4166d8c",
+        "offline_warp.json": "e8b506f460a7857e50a62062118a6c6388cd0cccb943cdb59dfc5d5deb468513",
+        "online_dynamic.json": "180197a4e5682b0ba27125946b2feb87b5c4675a6aac3aa02b6ca0e1eb290713",
+        "online_fast.json": "6dbaa48a946326313bf048fa5566effc07598893c4c5bf3f1680a1df87c31c8e",
+        "online_static.json": "6e7ddb83137d36efefe195654b934393c07b12a6e9445cfd7bbffa218261e79d",
+        "warper_batch.json": "26f297aaaa1084101ee8e9f8ba9437e4fc04ec8fb5144a403c7b8a12381bd6a3",
+        "warper_scalar.json": "527d29759ed3df60b88c326a726c69c2591c2ae9117679ca6ce9cc579eb47b87"
+      }
+    },
+    {
+      "different_from_baseline": [],
+      "reverse_order": true,
+      "run": 2,
+      "seconds": 33.026,
+      "sha256": {
+        "emission_dynamic.json": "a28b4a9d4e604cc35df032b5fdf40befd5679e5ffebb7eda9bbf94bbd78aa189",
+        "emission_static.json": "fbed649a597894a1b738a70a6a060d38b66b04f80be31aab353a18c81897c7e4",
+        "hdp_messages.json": "107e237785d7f67ab0bcf5e5a20af4ce73f766fd0862001a42d596fce2fa6c63",
+        "known_failure_online_multi.json": "f186f1d185772a3d7368d78d963bfaea3a4161267a7a18e07d165bf8e6dc5724",
+        "known_failure_online_warp.json": "480bff5e51900715b32378e8ee4e52cb347ce4a54010e538b87a309f6321e69f",
+        "offline_dynamic.json": "a99d705355b732c4559ef07ea73ac15ad2d81c35588396cab437ec30fe8cadcb",
+        "offline_multi.json": "3eabfdee75ed3da0690dd46c581faead742afba58c63f6adda0fb805cee5d310",
+        "offline_multi_snr.json": "27bab9d6ae09f238f9b225cb6ad72b6a6a33ce65fdfe466a3b9414a408d16217",
+        "offline_static.json": "6341e1fd117e7963859fc0f1852bbce8ba62884d03021a3419709c1bf4166d8c",
+        "offline_warp.json": "e8b506f460a7857e50a62062118a6c6388cd0cccb943cdb59dfc5d5deb468513",
+        "online_dynamic.json": "180197a4e5682b0ba27125946b2feb87b5c4675a6aac3aa02b6ca0e1eb290713",
+        "online_fast.json": "6dbaa48a946326313bf048fa5566effc07598893c4c5bf3f1680a1df87c31c8e",
+        "online_static.json": "6e7ddb83137d36efefe195654b934393c07b12a6e9445cfd7bbffa218261e79d",
+        "warper_batch.json": "26f297aaaa1084101ee8e9f8ba9437e4fc04ec8fb5144a403c7b8a12381bd6a3",
+        "warper_scalar.json": "527d29759ed3df60b88c326a726c69c2591c2ae9117679ca6ce9cc579eb47b87"
+      }
+    },
+    {
+      "different_from_baseline": [],
+      "reverse_order": false,
+      "run": 3,
+      "seconds": 33.073,
+      "sha256": {
+        "emission_dynamic.json": "a28b4a9d4e604cc35df032b5fdf40befd5679e5ffebb7eda9bbf94bbd78aa189",
+        "emission_static.json": "fbed649a597894a1b738a70a6a060d38b66b04f80be31aab353a18c81897c7e4",
+        "hdp_messages.json": "107e237785d7f67ab0bcf5e5a20af4ce73f766fd0862001a42d596fce2fa6c63",
+        "known_failure_online_multi.json": "f186f1d185772a3d7368d78d963bfaea3a4161267a7a18e07d165bf8e6dc5724",
+        "known_failure_online_warp.json": "480bff5e51900715b32378e8ee4e52cb347ce4a54010e538b87a309f6321e69f",
+        "offline_dynamic.json": "a99d705355b732c4559ef07ea73ac15ad2d81c35588396cab437ec30fe8cadcb",
+        "offline_multi.json": "3eabfdee75ed3da0690dd46c581faead742afba58c63f6adda0fb805cee5d310",
+        "offline_multi_snr.json": "27bab9d6ae09f238f9b225cb6ad72b6a6a33ce65fdfe466a3b9414a408d16217",
+        "offline_static.json": "6341e1fd117e7963859fc0f1852bbce8ba62884d03021a3419709c1bf4166d8c",
+        "offline_warp.json": "e8b506f460a7857e50a62062118a6c6388cd0cccb943cdb59dfc5d5deb468513",
+        "online_dynamic.json": "180197a4e5682b0ba27125946b2feb87b5c4675a6aac3aa02b6ca0e1eb290713",
+        "online_fast.json": "6dbaa48a946326313bf048fa5566effc07598893c4c5bf3f1680a1df87c31c8e",
+        "online_static.json": "6e7ddb83137d36efefe195654b934393c07b12a6e9445cfd7bbffa218261e79d",
+        "warper_batch.json": "26f297aaaa1084101ee8e9f8ba9437e4fc04ec8fb5144a403c7b8a12381bd6a3",
+        "warper_scalar.json": "527d29759ed3df60b88c326a726c69c2591c2ae9117679ca6ce9cc579eb47b87"
+      }
+    }
+  ]
+}

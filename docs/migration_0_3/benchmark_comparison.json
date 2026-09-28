@@ -1,0 +1,80 @@
+[
+  {
+    "workload": "offline_dynamic",
+    "baseline_seconds": 2.7486484999972163,
+    "native_seconds": 2.7459090999909677,
+    "runtime_percent": -0.09966352577462922,
+    "baseline_peak_rss": 456605696,
+    "native_peak_rss": 456945664,
+    "rss_difference": 339968,
+    "baseline_python_peak": 552015,
+    "native_python_peak": 560951,
+    "exact_scientific_state": true,
+    "sha256": "8f808dc6cae3d413f1af91c6482025f294e7588e6b50d32ceee1931c99e52385"
+  },
+  {
+    "workload": "offline_multi",
+    "baseline_seconds": 5.177227899999707,
+    "native_seconds": 5.204938200011384,
+    "runtime_percent": 0.5352343096906909,
+    "baseline_peak_rss": 458293248,
+    "native_peak_rss": 455335936,
+    "rss_difference": -2957312,
+    "baseline_python_peak": 609316,
+    "native_python_peak": 610510,
+    "exact_scientific_state": true,
+    "sha256": "8a74b81dad48cfa2b1f8054684c1d49dbf7d41d26c4494781297feaa84af3213"
+  },
+  {
+    "workload": "offline_static",
+    "baseline_seconds": 2.7176925000094343,
+    "native_seconds": 2.754057499987539,
+    "runtime_percent": 1.3380836859938405,
+    "baseline_peak_rss": 457359360,
+    "native_peak_rss": 456073216,
+    "rss_difference": -1286144,
+    "baseline_python_peak": 543325,
+    "native_python_peak": 542584,
+    "exact_scientific_state": true,
+    "sha256": "99ac3ca5c9f7add9f1c13d9ea8152e82f29b1b3748048304f8c8922dae1b718c"
+  },
+  {
+    "workload": "online_dynamic",
+    "baseline_seconds": 2.8386811000091257,
+    "native_seconds": 2.7983768999984022,
+    "runtime_percent": -1.4198213392336956,
+    "baseline_peak_rss": 454762496,
+    "native_peak_rss": 455385088,
+    "rss_difference": 622592,
+    "baseline_python_peak": 536961,
+    "native_python_peak": 544804,
+    "exact_scientific_state": true,
+    "sha256": "2c31209f4462836245dad64f9a328bb5001470c074858f1f88b29803496ca9f8"
+  },
+  {
+    "workload": "warp_batch",
+    "baseline_seconds": 0.19322190000093542,
+    "native_seconds": 0.19036129998858087,
+    "runtime_percent": -1.4804740106275194,
+    "baseline_peak_rss": 457670656,
+    "native_peak_rss": 456650752,
+    "rss_difference": -1019904,
+    "baseline_python_peak": 73268,
+    "native_python_peak": 79132,
+    "exact_scientific_state": true,
+    "sha256": "2707fb2371308804ede190e26f9bb8bccf36e87d4b80c942d0c84e5fbbe3944b"
+  },
+  {
+    "workload": "warp_scalar",
+    "baseline_seconds": 0.15763419998984318,
+    "native_seconds": 0.16339579998748377,
+    "runtime_percent": 3.6550443990021275,
+    "baseline_peak_rss": 457592832,
+    "native_peak_rss": 456986624,
+    "rss_difference": -606208,
+    "baseline_python_peak": 65200,
+    "native_python_peak": 65407,
+    "exact_scientific_state": true,
+    "sha256": "f39f912c9eadc2badca908ae4ce579f679fea4dac865ad4eb7c930a232614f60"
+  }
+]

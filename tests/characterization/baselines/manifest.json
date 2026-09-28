@@ -1,0 +1,58 @@
+{
+  "cases": [
+    "emission_dynamic",
+    "emission_static",
+    "hdp_messages",
+    "known_failure_online_multi",
+    "known_failure_online_warp",
+    "offline_dynamic",
+    "offline_multi",
+    "offline_multi_snr",
+    "offline_static",
+    "offline_warp",
+    "online_dynamic",
+    "online_fast",
+    "online_static",
+    "warper_batch",
+    "warper_scalar"
+  ],
+  "comparison": {
+    "discrete": "exact",
+    "float_atol": 1e-09,
+    "float_rtol": 1e-07
+  },
+  "environment": {
+    "device": "cpu",
+    "dtype": "torch.float64",
+    "packages": {
+      "gpytorch": "1.13",
+      "linear-operator": "0.5.3",
+      "numpy": "1.26.4",
+      "pandas": "2.2.3",
+      "pyro-ppl": "1.8.6",
+      "scikit-learn": "1.5.2",
+      "scipy": "1.14.1",
+      "torch": "2.9.0",
+      "torchmetrics": "1.6.0"
+    },
+    "platform": "win32",
+    "python": "3.11.0 | packaged by Anaconda, Inc. | (main, Mar  1 2023, 18:18:21) [MSC v.1916 64 bit (AMD64)]",
+    "seed": 42,
+    "source_sha256": {
+      "GPI.py": "794e3e95608758e1f80dc0824734a88c503cd27915cec9d435cf441b2c7da009",
+      "GPI_HDP.py": "5e37e66382086a24b9c6d83d4663ca2d462fecffb64314ca263dce64b3c45354",
+      "GPI_model.py": "99e7c13173e65287867687587d2c978d3a66d471ea1c8b2e4102d41808cffd7b",
+      "GPI_models_pytorch.py": "0ec615080ddd69edddd2285c2bf5953a70a9ca2301708f5ca4fd56faf3548777",
+      "GPI_test.py": "0ff2537e7ae3a91ea8f29d8b6de5b4ce8c33e88a406b3bb58c15fb29553b5b00",
+      "OptimizerRhoOmega.py": "5b33aa3da2dc896a25eaaeb7d4aea5cc26c29f81cd2ab28090e08409b2d65d27",
+      "amtgp_warping_system.py": "24924d35ef382066f523489fd3f523abae2850ca2ff3c1ec006c22ebc34bc6a4",
+      "extract_data.py": "36e748c677585faca5d95984324040669981d447fedf762176635a15f1e0b8ce",
+      "get_data.py": "bab9e5866420610ff8a3ac057b08316e53e2e67e8ada3cc0bab349f088ce1731",
+      "util_plots.py": "68753a96baccb2f73301ca51464f9668bb72f7bfd72f3e47ad8265ecafdc5cf5",
+      "warping_system.py": "11ed7b54a137ae611b87f2113d6f1218d28370d04e95ac014b09e46203697d90"
+    },
+    "torch_num_threads": 1
+  },
+  "reference_commit": "615109a9e474d37626abaff6c51f1c159b26124a",
+  "schema_version": 1
+}

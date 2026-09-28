@@ -1,0 +1,206 @@
+{
+  "workload": "warp_batch",
+  "seconds": [
+    0.19497679999039974,
+    0.19322190000093542,
+    0.1896085999906063
+  ],
+  "median_seconds": 0.19322190000093542,
+  "state_sha256": "2707fb2371308804ede190e26f9bb8bccf36e87d4b80c942d0c84e5fbbe3944b",
+  "timing_states_identical": true,
+  "memory": {
+    "rss_before_bytes": 457650176,
+    "rss_sampled_peak_bytes": 457670656,
+    "rss_sampled_growth_bytes": 20480,
+    "sample_interval_ms": 5,
+    "python_traced_peak_bytes": 73268,
+    "python_traced_retained_bytes": 65244,
+    "retained_allocation_lines": [
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\hdpgpc\\hdpgpc\\alignment\\_amtgp.py:707",
+        "retained_bytes": 8144,
+        "blocks": 251
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\hdpgpc\\hdpgpc\\alignment\\_amtgp.py:706",
+        "retained_bytes": 8144,
+        "blocks": 251
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\hdpgpc\\hdpgpc\\alignment\\_amtgp.py:705",
+        "retained_bytes": 8144,
+        "blocks": 251
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\hdpgpc\\hdpgpc\\alignment\\_amtgp.py:704",
+        "retained_bytes": 8144,
+        "blocks": 251
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\hdpgpc\\hdpgpc\\alignment\\_grids.py:33",
+        "retained_bytes": 5783,
+        "blocks": 89
+      },
+      {
+        "location": "C:\\Users\\Adrian\\miniconda3\\envs\\hdpgpc_env\\Lib\\traceback.py:518",
+        "retained_bytes": 4124,
+        "blocks": 20
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\_dynamo\\eval_frame.py:1044",
+        "retained_bytes": 3360,
+        "blocks": 28
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\_ops.py:1255",
+        "retained_bytes": 3245,
+        "blocks": 55
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\_compile.py:53",
+        "retained_bytes": 3240,
+        "blocks": 27
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\autograd\\graph.py:841",
+        "retained_bytes": 3080,
+        "blocks": 26
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\utils\\_foreach_utils.py:16",
+        "retained_bytes": 560,
+        "blocks": 10
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\utils\\_foreach_utils.py:11",
+        "retained_bytes": 560,
+        "blocks": 10
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\adam.py:233",
+        "retained_bytes": 560,
+        "blocks": 10
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\adam.py:232",
+        "retained_bytes": 560,
+        "blocks": 10
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\adam.py:231",
+        "retained_bytes": 560,
+        "blocks": 10
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\adam.py:230",
+        "retained_bytes": 560,
+        "blocks": 10
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\adam.py:229",
+        "retained_bytes": 560,
+        "blocks": 10
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\adam.py:234",
+        "retained_bytes": 504,
+        "blocks": 9
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\adam.py:247",
+        "retained_bytes": 464,
+        "blocks": 5
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\hdpgpc\\hdpgpc\\alignment\\_amtgp.py:727",
+        "retained_bytes": 456,
+        "blocks": 6
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\adam.py:953",
+        "retained_bytes": 296,
+        "blocks": 3
+      },
+      {
+        "location": "C:\\Users\\Adrian\\miniconda3\\envs\\hdpgpc_env\\Lib\\traceback.py:557",
+        "retained_bytes": 256,
+        "blocks": 2
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\hdpgpc\\hdpgpc\\alignment\\_amtgp.py:681",
+        "retained_bytes": 224,
+        "blocks": 4
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\optimizer.py:150",
+        "retained_bytes": 224,
+        "blocks": 2
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\benchmarks\\performance_workloads.py:29",
+        "retained_bytes": 208,
+        "blocks": 2
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\xpu\\random.py:108",
+        "retained_bytes": 200,
+        "blocks": 2
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\hdpgpc\\hdpgpc\\alignment\\_amtgp.py:317",
+        "retained_bytes": 160,
+        "blocks": 2
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\cuda\\random.py:126",
+        "retained_bytes": 152,
+        "blocks": 1
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc\\hdpgpc\\hdpgpc\\alignment\\_amtgp.py:168",
+        "retained_bytes": 132,
+        "blocks": 2
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\optim\\adam.py:174",
+        "retained_bytes": 132,
+        "blocks": 2
+      }
+    ],
+    "state_sha256": "2707fb2371308804ede190e26f9bb8bccf36e87d4b80c942d0c84e5fbbe3944b",
+    "rss_state_sha256": "2707fb2371308804ede190e26f9bb8bccf36e87d4b80c942d0c84e5fbbe3944b"
+  },
+  "environment": {
+    "python": "3.11.14 | packaged by conda-forge | (main, Oct 13 2025, 14:00:26) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "win32",
+    "packages": {
+      "numpy": "1.26.4",
+      "scipy": "1.14.1",
+      "torch": "2.9.0",
+      "gpytorch": "1.13",
+      "pyro-ppl": "1.8.6",
+      "scikit-learn": "1.5.2",
+      "torchmetrics": "1.6.3",
+      "linear-operator": "0.5.3",
+      "pandas": "2.2.3"
+    },
+    "seed": 42,
+    "dtype": "torch.float64",
+    "device": "cpu",
+    "torch_num_threads": 1,
+    "source_sha256": {
+      "__init__.py": "aed913a383707eb910227ce53fe543293a0f6db73fb46205afac8ca1a348061c",
+      "amtgp_warping_system.py": "fe9e453dabceba4eb2acd01f365e60be7f34c72ee52403de8426c235d3df9ab3",
+      "extract_data.py": "36e748c677585faca5d95984324040669981d447fedf762176635a15f1e0b8ce",
+      "get_data.py": "bab9e5866420610ff8a3ac057b08316e53e2e67e8ada3cc0bab349f088ce1731",
+      "GPI.py": "72f6c4ad44856066afbd640bc744b58d2f75029cc1b761c699d33e77f0ccd028",
+      "GPI_HDP.py": "fa983a8331777094a3a484da9132936fa69740da88b767f637370fe3736c04bf",
+      "GPI_model.py": "51dac3b485be2a59f8f261e462da22226e39f25c57e159234c836f039c349491",
+      "GPI_models_pytorch.py": "0ec615080ddd69edddd2285c2bf5953a70a9ca2301708f5ca4fd56faf3548777",
+      "GPI_test.py": "0ff2537e7ae3a91ea8f29d8b6de5b4ce8c33e88a406b3bb58c15fb29553b5b00",
+      "OptimizerRhoOmega.py": "98342ffbf6d2cbae705020faa44b1c9507f458a5532786799f6900c93c82feab",
+      "util_plots.py": "68753a96baccb2f73301ca51464f9668bb72f7bfd72f3e47ad8265ecafdc5cf5",
+      "warping_system.py": "11ed7b54a137ae611b87f2113d6f1218d28370d04e95ac014b09e46203697d90"
+    }
+  }
+}

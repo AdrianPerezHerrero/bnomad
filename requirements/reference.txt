@@ -1,0 +1,14 @@
+# Scientific reference stack. Not a complete transitive lock; archive pip freeze.
+numpy==1.26.4
+scipy==1.14.1
+torch==2.9.0
+gpytorch==1.13
+linear-operator==0.5.3
+pyro-ppl==1.8.6
+scikit-learn==1.5.2
+torchmetrics==1.6.0
+pandas==2.2.3
+matplotlib==3.9.2
+plotly==5.24.1
+tqdm==4.67.0
+threadpoolctl==3.5.0

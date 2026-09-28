@@ -1,0 +1,19 @@
+Main model chosen: 1
+---Kernel estimated---
+0.386**2 * RBF(length_scale=1.2) + WhiteKernel(noise_level=0.00504)
+Sum resp_temp: [1] - Total samples: 1
+Q_em: -21.09, Q_lat: 0.00, Elbo_linear: -7.87, Elbo_LDS: -100.00
+0 False
+Main model chosen: 1
+Sum resp_temp: [2] - Total samples: 2
+Q_em: -25.74, Q_lat: -9.70, Elbo_linear: -7.92, Elbo_LDS: -88.39
+0 False
+Main model chosen: 1
+Sum resp_temp: [3] - Total samples: 3
+Q_em: -46.26, Q_lat: -20.18, Elbo_linear: -7.96, Elbo_LDS: -97.09
+0 False
+Main model chosen: 1
+Sum resp_temp: [4] - Total samples: 4
+Q_em: -51.09, Q_lat: -23.87, Elbo_linear: -7.98, Elbo_LDS: -121.70
+0 False
+[0 0 0 0]

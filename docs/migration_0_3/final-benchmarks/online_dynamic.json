@@ -1,0 +1,195 @@
+{
+  "workload": "online_dynamic",
+  "seconds": [
+    2.8614966000022832,
+    2.7983768999984022,
+    2.752760900009889
+  ],
+  "median_seconds": 2.7983768999984022,
+  "state_sha256": "2c31209f4462836245dad64f9a328bb5001470c074858f1f88b29803496ca9f8",
+  "timing_states_identical": true,
+  "memory": {
+    "rss_before_bytes": 455262208,
+    "rss_sampled_peak_bytes": 455385088,
+    "rss_sampled_growth_bytes": 122880,
+    "sample_interval_ms": 5,
+    "python_traced_peak_bytes": 544804,
+    "python_traced_retained_bytes": 499348,
+    "retained_allocation_lines": [
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\autograd\\function.py:581",
+        "retained_bytes": 152460,
+        "blocks": 2143
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\linear_operator\\operators\\_linear_operator.py:163",
+        "retained_bytes": 27720,
+        "blocks": 495
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc-0.3.0\\hdpgpc\\hdpgpc\\emissions\\_gaussian_process.py:776",
+        "retained_bytes": 19920,
+        "blocks": 18
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\functional.py:108",
+        "retained_bytes": 13944,
+        "blocks": 249
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\_refs\\__init__.py:410",
+        "retained_bytes": 13944,
+        "blocks": 249
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\_refs\\__init__.py:409",
+        "retained_bytes": 13888,
+        "blocks": 248
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\_refs\\__init__.py:390",
+        "retained_bytes": 13888,
+        "blocks": 248
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\linear_operator\\operators\\added_diag_linear_operator.py:43",
+        "retained_bytes": 13832,
+        "blocks": 247
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\numpy\\core\\fromnumeric.py:59",
+        "retained_bytes": 12662,
+        "blocks": 209
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\linear_operator\\operators\\sum_linear_operator.py:25",
+        "retained_bytes": 10568,
+        "blocks": 177
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc-0.3.0\\hdpgpc\\hdpgpc\\model\\_conversion.py:28",
+        "retained_bytes": 9440,
+        "blocks": 79
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\_ops.py:1255",
+        "retained_bytes": 7667,
+        "blocks": 130
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc-0.3.0\\hdpgpc\\hdpgpc\\emissions\\_gaussian_process.py:92",
+        "retained_bytes": 7575,
+        "blocks": 117
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\gpytorch\\lazy\\lazy_tensor.py:46",
+        "retained_bytes": 7264,
+        "blocks": 72
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\nn\\modules\\module.py:2295",
+        "retained_bytes": 5952,
+        "blocks": 76
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\autograd\\graph.py:841",
+        "retained_bytes": 5778,
+        "blocks": 107
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\nn\\modules\\module.py:2791",
+        "retained_bytes": 4592,
+        "blocks": 82
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\nn\\modules\\module.py:505",
+        "retained_bytes": 4320,
+        "blocks": 20
+      },
+      {
+        "location": "C:\\Users\\Adrian\\miniconda3\\envs\\hdpgpc_env\\Lib\\traceback.py:518",
+        "retained_bytes": 4160,
+        "blocks": 20
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc-0.3.0\\hdpgpc\\hdpgpc\\inference\\_messages.py:63",
+        "retained_bytes": 3953,
+        "blocks": 59
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\numpy\\core\\fromnumeric.py:86",
+        "retained_bytes": 3432,
+        "blocks": 66
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\gpytorch\\kernels\\kernel.py:41",
+        "retained_bytes": 3304,
+        "blocks": 56
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\sklearn\\gaussian_process\\kernels.py:41",
+        "retained_bytes": 3300,
+        "blocks": 60
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc-0.3.0\\hdpgpc\\hdpgpc\\hdp\\_variational.py:41",
+        "retained_bytes": 3264,
+        "blocks": 1
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc-0.3.0\\hdpgpc\\hdpgpc\\emissions\\_gaussian_process.py:64",
+        "retained_bytes": 3168,
+        "blocks": 4
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\gpytorch\\kernels\\kernel.py:42",
+        "retained_bytes": 3127,
+        "blocks": 53
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\sklearn\\base.py:125",
+        "retained_bytes": 2992,
+        "blocks": 26
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc-0.3.0\\hdpgpc\\hdpgpc\\emissions\\_prior.py:487",
+        "retained_bytes": 2980,
+        "blocks": 40
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\npdc-0.3.0\\hdpgpc\\hdpgpc\\model\\_clusters.py:166",
+        "retained_bytes": 2564,
+        "blocks": 38
+      },
+      {
+        "location": "C:\\Users\\Adrian\\Projects\\Thesis\\gpexplore\\.release-current\\Lib\\site-packages\\torch\\nn\\modules\\module.py:517",
+        "retained_bytes": 2560,
+        "blocks": 20
+      }
+    ],
+    "state_sha256": "2c31209f4462836245dad64f9a328bb5001470c074858f1f88b29803496ca9f8",
+    "rss_state_sha256": "2c31209f4462836245dad64f9a328bb5001470c074858f1f88b29803496ca9f8"
+  },
+  "environment": {
+    "python": "3.11.14 | packaged by conda-forge | (main, Oct 13 2025, 14:00:26) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "win32",
+    "packages": {
+      "numpy": "1.26.4",
+      "scipy": "1.14.1",
+      "torch": "2.9.0",
+      "gpytorch": "1.13",
+      "pyro-ppl": "1.8.6",
+      "scikit-learn": "1.5.2",
+      "torchmetrics": "1.6.3",
+      "linear-operator": "0.5.3",
+      "pandas": "2.2.3"
+    },
+    "seed": 42,
+    "dtype": "torch.float64",
+    "device": "cpu",
+    "torch_num_threads": 1,
+    "source_sha256": {
+      "__init__.py": "60527dd406b72c0f5dd8add85a9b2f87ed3b24314f02bda9ed2883b6129c57d5"
+    }
+  }
+}

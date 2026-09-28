@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv*/
+build/
+dist/
+.release-verification/
+.hdpgpc-tutorial-env/
+.hdpgpc-colab-bundle/
+.tutorial-data/
+tutorial-results/
+tutorials/.validation/
+tutorials/bundles/
+.ipython-worker/

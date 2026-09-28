@@ -1,0 +1,18 @@
+include LICENSE NOTICE.md CITATION.cff CHANGELOG.md
+recursive-include licenses *.txt
+recursive-include docs *.md
+recursive-include docs/release_evidence *.json *.txt
+recursive-include examples *.py *.yaml *.md
+recursive-include tutorials *.ipynb *.md *.json
+prune tutorials/.validation
+recursive-include requirements *.txt
+recursive-include tests *.py *.json *.gz
+recursive-include tools *.py
+recursive-include docs/migration_0_3 *.md *.json
+prune docs/migration_0_3/baseline-notebooks
+prune docs/migration_0_3/final-notebooks
+include benchmarks/performance_workloads.py
+include benchmarks/profile_performance.py
+global-exclude __pycache__ *.py[cod]
+prune hdpgpc/data
+prune hdpgpc/results

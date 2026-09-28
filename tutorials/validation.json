@@ -1,0 +1,382 @@
+{
+  "platform_scope": "Local CPU notebook execution; hosted Colab not exercised",
+  "public_import_audit": true,
+  "results": [
+    {
+      "notebook": "00_quickstart.ipynb",
+      "notebook_sha256": "163c89343612ebea3e674fd3930d313ed0f992a563962402dd5d9bc787b8a461",
+      "code_cells": 8,
+      "runs": [
+        {
+          "seconds": 8.527073499994003,
+          "inference_seconds": 4.668177200001082,
+          "scientific_sha256": "1632cab656411ac27b6531e3a6ece67d34ba53c837e66804bba503c6f9cef0fc",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        },
+        {
+          "seconds": 8.457176700001583,
+          "inference_seconds": 4.646400099998573,
+          "scientific_sha256": "1632cab656411ac27b6531e3a6ece67d34ba53c837e66804bba503c6f9cef0fc",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        }
+      ],
+      "exact_repeats": true,
+      "exceeds_five_minutes": false
+    },
+    {
+      "notebook": "01_static_clustering.ipynb",
+      "notebook_sha256": "3a1fbb1ace7565e1c428f7af0c71570dadb2f87ad851dfa1916b772fa3d1ef31",
+      "code_cells": 8,
+      "runs": [
+        {
+          "seconds": 8.504929600007017,
+          "inference_seconds": 4.6270408000127645,
+          "scientific_sha256": "1632cab656411ac27b6531e3a6ece67d34ba53c837e66804bba503c6f9cef0fc",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        },
+        {
+          "seconds": 8.452445799994166,
+          "inference_seconds": 4.624350099998992,
+          "scientific_sha256": "1632cab656411ac27b6531e3a6ece67d34ba53c837e66804bba503c6f9cef0fc",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        }
+      ],
+      "exact_repeats": true,
+      "exceeds_five_minutes": false
+    },
+    {
+      "notebook": "02_dynamic_clustering.ipynb",
+      "notebook_sha256": "b8ddc81f66bbbb38388b4af4545b5b4f4ce0fd5f462478f02e738ee22caa672b",
+      "code_cells": 8,
+      "runs": [
+        {
+          "seconds": 8.523798600013833,
+          "inference_seconds": 4.674033799994504,
+          "scientific_sha256": "f91abc4899e79c23e44d836d7fce25a7040d0945b5266ddaa29b1aa7bbb8270f",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        },
+        {
+          "seconds": 8.588730200004647,
+          "inference_seconds": 4.7538614999939455,
+          "scientific_sha256": "f91abc4899e79c23e44d836d7fce25a7040d0945b5266ddaa29b1aa7bbb8270f",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        }
+      ],
+      "exact_repeats": true,
+      "exceeds_five_minutes": false
+    },
+    {
+      "notebook": "03_online_inference.ipynb",
+      "notebook_sha256": "dede72da4e276cf2398398c0bb41d875fd57747e30df4a69da3aceba159d3e9f",
+      "code_cells": 8,
+      "runs": [
+        {
+          "seconds": 7.14052790000278,
+          "inference_seconds": 3.3309611000004224,
+          "scientific_sha256": "c4439cd32290aac3fcb98a1e1e27f9ecf77ae996535846edef6df0680c71519a",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        },
+        {
+          "seconds": 7.387121799998567,
+          "inference_seconds": 3.5606279999919934,
+          "scientific_sha256": "c4439cd32290aac3fcb98a1e1e27f9ecf77ae996535846edef6df0680c71519a",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        }
+      ],
+      "exact_repeats": true,
+      "exceeds_five_minutes": false
+    },
+    {
+      "notebook": "04_offline_inference.ipynb",
+      "notebook_sha256": "8de36ba0e967b933b83d2bc6f5aefa4ff546224b6e14366bea517d76aaafef28",
+      "code_cells": 8,
+      "runs": [
+        {
+          "seconds": 8.908077699990827,
+          "inference_seconds": 5.007781499996781,
+          "scientific_sha256": "f91abc4899e79c23e44d836d7fce25a7040d0945b5266ddaa29b1aa7bbb8270f",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        },
+        {
+          "seconds": 8.941705800010823,
+          "inference_seconds": 5.029367800001637,
+          "scientific_sha256": "f91abc4899e79c23e44d836d7fce25a7040d0945b5266ddaa29b1aa7bbb8270f",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        }
+      ],
+      "exact_repeats": true,
+      "exceeds_five_minutes": false
+    },
+    {
+      "notebook": "05_temporal_warping.ipynb",
+      "notebook_sha256": "6ef4c6b99186eb86752f3b53befb7b2e4049a5179553e9cc1c7f1a85c4159a5e",
+      "code_cells": 9,
+      "runs": [
+        {
+          "seconds": 10.083109699990018,
+          "inference_seconds": 5.63755269999092,
+          "scientific_sha256": "eaaf425aae62c53917b3f0fa256b361e9811b8a3dcb9488d8cd11055cb3b7a85",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        },
+        {
+          "seconds": 9.169571000005817,
+          "inference_seconds": 4.8545488999952795,
+          "scientific_sha256": "eaaf425aae62c53917b3f0fa256b361e9811b8a3dcb9488d8cd11055cb3b7a85",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        }
+      ],
+      "exact_repeats": true,
+      "exceeds_five_minutes": false
+    },
+    {
+      "notebook": "06_multioutput.ipynb",
+      "notebook_sha256": "d6db0f929520b701a5b48b56b095a2ad1ec15d1f3a5e07b575ce02d3c40ef294",
+      "code_cells": 9,
+      "runs": [
+        {
+          "seconds": 19.934027199997217,
+          "inference_seconds": 7.3927687000104925,
+          "scientific_sha256": "94bacc27f5acebf94015cd637a965cc9b3f1250ccf2424ee896f9a8de44d19d7",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        },
+        {
+          "seconds": 25.911412499990547,
+          "inference_seconds": 11.523712899987004,
+          "scientific_sha256": "94bacc27f5acebf94015cd637a965cc9b3f1250ccf2424ee896f9a8de44d19d7",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        }
+      ],
+      "exact_repeats": true,
+      "exceeds_five_minutes": false
+    },
+    {
+      "notebook": "07_fast_online.ipynb",
+      "notebook_sha256": "4bce0181cb3cb66ab42ce3ec7bf179a54680bdbd05a589fd0b4b3e79a3bf394a",
+      "code_cells": 9,
+      "runs": [
+        {
+          "seconds": 11.576259800000116,
+          "inference_seconds": 5.169458300006227,
+          "scientific_sha256": "fa0070ba84d28c47f92fda6756b6588ce7af7eee3213bf0705934b015b68b339",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        },
+        {
+          "seconds": 9.305749100007233,
+          "inference_seconds": 3.7059578000043985,
+          "scientific_sha256": "fa0070ba84d28c47f92fda6756b6588ce7af7eee3213bf0705934b015b68b339",
+          "environment": {
+            "python": "3.11.0",
+            "platform": "Windows-10-10.0.26200-SP0",
+            "versions": {
+              "hdpgpc": "0.2.0",
+              "numpy": "1.26.4",
+              "scipy": "1.14.1",
+              "torch": "2.9.0",
+              "gpytorch": "1.13",
+              "linear-operator": "0.5.3",
+              "pyro-ppl": "1.8.6",
+              "scikit-learn": "1.5.2"
+            }
+          }
+        }
+      ],
+      "exact_repeats": true,
+      "exceeds_five_minutes": false
+    }
+  ]
+}

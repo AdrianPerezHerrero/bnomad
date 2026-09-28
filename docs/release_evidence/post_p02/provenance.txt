@@ -1,0 +1,2 @@
+3.11.0 | packaged by Anaconda, Inc. | (main, Mar  1 2023, 18:18:21) [MSC v.1916 64 bit (AMD64)]
+C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current\Lib\site-packages\hdpgpc\__init__.py

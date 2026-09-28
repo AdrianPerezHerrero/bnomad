@@ -1,0 +1,5 @@
+home = C:\Users\Adrian\miniconda3\envs\hdpgpc_env
+include-system-site-packages = false
+version = 3.11.0
+executable = C:\Users\Adrian\miniconda3\envs\hdpgpc_env\python.exe
+command = C:\Users\Adrian\miniconda3\envs\hdpgpc_env\python.exe -m venv C:\Users\Adrian\Projects\Thesis\gpexplore\.release-current

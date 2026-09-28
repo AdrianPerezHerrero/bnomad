@@ -1,0 +1,8 @@
+{
+  "production_python_files_unchanged": 52,
+  "wheel_package_files_identical_to_prior_install": 59,
+  "source_archive_notebooks": 8,
+  "large_data_excluded_from_package": true,
+  "original_characterization_tests_passed": 15,
+  "characterization_seconds": 31.839
+}

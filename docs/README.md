@@ -1,0 +1,21 @@
+# Documentation
+
+- [Installation and supported versions](installation.md)
+- [Runnable tutorials](tutorials.md)
+- [Real-record Colab notebook suite](../tutorials/README.md)
+- [Public API reference](public_api.md)
+- [Typed configuration](configuration.md)
+- [Reproducibility and testing](reproducibility.md)
+- [Migration from the research API](migration.md)
+- [Architecture](architecture.md)
+- [Actual implementation specification](implementation_specification.md)
+- [Characterization tests](characterization_tests.md)
+- [Performance continuation](performance_continuation.md)
+- [Release checklist](release_checklist.md)
+- [Current 0.3 migration and validation evidence](migration_0_3/report.md)
+- [Resuming this migration](migration_0_3/checkpoint.md)
+- [Historical 0.2 clean-install evidence](release_validation.md)
+
+See the root `CITATION.cff` for software citation, `LICENSE` for GPL-3.0-only,
+`NOTICE.md` for attribution and `CHANGELOG.md` for release history. No paper DOI
+is invented or implied by the software citation.
