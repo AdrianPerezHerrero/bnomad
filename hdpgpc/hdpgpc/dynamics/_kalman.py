@@ -2,7 +2,6 @@
 
 import numpy as np
 import torch
-from tqdm import trange
 
 
 def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma, warped_mean=None, x_train=None,
@@ -110,7 +109,7 @@ def smooth_sequence(backend, A_prior, Gamma_prior, means, covars):
 
     """
     T = len(means)
-    for t in trange(T - 2, -1, -1, desc="Backward_pass", disable=backend.disable):
+    for t in range(T - 2, -1, -1):
         A_prior_ = A_prior[t] if t < len(A_prior) else A_prior[-1]
         Gamma_prior_ = Gamma_prior[t] if t < len(Gamma_prior) else Gamma_prior[-1]
         P_t = torch.linalg.multi_dot([A_prior_, covars[t], A_prior_.T]) + Gamma_prior_

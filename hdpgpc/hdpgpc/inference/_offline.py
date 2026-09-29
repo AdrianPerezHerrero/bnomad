@@ -455,7 +455,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
             else:
                 _log(self, "Bad estimation")
-                empty_estimation = True
+                empty_estimation = False
     # f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
     q_sim_s = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
     q_sim_s = (q_sim_s - torch.max(q_sim_s)) / (torch.max(q_sim_s) - torch.min(q_sim_s))

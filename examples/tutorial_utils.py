@@ -74,25 +74,72 @@ def plot_input(raw, grid, values):
     return fig
 
 
-def plot_results(model, values):
-    """Current observation distributions; shading uses the returned covariance."""
+def plot_results(model, values, grid=None, title='Clustering results'):
+    """Plot hard assignments and cluster fits with their included observations.
+
+    Each cluster gets one row of panels, one per output. Included observations
+    are drawn with low opacity so dense clusters remain readable; the fitted
+    observation mean and its two-standard-deviation band are drawn on top.
+    """
+    values = np.asarray(values)
+    if values.ndim != 3:
+        raise ValueError('values must have shape (observations, points, outputs)')
+    assignments = np.asarray(model.labels_).reshape(-1)
+    if len(assignments) != len(values):
+        raise ValueError('model labels and values must contain the same observations')
+
+    cluster_ids = np.asarray(model.cluster_ids_).reshape(-1)
     count = values.shape[2]
-    fig, axes = plt.subplots(1, count + 1, figsize=(5 * (count + 1), 3.5), constrained_layout=True)
-    axes[0].step(np.arange(len(values)), model.labels_, where='mid', marker='o')
-    axes[0].set(xlabel='Observation in subset', ylabel='Cluster index', title='Current hard assignments')
-    axes[0].set_yticks(model.cluster_ids_)
-    for cluster in model.cluster_ids_:
-        prediction = model.predictive(int(cluster))
+    colors = plt.get_cmap('tab20')
+    fig = plt.figure(
+        figsize=(5.0 * count, max(4.0, 2.35 * (len(cluster_ids) + 1))),
+        constrained_layout=True,
+    )
+    layout = fig.add_gridspec(
+        len(cluster_ids) + 1,
+        count,
+        height_ratios=[0.6] + [1.0] * len(cluster_ids),
+    )
+
+    assignment_axis = fig.add_subplot(layout[0, :])
+    observation_index = np.arange(len(assignments))
+    for position, cluster in enumerate(cluster_ids):
+        color = colors(position % colors.N)
+        member = assignments == cluster
+        assignment_axis.scatter(
+            observation_index[member], assignments[member],
+            s=8, color=color, label=f'Cluster {cluster}', linewidths=0,
+        )
+    assignment_axis.set(
+        xlabel='Observation index', ylabel='Cluster',
+        title='Hard assignments', xlim=(-1, max(len(assignments), 1)),
+    )
+    assignment_axis.set_yticks(cluster_ids)
+    assignment_axis.legend(frameon=False, ncol=min(len(cluster_ids), 8), loc='upper right')
+
+    for position, cluster in enumerate(cluster_ids):
+        color = colors(position % colors.N)
+        member = assignments == cluster
+        prediction = model.predictive(int(cluster), grid=grid)
+        x = prediction.grid.reshape(-1)
+        if len(x) != values.shape[1]:
+            raise ValueError('plot grid and observation point count must match')
         for output in range(count):
-            axis = axes[output + 1]
-            x = prediction.grid.ravel()
+            axis = fig.add_subplot(layout[position + 1, output])
+            for sample in values[member, :, output]:
+                axis.plot(x, sample, color=color, alpha=0.055, linewidth=0.55)
             mean = prediction.mean[:, output]
-            # Clipping protects plotting only; never alter returned covariances.
+            # Clip only for display; preserve the predictive covariance itself.
             sd = np.sqrt(np.maximum(np.diag(prediction.covariance[output]), 0))
-            line, = axis.plot(x, mean, label=f'Cluster {cluster}')
-            axis.fill_between(x, mean - 2 * sd, mean + 2 * sd, color=line.get_color(), alpha=.18)
-            axis.set(xlabel='Rescaled coordinate', ylabel='Scaled amplitude', title=f'Channel {output}: representatives')
-            axis.legend(frameon=False)
+            axis.fill_between(x, mean - 2 * sd, mean + 2 * sd, color=color, alpha=0.2)
+            axis.plot(x, mean, color=color, linewidth=1.8)
+            axis.set(
+                xlabel='Rescaled coordinate', ylabel='Scaled amplitude',
+                title=f'Cluster {cluster}: output {output} ({int(member.sum())} samples)',
+            )
+
+    if title:
+        fig.suptitle(title)
     return fig
 
 

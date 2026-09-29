@@ -14,6 +14,6 @@ tutorials/.validation/
 tutorials/bundles/
 .ipython-worker/
 agents/
-
+.bnomad/
 docs/migration_0_3/baseline-notebooks/
 docs/migration_0_3/final-notebooks/
