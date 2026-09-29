@@ -11,12 +11,34 @@ from urllib.request import urlopen
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+from matplotlib.colors import to_rgba
+from matplotlib.lines import Line2D
 
 DATA_REVISION = '615109a9e474d37626abaff6c51f1c159b26124a'
 DATA_HASHES = {
     '100.npy': 'cf3c01ac96a1ae9683122a4af57f71c44d3e89eec090ed9d53c502b8ff466b89',
     '100_labels.npy': 'ea7161896ee6a6ce762bda26ae7aa9e9a4debf9543ced3f4948e18f0c3df9917',
 }
+
+# MIT-BIH annotation colours used by the original diagnostic plots.
+ANNOTATION_COLORS = {
+    0: 'k', 1: 'b', 2: 'r', 3: 'g', 4: 'c', 5: 'purple',
+    6: 'darkgreen', 7: 'maroon', 8: 'orange', 9: 'lightgreen',
+    10: 'magenta', 11: 'lightblue', 12: 'darkblue', 13: 'red',
+    14: 'red', 15: 'goldenrod', 16: 'red',
+}
+ANNOTATION_CODES = {
+    'N': 1, 'V': 2, 'R': 3, '!': 4, 'F': 5, 'L': 6,
+    'A': 7, '/': 8, 'Q': 9, 'f': 10, 'E': 11, 'J': 12,
+    'j': 13, 'e': 14, 'a': 15, 'S': 16,
+}
+
+
+def _annotation_color(label):
+    if isinstance(label, bytes):
+        label = label.decode('utf-8')
+    return ANNOTATION_COLORS[ANNOTATION_CODES.get(str(label), 0)]
 
 
 def load_record(record_name="100"):
@@ -141,6 +163,192 @@ def plot_results(model, values, grid=None, title='Clustering results'):
     if title:
         fig.suptitle(title)
     return fig
+
+
+def plot_record_results(model, values, annotations, *, grid=None, record='', metrics=None,
+                        channels=None, warped=False):
+    """Plot the full-record overview and annotated cluster gallery.
+
+    A separate figure is returned for each output channel. Transition entries
+    are row-normalized counts of consecutive hard assignments. The annotation
+    colour of every sample is independent of its assigned cluster.
+    """
+    values = np.asarray(values)
+    if values.ndim != 3 or not all(values.shape):
+        raise ValueError('values must have shape (observations, points, outputs)')
+    assignments = np.asarray(model.labels_).reshape(-1)
+    if len(assignments) != len(values):
+        raise ValueError('model labels and values must contain the same observations')
+    cluster_ids = np.asarray(model.cluster_ids_).reshape(-1)
+    if not len(cluster_ids):
+        raise ValueError('model must contain at least one assigned cluster')
+
+    if annotations is not None:
+        annotations = np.asarray(annotations).reshape(-1)
+        if len(annotations) != len(assignments):
+            raise ValueError('annotations must align one-to-one with observations')
+        annotations = np.array([
+            label.decode('utf-8') if isinstance(label, bytes) else str(label)
+            for label in annotations
+        ])
+
+    channels = tuple(range(values.shape[2])) if channels is None else tuple(channels)
+    if len(channels) != values.shape[2]:
+        raise ValueError('channels must name each output in values')
+
+    predictions = {int(cluster): model.predictive(int(cluster), grid=grid)
+                   for cluster in cluster_ids}
+    for prediction in predictions.values():
+        if len(prediction.grid) != values.shape[1]:
+            raise ValueError('plot grid and observation point count must match')
+
+    majority = {}
+    for cluster in cluster_ids:
+        if annotations is None:
+            majority[int(cluster)] = None
+        else:
+            labels, counts = np.unique(annotations[assignments == cluster], return_counts=True)
+            majority[int(cluster)] = labels[np.argmax(counts)]
+
+    transition_counts = np.zeros((len(cluster_ids), len(cluster_ids)), dtype=int)
+    if len(assignments) > 1:
+        previous = np.searchsorted(cluster_ids, assignments[:-1])
+        following = np.searchsorted(cluster_ids, assignments[1:])
+        np.add.at(transition_counts, (previous, following), 1)
+    totals = transition_counts.sum(axis=1, keepdims=True)
+    transitions = np.divide(
+        transition_counts, totals,
+        out=np.zeros_like(transition_counts, dtype=float), where=totals != 0,
+    )
+
+    figures = []
+    gallery_rows = (len(cluster_ids) + 2) // 3
+    palette = (plt.get_cmap('tab20') if len(cluster_ids) <= 20
+               else plt.get_cmap('hsv', len(cluster_ids)))
+    tab20_order = list(range(0, 20, 2)) + list(range(1, 20, 2))
+    cluster_colors = {
+        int(cluster): palette(tab20_order[position] if len(cluster_ids) <= 20 else position)
+        for position, cluster in enumerate(cluster_ids)
+    }
+    # Keep panel sizes fixed; only the figure height grows with gallery rows.
+    overview_height = 4.5
+    gallery_header_height = 0.5
+    cluster_row_height = 3.5
+    cluster_row_spacing = 0.3
+    for output, channel in enumerate(channels):
+        title_margin = 1.0 if warped else 0.6
+        figure_height = (title_margin + overview_height + gallery_header_height
+                         + (cluster_row_height + cluster_row_spacing) * gallery_rows)
+        fig = plt.figure(figsize=(18, figure_height), constrained_layout=True)
+        layout = fig.add_gridspec(
+            gallery_rows + 2, 3,
+            height_ratios=[overview_height, gallery_header_height]
+                          + [cluster_row_height] * gallery_rows,
+        )
+        assignment_axis = fig.add_subplot(layout[0, 0])
+        models_axis = fig.add_subplot(layout[0, 1])
+        assignment_axis.set_box_aspect(0.75)
+        models_axis.set_box_aspect(0.75)
+        transition_layout = layout[0, 2].subgridspec(2, 1, height_ratios=[3.2, 1])
+        transition_axis = fig.add_subplot(transition_layout[0, 0])
+        cluster_legend_axis = fig.add_subplot(transition_layout[1, 0])
+        cluster_legend_axis.axis('off')
+        gallery_header = fig.add_subplot(layout[1, :])
+        gallery_header.axis('off')
+
+        for position, cluster in enumerate(cluster_ids):
+            cluster = int(cluster)
+            member = assignments == cluster
+            label = majority[cluster]
+            overview_color = cluster_colors[cluster]
+            annotation_color = (_annotation_color(label) if label is not None
+                                else overview_color)
+            assignment_axis.scatter(
+                np.flatnonzero(member), assignments[member], s=7,
+                color=overview_color, linewidths=0, rasterized=True,
+            )
+            prediction = predictions[cluster]
+            x = prediction.grid.reshape(-1)
+            mean = prediction.mean[:, output]
+            models_axis.plot(x, mean, color=overview_color, linewidth=1.6)
+
+            axis = fig.add_subplot(layout[position // 3 + 2, position % 3])
+            axis.set_box_aspect(0.59)
+            member_values = values[member, :, output]
+            if len(member_values):
+                segments = np.stack((np.broadcast_to(x, member_values.shape), member_values), axis=-1)
+                sample_colors = (
+                    [to_rgba(_annotation_color(sample_label),
+                             alpha=0.06 if sample_label == label else 0.20)
+                     for sample_label in annotations[member]]
+                    if annotations is not None
+                    else [to_rgba(annotation_color, alpha=0.08)] * len(member_values)
+                )
+                axis.add_collection(LineCollection(
+                    segments, colors=sample_colors, linewidths=0.55,
+                    rasterized=True,
+                ))
+            # The predictive covariance is unchanged; clipping only protects the display.
+            sd = np.sqrt(np.maximum(np.diag(prediction.covariance[output]), 0))
+            axis.fill_between(x, mean - 2 * sd, mean + 2 * sd,
+                              color=annotation_color, alpha=0.22)
+            axis.plot(x, mean, color=annotation_color, linewidth=1.8)
+            axis.autoscale_view()
+            axis.set(xlabel='Rescaled coordinate', ylabel='Scaled amplitude',
+                     title=f'Cluster {cluster} · {member.sum()} samples' +
+                           (f' · majority {label}' if label else ''))
+
+        assignment_axis.set(xlabel='Beat index', ylabel='Cluster', title='Regimes through the record',
+                            xlim=(-1, len(assignments)))
+        assignment_axis.set_yticks(cluster_ids)
+        assignment_axis.grid(axis='x', alpha=0.2)
+        models_axis.set(xlabel='Rescaled coordinate', ylabel='Scaled amplitude',
+                        title='Fitted model means')
+
+        image = transition_axis.imshow(transitions, vmin=0, vmax=1, cmap='Blues', aspect='auto')
+        transition_axis.set(title='Transitions between clusters', xlabel='Next cluster',
+                            ylabel='Current cluster')
+        transition_axis.set_xticks(np.arange(len(cluster_ids)), cluster_ids)
+        transition_axis.set_yticks(np.arange(len(cluster_ids)), cluster_ids)
+        for row, column in zip(*np.nonzero(transition_counts)):
+            value = transitions[row, column]
+            transition_axis.text(column, row, f'{value:.2f}', ha='center', va='center',
+                                 fontsize=8, color='white' if value > 0.5 else 'black')
+        fig.colorbar(image, ax=transition_axis, fraction=0.046, pad=0.04, label='Probability')
+        cluster_handles = [
+            Line2D([0], [0], color=cluster_colors[int(cluster)], linewidth=2,
+                   label=f'Cluster {cluster}')
+            for cluster in cluster_ids
+        ]
+        cluster_legend_axis.legend(handles=cluster_handles, loc='center', frameon=False,
+                                   ncol=min(3, len(cluster_ids)), fontsize=8)
+
+        gallery_header.text(0, 0.5, 'Clusters · mean/band: majority annotation · '
+                            'faint lines: beat annotations · shading: ±2 SD',
+                            va='center', fontsize=12, fontweight='bold')
+        if annotations is not None:
+            used_labels = sorted(set(annotations), key=lambda label: (ANNOTATION_CODES.get(label, 0), label))
+            handles = [Line2D([0], [0], color=_annotation_color(label), linewidth=2,
+                              label=label) for label in used_labels]
+            gallery_header.legend(handles=handles, loc='center right', frameon=False,
+                                  ncol=min(len(handles), 8), fontsize=9)
+
+        for position in range(len(cluster_ids), gallery_rows * 3):
+            fig.add_subplot(layout[position // 3 + 2, position % 3]).axis('off')
+
+        cluster_word = 'cluster' if len(cluster_ids) == 1 else 'clusters'
+        headline = (f'Record {record} · channel {channel} · {len(values):,} beats · '
+                    f'{len(cluster_ids)} {cluster_word}')
+        if metrics is not None:
+            headline += (f"\nPurity {metrics['purity']:.3f} · ARI {metrics['adjusted_rand_index']:.3f}"
+                         f" · NMI {metrics['normalized_mutual_information']:.3f}")
+        else:
+            headline += '\nAnnotation metrics unavailable'
+        if warped:
+            headline += '\nInput waveforms use the original grid; model bands use aligned coordinates'
+        fig.suptitle(headline, fontsize=15, fontweight='bold')
+        figures.append(fig)
+    return tuple(figures)
 
 
 def plot_latent(model):
