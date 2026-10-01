@@ -7,6 +7,14 @@ import torch
 from ..alignment import _components as _alignment
 
 
+def _report_assignment(self, sample_index, model, birth):
+    if not self.verbose:
+        return
+    if birth:
+        print(f"Sample {sample_index + 1}: created cluster {model + 1}.", flush=True)
+    print(f"Sample {sample_index + 1}: assigned to cluster {model + 1}.", flush=True)
+
+
 def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, classify=False):
     """
     Include the sample received and restimate all the parameters of the
@@ -187,7 +195,6 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
     if model == self.M:
         birth = True
     if birth:
-        print("Birth of new model: ", self.M + 1)
         self.M = self.M + 1
         M = self.M
         y_mod.append(self.y.copy())
@@ -261,7 +268,6 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
 
     # Assign and update GP model
     self.actual_state = model
-    print("Main model chosen:", model + 1)
     if minibatch == 0:
         minibatch = None
     for ld in range(self.n_outputs):
@@ -287,6 +293,7 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
     self.q.append(q_chos)
     for ld in range(self.n_outputs):
         _alignment.configured(self).update_selected(self, ld, model, x_train, with_warp)
+    _report_assignment(self, t, model, birth)
 
 
 def _init_resp_cache_cold_start(self, init_state: int = 0):
@@ -626,7 +633,6 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
 
     birth = (model == self.M)
     if birth:
-        print("Birth of new model: ", self.M + 1)
         self.M = self.M + 1
         M = self.M
         y_mod.append(self.y.copy())
@@ -651,7 +657,6 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
 
     # Update actual GP models with last hard assignment
     self.actual_state = model
-    print("Main model chosen:", model + 1)
 
     if minibatch == 0:
         minibatch = None
@@ -689,4 +694,5 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
 
     for ld in range(self.n_outputs):
         _alignment.configured(self).update_selected(self, ld, model, x_train, with_warp)
+    _report_assignment(self, t, model, birth)
 

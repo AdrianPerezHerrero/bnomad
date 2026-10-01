@@ -148,14 +148,16 @@ def refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr
     """ Redistribute the responsibility for not letting empty clusters and generate a new model if needed.
     """
     resp_per_group = torch.sum(resp[np.where(resp == 1.0)[0]], axis=0)
-    print("Group responsability estimated: " + str(resp_per_group.detach().cpu().numpy().astype(np.int64)),
-          flush=True)
+    if self.verbose:
+        print("Group responsibility estimated: " + str(resp_per_group.detach().cpu().numpy().astype(np.int64)),
+              flush=True)
     if torch.any(resp_per_group[:-1] < 1.0):
         # Case where last is filled and exists an empty group
         if resp_per_group[-1] >= 1.0:
             resp, respPair = self.refill_resp(resp, respPair)
         else:
-            print("Empty group detected, new iteration.\n")
+            if self.verbose:
+                print("Empty group detected, new iteration.\n")
             return resp, respPair, q, q_lat, snr, True
     return resp, respPair, q, q_lat, snr, False
 
@@ -216,7 +218,8 @@ def remove_last_group(self, resp, respPair, q, q_lat, snr):
 def redefine_default(self, x_trains, y_trains, resp):
     """ Method to compute Sigma and Gamma from a batch of examples and assign it to initial values.
     """
-    print("Redefining default LDS priors.")
+    if self.verbose:
+        print("Redefining default LDS priors.")
     if self.estimation_limit_def is None:
         n_f = y_trains.shape[0] - 1
     else:
@@ -239,10 +242,11 @@ def redefine_default(self, x_trains, y_trains, resp):
     bound_sigma = (ini_Sigma.item() * 1e-5, ini_Sigma.item() * 2.0)
     bound_gamma = (ini_Gamma.item() * 1e-5, ini_Gamma.item() * 2.0)
 
-    print("-----------Reestimated ------------", flush=True)
-    print("Sigma: ", ini_Sigma)
-    print("Gamma: ", ini_Gamma)
-    print("-----------------------------", flush=True)
+    if self.verbose:
+        print("-----------Reestimated ------------", flush=True)
+        print("Sigma: ", ini_Sigma)
+        print("Gamma: ", ini_Gamma)
+        print("-----------------------------", flush=True)
     kernel = (ConstantKernel(ini_outputscale, (ini_outputscale, ini_outputscale * 5.0)) *
               RBF(self.ini_lengthscale[0], self.bound_lengthscale[0]) + WhiteKernel(bound_sigma[0], bound_sigma))
     self.set_default_options(kernel, ini_Sigma, ini_Gamma, ini_outputscale, bound_sigma, bound_gamma,
