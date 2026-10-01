@@ -23,7 +23,7 @@ their source locations. Loops are sequential in the order shown.
 ## 1. Standard online: one incoming observation, one commit
 
 ```text
-include_sample(x, y, with_warp, force_model, minibatch, classify):
+include_sample(x, y, warp, force_model, minibatch, classify):
   t <- old T
   unless classify: increment T; replace snr_norm with ones(T, outputs)
   M <- current M; convert y, then x

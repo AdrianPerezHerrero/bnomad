@@ -435,7 +435,7 @@ Observed behavior should be preserved until separately reviewed:
 
 Static integration defects or incomplete paths:
 
-- `test_offline.py` and `test_offline_multi_output.py` pass `with_warp=`, which `include_batch` does not accept.
+- Historical `test_offline.py` and `test_offline_multi_output.py` used an unsupported batch keyword; current batch inference accepts `warp=`.
 - `test_step.ipynb` unpacks two results from `compute_estimators_LDS`, which returns four.
 - `reorder` shares lists between outputs through list multiplication.
 - Forced-model online branches can reach use of `reorder` without assigning it.
@@ -544,10 +544,10 @@ The two notebooks demonstrate MIT-BIH and ocean data workflows; they are executa
 
 | Caller | Model entry point |
 |---|---|
-| `test_online.py:83` | `include_sample(..., with_warp=False)` |
-| `test_online_warp.py:82` | `include_sample(..., with_warp=True)` |
-| `test_offline.py:79` | Intended `include_batch`; current call uses unsupported `with_warp`. |
-| `test_offline_multi_output.py:76` | Same batch keyword mismatch. |
+| `test_online.py:83` | Unwarped online call (`warp=False` in the current API) |
+| `test_online_warp.py:82` | Warped online call (`warp=True` in the current API) |
+| `test_offline.py:79` | Historical batch call used an unsupported keyword. |
+| `test_offline_multi_output.py:76` | Same historical batch keyword mismatch. |
 | `test_offline_multi_output_load.py:81` | `reload_model_from_labels` |
 | Same script, lines 83/85 | `cluster_new_batch`, then `cluster_new_batch(learning=True)` |
 | `GPI_test.py:114` | `include_sample` |

@@ -17,6 +17,8 @@ class GPFlowAlignment(GPAlignment):
     """
 
     uses_posterior_flow = True
+    uses_candidate_input_warp = True
+    supports_warp_posterior = True
 
     def __init__(self, config):
         self.config = config

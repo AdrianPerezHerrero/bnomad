@@ -77,6 +77,11 @@ class GPRepresenter:
         self.constant_noise = bool(torch.all(torch.isclose(
             torch.diagonal(self.sigma), torch.diagonal(self.sigma).mean())))
 
+    def mean_at(self, grid):
+        """Current cluster's GP/LDS predictive mean at an input grid."""
+        query = _column(grid, device=self.device)
+        return _kernel_torch(self.kernel, self.x_basis, query).T @ self.alpha
+
     def log_prob(self, grids, values):
         """Return one properly normalized Gaussian log density per sampled grid."""
         grids = torch.as_tensor(grids, dtype=torch.float64, device=self.device)
@@ -86,21 +91,21 @@ class GPRepresenter:
         if grids.shape[-2:] != values.shape:
             raise ValueError('Warped grids and observations must share their point count')
         kbg = _kernel_torch(self.kernel, self.x_basis, grids)
-        solve = torch.cholesky_solve(kbg, self.chol)
         mean = torch.matmul(kbg.transpose(-1, -2), self.alpha)
         n = values.shape[0]
-        eye = torch.eye(n, dtype=grids.dtype, device=grids.device)
+        residual = values.unsqueeze(0) - mean
         if self.constant_noise:
-            cov = torch.diagonal(self.sigma).mean() * eye
-            cov = cov.expand(grids.shape[0], n, n)
-        else:
-            kgg = _kernel_torch(self.kernel, grids)
-            cov = kgg - torch.matmul(kbg.transpose(-1, -2), solve)
-            cov = cov + torch.matmul(solve.transpose(-1, -2),
-                                     torch.matmul(self.sigma, solve))
+            variance = torch.diagonal(self.sigma).mean() + 1e-6
+            return -0.5 * (residual.square().sum(dim=(-2, -1)) / variance
+                           + n * torch.log(2.0 * math.pi * variance))
+        solve = torch.cholesky_solve(kbg, self.chol)
+        eye = torch.eye(n, dtype=grids.dtype, device=grids.device)
+        kgg = _kernel_torch(self.kernel, grids)
+        cov = kgg - torch.matmul(kbg.transpose(-1, -2), solve)
+        cov = cov + torch.matmul(solve.transpose(-1, -2),
+                                 torch.matmul(self.sigma, solve))
         cov = 0.5 * (cov + cov.transpose(-1, -2)) + 1e-6 * eye
         chol = torch.linalg.cholesky(cov)
-        residual = values.unsqueeze(0) - mean
         alpha = torch.cholesky_solve(residual, chol)
         quad = (residual * alpha).sum(dim=(-2, -1))
         logdet = 2.0 * torch.log(torch.diagonal(chol, dim1=-2, dim2=-1)).sum(dim=-1)

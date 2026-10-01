@@ -19,7 +19,7 @@ def boolean(value, name):
 def validate_inference(c):
     if c.schedule not in (None, 'online', 'online_fast', 'offline'):
         raise ValueError('Unknown inference schedule')
-    for name in ('with_warp', 'warp', 'classify', 'reestimate_initial_params'):
+    for name in ('warp', 'classify', 'reestimate_initial_params'):
         boolean(getattr(c, name), name)
     for name in ('batch', 'force_model'):
         integer(getattr(c, name), name, optional=True)
@@ -28,8 +28,8 @@ def validate_inference(c):
     integer(c.it_limit, 'it_limit', 1, optional=True)
     if c.schedule == 'offline' and (c.force_model is not None or c.minibatch != 0 or c.classify):
         raise ValueError('force_model/minibatch/classify apply only to online inference')
-    if c.schedule in ('online', 'online_fast') and (c.it_limit is not None or c.warp):
-        raise ValueError('it_limit/warp apply to offline inference; online uses with_warp')
+    if c.schedule in ('online', 'online_fast') and c.it_limit is not None:
+        raise ValueError('it_limit applies only to offline inference')
 
 
 def validate_numerics(n):
@@ -69,12 +69,20 @@ def validate(c, *, for_build=False):
     if o.reduce_outputs and int(np.rint(o.n_outputs * o.reduce_outputs_ratio)) < 1:
         raise ValueError('Output reduction would leave zero outputs')
     validate_inference(i)
-    if a.policy not in ('gp', 'gp_flow', 'none'):
+    if a.policy not in ('gp', 'gp_flow', 'dtw_gp', 'none'):
         raise ValueError('Unknown alignment policy')
     for name in ('flow_inducing', 'flow_features', 'flow_samples', 'flow_steps'):
         integer(getattr(a, name), name, 1)
     integer(a.flow_train_iter, 'flow_train_iter', 0)
     for name in ('flow_lengthscale', 'flow_amplitude', 'flow_lr'):
+        value = getattr(a, name)
+        if not isinstance(value, Real) or not math.isfinite(value) or value <= 0:
+            raise ValueError(name + ' must be finite and positive')
+    for name in ('dtw_points', 'dtw_inducing'):
+        integer(getattr(a, name), name, 2)
+    if not isinstance(a.dtw_band, Real) or not math.isfinite(a.dtw_band) or not 0 < a.dtw_band <= 1:
+        raise ValueError('dtw_band must be in (0, 1]')
+    for name in ('dtw_lengthscale', 'dtw_amplitude', 'dtw_anchor_noise'):
         value = getattr(a, name)
         if not isinstance(value, Real) or not math.isfinite(value) or value <= 0:
             raise ValueError(name + ' must be finite and positive')

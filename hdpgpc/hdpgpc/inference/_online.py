@@ -8,20 +8,20 @@ from ..alignment import _components as _alignment
 
 
 def _flow_grid(self, candidate, original):
-    if getattr(self.alignment, 'uses_posterior_flow', False):
+    if getattr(self.alignment, 'uses_candidate_input_warp', False):
         return self.alignment.grid_for_candidate(self, int(candidate), original)
     return original
 
 
 def _flow_score(self, candidate, output, gp, observation, fallback):
-    if getattr(self.alignment, 'uses_posterior_flow', False):
+    if getattr(self.alignment, 'uses_candidate_input_warp', False):
         return self.alignment.proposal_score(
             self, int(candidate), output, gp, observation, fallback)
     return fallback
 
 
 def _flow_observation(self, observation, output):
-    if getattr(self.alignment, 'uses_posterior_flow', False):
+    if getattr(self.alignment, 'uses_candidate_input_warp', False):
         value = torch.as_tensor(observation)
         if value.ndim == 2 and value.shape[1] == self.n_outputs:
             return value[:, [output]]
@@ -30,7 +30,7 @@ def _flow_observation(self, observation, output):
 
 def _include_with_alignment(self, gp, index, candidate, original, observation, h,
                             output=None):
-    if getattr(self.alignment, 'uses_posterior_flow', False):
+    if getattr(self.alignment, 'uses_candidate_input_warp', False):
         samples = self.alignment.samples_for_candidate(self, int(candidate))
         if samples is not None:
             observation = _flow_observation(self, observation, output)
@@ -48,7 +48,7 @@ def _report_assignment(self, sample_index, model, birth):
     print(f"Sample {sample_index + 1}: assigned to cluster {model + 1}.", flush=True)
 
 
-def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, classify=False):
+def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify=False):
     """
     Include the sample received and restimate all the parameters of the
     full model, including the state-space and the GPS.
@@ -84,7 +84,7 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
         self.y.append(y)
         self.x_train.append(x_train)
     y_mod, liks = _alignment.configured(self).prepare_online(
-        self, x_train, y, t, M, y_mod, liks, with_warp, force_model, fast=False)
+        self, x_train, y, t, M, y_mod, liks, warp, force_model, fast=False)
     elbo = 0.0
     q_all = 0.0
     q_aux = torch.zeros(self.T, self.M + 1, self.n_outputs) - np.inf
@@ -97,7 +97,7 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
     for ld in range(self.n_outputs):
         for m, gp in enumerate(self.gpmodels[ld]):
             q_lat[:, m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
-            if getattr(self.alignment, 'uses_posterior_flow', False) and m in self._flow_online_scores:
+            if getattr(self.alignment, 'uses_candidate_input_warp', False) and m in self._flow_online_scores:
                 q_aux[-1, m, ld] = self._flow_online_scores[m][ld]
             else:
                 q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1) + liks[m]
@@ -120,7 +120,7 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
         # Define order
         q_ord = torch.argsort(self.weight_mean(q_aux)[-1, :-1], descending=True)
         m = q_ord[-1].item()
-        if getattr(self.alignment, 'uses_posterior_flow', False) and with_warp:
+        if getattr(self.alignment, 'uses_candidate_input_warp', False) and warp:
             self.alignment.prepare_birth(self, m, self.x_train[-1], y_mod[-1][-1])
         # m = q_ord[0].item()
         q_prev = torch.clone(q_aux)
@@ -249,7 +249,7 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
         for ld in range(self.n_outputs):
             self.gpmodels[ld].append(self.create_gp_default())
             self.wp_sys[ld].append(self.create_wp_sys_default())
-        if getattr(self.alignment, 'uses_posterior_flow', False) and with_warp:
+        if getattr(self.alignment, 'uses_candidate_input_warp', False) and warp:
             self.alignment.bind_birth(self, M - 1)
         self.x_basis.append(self.x_basis_ini)
         resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
@@ -343,7 +343,7 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
     self.resp_assigned.append(torch.argmax(resp, axis=1))
     self.q.append(q_chos)
     for ld in range(self.n_outputs):
-        _alignment.configured(self).update_selected(self, ld, model, x_train, with_warp)
+        _alignment.configured(self).update_selected(self, ld, model, x_train, warp)
     _report_assignment(self, t, model, birth)
 
 
@@ -449,7 +449,7 @@ def _append_hard_step(self, resp_prev, respPair_prev, new_state, K):
     return resp, respPair
 
 
-def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0, classify=False):
+def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, classify=False):
     """
     Fast online include that STILL compares:
       - birth new cluster  vs  absorb into existing clusters
@@ -494,7 +494,7 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
         self.x_train.append(x_train)
 
     y_mod, liks = _alignment.configured(self).prepare_online(
-        self, x_train, y, t, M, y_mod, liks, with_warp, force_model, fast=True)
+        self, x_train, y, t, M, y_mod, liks, warp, force_model, fast=True)
 
     # --- Build q_aux/q_lat using cached history; only compute last-row SSE ---
     q_aux = torch.zeros(self.T, M + 1, self.n_outputs, device=self.device) - np.inf
@@ -506,7 +506,7 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
 
     for ld in range(self.n_outputs):
         for m, gp in enumerate(self.gpmodels[ld]):
-            if getattr(self.alignment, 'uses_posterior_flow', False) and m in self._flow_online_scores:
+            if getattr(self.alignment, 'uses_candidate_input_warp', False) and m in self._flow_online_scores:
                 q_aux[-1, m, ld] = self._flow_online_scores[m][ld]
             else:
                 q_aux[-1, m, ld] = gp.log_sq_error(
@@ -563,7 +563,7 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
         q_ord = torch.argsort(self.weight_mean(q_aux)[-1, :-1], descending=True)
         m_template = int(
             q_ord[-1].item())  # template for prov_gp (same as update) :contentReference[oaicite:5]{index=5}
-        if getattr(self.alignment, 'uses_posterior_flow', False) and with_warp:
+        if getattr(self.alignment, 'uses_candidate_input_warp', False) and warp:
             self.alignment.prepare_birth(self, m_template, self.x_train[-1], y_mod[-1][-1])
 
         # ========== Birth candidate ==========
@@ -702,7 +702,7 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
         for ld in range(self.n_outputs):
             self.gpmodels[ld].append(self.create_gp_default())
             self.wp_sys[ld].append(self.create_wp_sys_default())
-        if getattr(self.alignment, 'uses_posterior_flow', False) and with_warp:
+        if getattr(self.alignment, 'uses_candidate_input_warp', False) and warp:
             self.alignment.bind_birth(self, M - 1)
         self.x_basis.append(self.x_basis_ini)
     if force_model is None:
@@ -756,6 +756,6 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
     self.respPair_last = respPair[:, :self.M, :self.M].detach()
 
     for ld in range(self.n_outputs):
-        _alignment.configured(self).update_selected(self, ld, model, x_train, with_warp)
+        _alignment.configured(self).update_selected(self, ld, model, x_train, warp)
     _report_assignment(self, t, model, birth)
 

@@ -173,7 +173,7 @@ def build(spec):
     alignment=AlignmentConfig(policy={'gp' if warp else 'none'!r}, x_basis_warp=grid,
         noise_warp=0.01, bound_noise_warp=(0.001, 0.1), recursive_warp=False,
         warp_updating=False, method_compute_warp='greedy', mode_warp='rough'),
-    inference=InferenceConfig(schedule={schedule!r}, with_warp=False, warp={warp},
+    inference=InferenceConfig(schedule={schedule!r}, warp={warp},
         it_limit={2 if schedule == 'offline' else None}, n_explore_steps=2,
         reestimate_initial_params=False),
     multi_output=MultiOutputConfig(n_outputs={outputs}, use_snr={outputs == 2},

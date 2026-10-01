@@ -9,7 +9,7 @@ which is a YAML 1.2 subset, so no additional parser dependency is needed.
 | `static.yaml` | Static emissions, offline updates, no requested warping |
 | `dynamic.yaml` | Current LDS dynamics, offline updates |
 | `dynamic_warping.yaml` | LDS dynamics and GP warping, offline updates |
-| `online.yaml` | Standard online, explicit `with_warp=False` |
+| `online.yaml` | Standard online, explicit `warp=False` |
 | `offline.yaml` | Repeated offline updates, three-iteration limit |
 | `multi_output.yaml` | Two outputs, existing SNR weighting, offline updates |
 

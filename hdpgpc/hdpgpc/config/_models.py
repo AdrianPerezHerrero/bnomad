@@ -54,7 +54,7 @@ class DynamicsConfig:
 @dataclass(frozen=True)
 class AlignmentConfig:
     """Policy selection is separate from each inference call's warp request."""
-    policy: Literal['gp', 'gp_flow', 'none'] = 'gp'
+    policy: Literal['gp', 'gp_flow', 'dtw_gp', 'none'] = 'gp'
     x_basis_warp: ndarray | list[ndarray] | None = None
     noise_warp: float = 0.05
     bound_noise_warp: Bounds = (1e-10, 1e10)
@@ -70,6 +70,12 @@ class AlignmentConfig:
     flow_lengthscale: float = 0.2
     flow_amplitude: float = 0.1
     flow_lr: float = 0.03
+    dtw_points: int = 24
+    dtw_band: float = 0.15
+    dtw_inducing: int = 10
+    dtw_lengthscale: float = 0.2
+    dtw_amplitude: float = 0.1
+    dtw_anchor_noise: float = 0.04
 
 
 @dataclass(frozen=True)
@@ -77,13 +83,12 @@ class InferenceConfig:
     """Construction options and explicit dispatch to distinct existing schedules.
 
     schedule=None means select at the call site, as legacy experiments do.
-    Online and offline warp defaults deliberately differ.
+    One warp flag controls alignment for either inference schedule.
     """
     batch: int | None = None
     reestimate_initial_params: bool = False
     n_explore_steps: int = 10
     schedule: Literal['online', 'online_fast', 'offline'] | None = None
-    with_warp: bool = True
     warp: bool = False
     force_model: int | None = None
     minibatch: int = 0
@@ -100,7 +105,7 @@ class InferenceConfig:
         if self.schedule in ('online', 'online_fast'):
             engine = OnlineInference(model)
             method = engine.update if self.schedule == 'online' else engine.update_fast
-            return method(x, y, self.with_warp, self.force_model, self.minibatch, self.classify)
+            return method(x, y, self.warp, self.force_model, self.minibatch, self.classify)
         raise ValueError('Select an inference schedule before calling run()')
 
 
@@ -154,8 +159,10 @@ SECTIONS = {'hdp': HDPConfig, 'emission': GPEmissionConfig, 'dynamics': Dynamics
             'multi_output': MultiOutputConfig, 'numerics': NumericalConfig}
 NON_CONSTRUCTOR = {'alignment': {'policy', 'flow_inducing', 'flow_features',
                                  'flow_samples', 'flow_steps', 'flow_train_iter',
-                                 'flow_lengthscale', 'flow_amplitude', 'flow_lr'},
-                   'inference': {'schedule', 'with_warp', 'warp', 'force_model', 'minibatch', 'classify', 'it_limit'},
+                                 'flow_lengthscale', 'flow_amplitude', 'flow_lr',
+                                 'dtw_points', 'dtw_band', 'dtw_inducing',
+                                 'dtw_lengthscale', 'dtw_amplitude', 'dtw_anchor_noise'},
+                   'inference': {'schedule', 'warp', 'force_model', 'minibatch', 'classify', 'it_limit'},
                    'numerics': {'seed', 'num_threads', 'dtype', 'deterministic'}}
 
 
@@ -259,6 +266,9 @@ def _initialization_options(config):
     elif config.alignment.policy == 'gp_flow':
         from ..alignment._flow_integration import GPFlowAlignment
         result['alignment'] = GPFlowAlignment(config.alignment)
+    elif config.alignment.policy == 'dtw_gp':
+        from ..alignment._dtw_integration import DTWGPAlignment
+        result['alignment'] = DTWGPAlignment(config.alignment)
     else:
         result['alignment'] = GPAlignment()
     return deepcopy(result)

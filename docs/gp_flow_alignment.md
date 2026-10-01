@@ -2,6 +2,7 @@
 
 `AlignmentConfig(policy='gp_flow')` selects an opt-in uncertain input warp for
 HDP-GPC. The default `policy='gp'` retains the existing alignment algorithm.
+For a cheaper GP-smoothed point estimate, see [DTW–GP alignment](dtw_gp_alignment.md).
 The new policy follows the monotonic GP-flow construction of
 [Mikheeva et al. (AISTATS 2022)](https://proceedings.mlr.press/v151/mikheeva22a.html)
 while keeping HDP-GPC's existing cluster GP and LDS emissions. Consequently it
@@ -20,7 +21,7 @@ config = replace(
                       flow_inducing=10, flow_features=64,
                       flow_samples=4, flow_steps=10,
                       flow_train_iter=30),
-    inference=replace(config.inference, schedule='online', with_warp=True),
+    inference=replace(config.inference, schedule='online', warp=True),
 )
 model = HDPGPC(config)
 model.update(first_waveform)

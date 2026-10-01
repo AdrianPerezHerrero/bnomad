@@ -19,7 +19,7 @@ def online(warp=False, fast=False, dynamics="dynamic", outputs=1):
     with observe_inference(model) as trace:
         for y in waveform_data(outputs)[:4]:
             method = model.online.update_fast if fast else model.online.update
-            method(x, y, with_warp=warp)
+            method(x, y, warp=warp)
             states.append(encode(model_state(model)))
     return {"steps": states, "inference_trace": trace}
 
@@ -98,7 +98,7 @@ def known_failure(kind):
     expected_type = IndexError if kind == "online_multi" else RuntimeError
     for index, y in enumerate(waveform_data(model.n_outputs)[:2]):
         try:
-            model.online.update(x, y, with_warp=(kind == "online_warp"))
+            model.online.update(x, y, warp=(kind == "online_warp"))
         except expected_type as error:
             return {"failed_observation": index, "exception_type": type(error).__name__,
                     "message": str(error), "partial_state": model_state(model)}

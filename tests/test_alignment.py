@@ -144,7 +144,7 @@ class DisabledAlignmentInferenceTests(unittest.TestCase):
                 with s.observe_inference(model) as trace:
                     for y in s.waveform_data()[:4]:
                         method = model.online.update_fast if fast else model.online.update
-                        method(x, y)  # Default with_warp=True; constructor wins.
+                        method(x, y, warp=True)  # Requested alignment; constructor wins.
                         states.append(s.encode(s.model_state(model)))
                 self.compare_case(name, {"steps": states, "inference_trace": trace})
 

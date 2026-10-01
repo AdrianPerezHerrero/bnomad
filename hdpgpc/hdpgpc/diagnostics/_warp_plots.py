@@ -32,12 +32,14 @@ def model_warp_arrays(model, grid, *, output=0):
     x = _array(grid).reshape(-1)
     if output < 0 or output >= backend.n_outputs:
         raise ValueError('output must be a valid zero-based channel index')
-    flow = bool(getattr(backend.alignment, 'uses_posterior_flow', False))
+    flow = bool(getattr(backend.alignment, 'uses_candidate_input_warp', False))
+    uncertain = bool(getattr(backend.alignment, 'uses_posterior_flow', False))
 
     if flow and len(getattr(backend, 'flow_posteriors', ())) == len(labels):
         results = backend.flow_posteriors
         displacement = np.stack([_array(p.mean_displacement).reshape(-1) for p in results])
-        std = np.stack([_array(p.std_displacement).reshape(-1) for p in results])
+        std = (np.stack([_array(p.std_displacement).reshape(-1) for p in results])
+               if uncertain else None)
     else:
         history = getattr(backend, 'x_w', None)
         if hasattr(history, 'shape') and len(history.shape) == 4:
@@ -68,7 +70,7 @@ def model_warp_arrays(model, grid, *, output=0):
                 for i, cluster in enumerate(labels)
             ])
         std = None
-        if flow:
+        if uncertain:
             posteriors = getattr(backend, '_flow_offline_posteriors', {})
             if posteriors:
                 std_values = np.full_like(displacement, np.nan)

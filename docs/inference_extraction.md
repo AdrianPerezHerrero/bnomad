@@ -14,9 +14,9 @@ convergence condition, or cluster acceptance policy was changed.
 from hdpgpc.inference import OnlineInference, OfflineInference
 
 online = OnlineInference(model)
-online.include_sample(x, y, with_warp=False)
+online.update(x, y, warp=False)
 # Alternatively, select the existing fast algorithm explicitly:
-online.include_sample_fast(x, y, with_warp=False)
+online.update_fast(x, y, warp=False)
 
 offline = OfflineInference(other_model)
 offline.include_batch(xs, ys, it_limit=3, warp=False)

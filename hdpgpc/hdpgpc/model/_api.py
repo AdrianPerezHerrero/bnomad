@@ -118,7 +118,7 @@ class HDPGPC:
         inference = self._config.inference
         method = (self._backend.online.update_fast if self._mode == 'online_fast'
                   else self._backend.online.update)
-        return method(grid, values, with_warp=inference.with_warp,
+        return method(grid, values, warp=inference.warp,
                       force_model=inference.force_model, minibatch=inference.minibatch,
                       classify=inference.classify)
 
@@ -242,7 +242,7 @@ class HDPGPC:
         Requires alignment.policy='gp_flow' and an already fitted model.
         """
         self._require_fitted()
-        if not getattr(self._backend.alignment, 'uses_posterior_flow', False):
+        if not getattr(self._backend.alignment, 'supports_warp_posterior', False):
             raise ValueError("warp_posterior requires alignment.policy='gp_flow'")
         values, coordinates = self._inputs(x, grid, batch=False)
         if cluster is not None:

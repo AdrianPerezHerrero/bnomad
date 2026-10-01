@@ -472,8 +472,8 @@ def select_assigned_warp(self, y_trains_w, resp):
     idx = z[:, None, None, None].expand(-1, y_trains_w.shape[1], y_trains_w.shape[2], 1)
     return torch.gather(y_trains_w, 3, idx).squeeze(3)  # (N,T,D)
 
-def prepare_online_standard(self, x_train, y, t, M, y_mod, liks, with_warp, force_model=None):
-    if with_warp:
+def prepare_online_standard(self, x_train, y, t, M, y_mod, liks, warp, force_model=None):
+    if warp:
         if t > 0:
             for ld in range(self.n_outputs):
                 y_w, x_w, liks = self.compute_warp_y(x_train, y[:, [ld]], self.method_compute_warp,
@@ -496,13 +496,13 @@ def prepare_online_standard(self, x_train, y, t, M, y_mod, liks, with_warp, forc
     return y_mod, liks
 
 
-def update_selected(self, ld, model, x_train, with_warp):
-    if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and with_warp:
+def update_selected(self, ld, model, x_train, warp):
+    if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and warp:
         self.wp_sys[ld][model].update_warp(x_train, self.x_w[-1][model])
 
 
-def prepare_online_fast(self, x_train, y, t, M, y_mod, liks, with_warp, force_model=None):
-    if with_warp:
+def prepare_online_fast(self, x_train, y, t, M, y_mod, liks, warp, force_model=None):
+    if warp:
         if t > 0:
             for ld in range(self.n_outputs):
                 y_w, x_w, liks = self.compute_warp_y(

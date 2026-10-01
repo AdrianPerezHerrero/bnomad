@@ -129,8 +129,7 @@
     "n_explore_steps": 2,
     "reestimate_initial_params": false,
     "schedule": "offline",
-    "warp": true,
-    "with_warp": true
+    "warp": true
   },
   "multi_output": {
     "n_outputs": 1,

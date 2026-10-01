@@ -58,9 +58,9 @@ RECORDS = (
 CHANNELS = (0,)                 # Choose channel 0, 1, or both: (0, 1).
 SCALE_WAVEFORMS = False          # First-beat mean/std scaling; False keeps stored amplitudes.
 UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 grid.
-INFERENCE_MODE = "offline"      # "offline", "online", or "online_fast".
+INFERENCE_MODE = "online_fast"      # "offline", "online", or "online_fast".
 ENABLE_WARP = True              # Whether to request alignment during fitting.
-ALIGNMENT_POLICY = "gp_flow"    # "gp" (legacy) or "gp_flow" (posterior input warp).
+ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
 VERBOSE = False                 # False: progress/summary; True: per-sample/iteration detail.
 SHARE_GP_FOR_PROPOSALS = True   # Offline proposals/new clusters start from a fitted GP copy.
 SAVE_PLOTS = True               # Also save the final figures when True.
@@ -82,14 +82,22 @@ PROCESS_NOISE_BOUNDS = (0.001, 0.5)
 OFFLINE_ITERATIONS = 50
 RANDOM_SEED = 42
 
+# Used only with ALIGNMENT_POLICY="dtw_gp". GP scales are on a grid normalized to 0..1.
+DTW_POINTS = 24
+DTW_BAND = 0.15
+DTW_INDUCING = 10
+DTW_LENGTHSCALE = 0.2
+DTW_AMPLITUDE = 0.1
+DTW_ANCHOR_NOISE = 0.04
+
 
 DATA_DIRECTORY = Path(__file__).resolve().parents[1] / "hdpgpc" / "data" / "mitbih"
 
 
 def _configuration(grid: np.ndarray) -> HDPGPCConfig:
     """Build the full experiment recipe in one visible place."""
-    if ENABLE_WARP and INFERENCE_MODE != "offline" and ALIGNMENT_POLICY != "gp_flow":
-        raise ValueError("Online warping in this example requires ALIGNMENT_POLICY='gp_flow'.")
+    if ENABLE_WARP and INFERENCE_MODE != "offline" and ALIGNMENT_POLICY not in ("gp_flow", "dtw_gp"):
+        raise ValueError("Online warping in this example requires 'gp_flow' or 'dtw_gp'.")
     if len(CHANNELS) > 1 and INFERENCE_MODE in ("online", "online_fast"):
         raise ValueError("The characterized online multi-output path is unsupported; select one channel.")
 
@@ -115,10 +123,15 @@ def _configuration(grid: np.ndarray) -> HDPGPCConfig:
             policy=ALIGNMENT_POLICY if ENABLE_WARP else "none",
             x_basis_warp=grid if ENABLE_WARP else None,
             mode_warp="rough",
+            dtw_points=DTW_POINTS,
+            dtw_band=DTW_BAND,
+            dtw_inducing=DTW_INDUCING,
+            dtw_lengthscale=DTW_LENGTHSCALE,
+            dtw_amplitude=DTW_AMPLITUDE,
+            dtw_anchor_noise=DTW_ANCHOR_NOISE,
         ),
         inference=InferenceConfig(
             schedule=INFERENCE_MODE,
-            with_warp=ENABLE_WARP,
             warp=ENABLE_WARP,
             it_limit=OFFLINE_ITERATIONS if INFERENCE_MODE == "offline" else None,
             n_explore_steps=2,
@@ -295,9 +308,9 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                     axis.set_ylabel("Stored amplitude")
     warp_figures = []
     if ENABLE_WARP and plot_warps:
-        # GP-flow uses one warp for all channels; legacy GP alignment may
-        # produce a different warp for each output.
-        outputs = (0,) if ALIGNMENT_POLICY == "gp_flow" else range(len(CHANNELS))
+        # Both candidate input-grid policies use one warp for all channels.
+        # Legacy GP alignment may produce a different warp for each output.
+        outputs = (0,) if ALIGNMENT_POLICY in ("gp_flow", "dtw_gp") else range(len(CHANNELS))
         for output in outputs:
             offsets, posterior_std = model_warp_arrays(model, grid, output=output)
             figure = plot_warp_diagnostics(

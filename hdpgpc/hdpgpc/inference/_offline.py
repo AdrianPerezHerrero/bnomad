@@ -13,14 +13,14 @@ def _log(self, *args, **kwargs):
 
 
 def _flow_inputs(self, original, offsets, output, candidate):
-    if getattr(self.alignment, 'uses_posterior_flow', False) and self.warp:
+    if getattr(self.alignment, 'uses_candidate_input_warp', False) and self.warp:
         return self.alignment.emission_grid_batch(
             self, original, offsets, output, int(candidate))
     return original
 
 
 def _flow_score(self, gp, fallback, observations, output, candidate):
-    if getattr(self.alignment, 'uses_posterior_flow', False) and self.warp:
+    if getattr(self.alignment, 'uses_candidate_input_warp', False) and self.warp:
         return self.alignment.score_offline(
             self, gp, fallback, observations, output, int(candidate))
     return fallback
@@ -28,7 +28,7 @@ def _flow_score(self, gp, fallback, observations, output, candidate):
 
 def _fit_emission(self, gp, x_trains, y_trains, resp, offsets,
                   output, candidate, **kwargs):
-    if getattr(self.alignment, 'uses_posterior_flow', False) and self.warp:
+    if getattr(self.alignment, 'uses_candidate_input_warp', False) and self.warp:
         result_map = self._flow_offline_posteriors
         count = offsets.shape[-1]
         candidate = int(candidate) % count
@@ -963,8 +963,8 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
 
 
 def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp=False):
-    if warp and getattr(self.alignment, 'uses_posterior_flow', False):
-        raise NotImplementedError('gp_flow is supported by offline.fit, not classify_batch')
+    if warp and getattr(self.alignment, 'uses_candidate_input_warp', False):
+        raise NotImplementedError('candidate input warps are supported by offline.fit, not classify_batch')
     warp = _alignment.configured(self).enabled(warp)
     if not learning:
         x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
@@ -1138,8 +1138,8 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
 
 
 def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
-    if warp and getattr(self.alignment, 'uses_posterior_flow', False):
-        raise NotImplementedError('gp_flow is supported by offline.fit, not fit_labels')
+    if warp and getattr(self.alignment, 'uses_candidate_input_warp', False):
+        raise NotImplementedError('candidate input warps are supported by offline.fit, not fit_labels')
     warp = _alignment.configured(self).enabled(warp)
     assert y_trains.shape[2] == self.n_outputs
     y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
