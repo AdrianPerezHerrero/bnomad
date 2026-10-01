@@ -12,6 +12,33 @@ def _log(self, *args, **kwargs):
         print(*args, **kwargs)
 
 
+def _flow_inputs(self, original, offsets, output, candidate):
+    if getattr(self.alignment, 'uses_posterior_flow', False) and self.warp:
+        return self.alignment.emission_grid_batch(
+            self, original, offsets, output, int(candidate))
+    return original
+
+
+def _flow_score(self, gp, fallback, observations, output, candidate):
+    if getattr(self.alignment, 'uses_posterior_flow', False) and self.warp:
+        return self.alignment.score_offline(
+            self, gp, fallback, observations, output, int(candidate))
+    return fallback
+
+
+def _fit_emission(self, gp, x_trains, y_trains, resp, offsets,
+                  output, candidate, **kwargs):
+    if getattr(self.alignment, 'uses_posterior_flow', False) and self.warp:
+        result_map = self._flow_offline_posteriors
+        count = offsets.shape[-1]
+        candidate = int(candidate) % count
+        samples = [result_map[i, candidate].grid_samples
+                   for i in range(len(y_trains))]
+        return gp.full_pass_weighted_flow(x_trains, y_trains, resp, samples,
+                                          **kwargs)
+    return gp.full_pass_weighted(x_trains, y_trains, resp, **kwargs)
+
+
 def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     """
     Include the batch of samples received and restimate all the parameters of the
@@ -262,8 +289,9 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     if gp.fitted:
                         gp.reinit_LDS(save_last=False)
                         gp.reinit_GP(save_last=False)
-            q_[:, 0, ld], q_lat_[:, 0, ld]= gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], 0], resp[:, 0],
-                                                 snr=self.snr_norm[:, ld])
+            q_[:, 0, ld], q_lat_[:, 0, ld]= _fit_emission(self, gp, x_trains, y_trains_w[:, :, [ld], 0], resp[:, 0],
+                                                          x_w, ld, 0, snr=self.snr_norm[:, ld])
+            q_[:, 0, ld] = _flow_score(self, gp, q_[:, 0, ld], y_trains, ld, 0)
             q_[:, 0, ld] = q_[:, 0, ld] + liks[:, 0, ld]
             snr_[:, 0, ld] = self.compute_snr(y_trains_w[:, :, ld, 0], gp)
             self.gpmodels[ld][0] = gp
@@ -290,7 +318,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 gp.reinit_GP(save_last=False)
             if len(indexes_[m]) > 0:
                 gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains[f_ind_old[m],:,[ld]], h=1.0)
-            q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld],m])
+            q_simple[:, m, ld] = gp.compute_sq_err_all(_flow_inputs(self, x_trains, x_w, ld, m), y_trains_w[:,:, [ld],m])
+            q_simple[:, m, ld] = _flow_score(self, gp, q_simple[:, m, ld], y_trains, ld, m)
             q_simple[:, m, ld] = q_simple[:, m, ld] + liks[:, m, ld]
             snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp)
 
@@ -329,10 +358,12 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     if gp.fitted:
                         gp.reinit_LDS(save_last=False)
                         gp.reinit_GP(save_last=False)
-                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld],reorder[m]],
-                                                        resp_temp[:, m], q=q[:,reorder[m], ld],
-                                                        q_lat=q_lat[:, reorder[m], ld],
-                                                        snr=self.snr_norm[:,ld])
+                    q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains, y_trains_w[:,:,[ld],reorder[m]],
+                                                                  resp_temp[:, m], x_w, ld, reorder[m],
+                                                                  q=q[:,reorder[m], ld],
+                                                                  q_lat=q_lat[:, reorder[m], ld],
+                                                                  snr=self.snr_norm[:,ld])
+                    q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                     q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                 else:
@@ -580,7 +611,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                             gp.reinit_GP(save_last=False)
                         gp.include_weighted_sample(0, x_trains[f_ind_new], x_trains[f_ind_new],
                                                    y_trains[f_ind_new, :, [ld]], h=1.0)
-                        q_simple_[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:, :, [ld], -1])
+                        q_simple_[:, -1, ld] = gp.compute_sq_err_all(_flow_inputs(self, x_trains, x_w, ld, -1), y_trains_w[:, :, [ld], -1])
+                        q_simple_[:, -1, ld] = _flow_score(self, gp, q_simple_[:, -1, ld], y_trains, ld, -1)
                         q_simple_[:, -1, ld] = q_simple_[:, -1, ld] + liks[:, -1, ld]
                         snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld, -1], gp)
                     # Compute resp
@@ -631,12 +663,13 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                             if gp.fitted:
                                 gp.reinit_LDS(save_last=False)
                                 gp.reinit_GP(save_last=False)
-                            q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains,
+                            q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains,
                                                                                  y_trains_w[:, :, [ld], reorder[m]],
-                                                                                 resp_temp[:, m],
+                                                                                 resp_temp[:, m], x_w, ld, reorder[m],
                                                                                  q=q__[:, reorder[m], ld],
                                                                                  q_lat=q_lat__[:, reorder[m], ld],
                                                                                  snr=self.snr_norm[:, ld])
+                            q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                             q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                             snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                         else:
@@ -645,13 +678,14 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                                 if gp.fitted:
                                     gp.reinit_LDS(save_last=False)
                                     gp.reinit_GP(save_last=False)
-                                q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains,
+                                q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains,
                                                                                      y_trains_w[:, :, [ld], reorder[m]],
-                                                                                     resp_temp[:, m],
+                                                                                     resp_temp[:, m], x_w, ld, reorder[m],
                                                                                      q=q__[:, reorder[m], ld],
                                                                                      q_lat=q_lat__[:, reorder[m],
                                                                                            ld],
                                                                                      snr=self.snr_norm[:, ld])
+                                q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                                 q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                                 snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                             else:
@@ -851,11 +885,12 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
                     else:
                         # No added indexes so createtemp
                         gp = self.create_gp_default(i=reorder[m])
-                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], reorder[m]],
-                                                                         resp_temp[:, m],
+                    q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains, y_trains_w[:, :, [ld], reorder[m]],
+                                                                         resp_temp[:, m], x_w, ld, reorder[m],
                                                                          q=q_[:, reorder[m], ld],
                                                                          q_lat=q_lat_[:, reorder[m], ld],
                                                                          snr=self.snr_norm[:, ld])
+                    q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                     q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                 else:
@@ -867,11 +902,12 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
                 # New GP to add
                 gp = self.create_gp_default(i=reorder[m])
                 if len(indexes_[ld][m]) > 0.0:
-                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], reorder[m]],
-                                                                         resp_temp[:, m],
+                    q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains, y_trains_w[:, :, [ld], reorder[m]],
+                                                                         resp_temp[:, m], x_w, ld, reorder[m],
                                                                          q=q_[:, reorder[m], ld],
                                                                          q_lat=q_lat[:, reorder[m], ld],
                                                                          snr=self.snr_norm[:, ld])
+                    q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                     q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                 else:
@@ -927,6 +963,8 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
 
 
 def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp=False):
+    if warp and getattr(self.alignment, 'uses_posterior_flow', False):
+        raise NotImplementedError('gp_flow is supported by offline.fit, not classify_batch')
     warp = _alignment.configured(self).enabled(warp)
     if not learning:
         x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
@@ -1100,6 +1138,8 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
 
 
 def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
+    if warp and getattr(self.alignment, 'uses_posterior_flow', False):
+        raise NotImplementedError('gp_flow is supported by offline.fit, not fit_labels')
     warp = _alignment.configured(self).enabled(warp)
     assert y_trains.shape[2] == self.n_outputs
     y_trains = self.cond_cuda(self.cond_to_torch(y_trains))

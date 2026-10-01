@@ -50,6 +50,27 @@ class LatentState:
 
 
 @dataclass(frozen=True, eq=False)
+class WarpPosterior:
+    """Candidate-conditioned posterior for one uncommitted observation.
+
+    grid_samples has shape (draws, points, 1).  The displacement arrays have
+    shape (points, 1).  score_by_output contains each channel's expected log
+    likelihood with one shared warp KL divided evenly across channels.
+    Arrays are independent, read-only snapshots of the model calculation.
+    """
+    cluster: int
+    grid_samples: ndarray
+    mean_displacement: ndarray
+    std_displacement: ndarray
+    mean_whitened: ndarray
+    chol_whitened: ndarray
+    score_by_output: ndarray
+    expected_log_likelihood: float
+    kl: float
+    elbo: float
+
+
+@dataclass(frozen=True, eq=False)
 class UpdateResult:
     """One committed online update, with optional copied scientific snapshots.
 

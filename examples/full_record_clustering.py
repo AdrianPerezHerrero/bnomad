@@ -8,7 +8,7 @@ Run from the repository root after installing the package::
     python examples/full_record_clustering.py --records 100 --no-scale-waveforms --unit-grid
 
 Edit the experiment controls below to choose records, channels, inference schedule,
-warping, and model hyperparameters. If there is one extra trailing annotation,
+alignment policy, warping, and model hyperparameters. If there is one extra trailing annotation,
 the script crops the annotation vector to the number of fitted observations.
 Console output is also saved to one log file per record in the plot directory.
 """
@@ -29,6 +29,7 @@ from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 
 from tutorial_utils import plot_record_results
 from hdpgpc import HDPGPC
+from hdpgpc.diagnostics import model_warp_arrays, plot_warp_diagnostics
 from hdpgpc.config import (
     AlignmentConfig,
     DynamicsConfig,
@@ -54,14 +55,16 @@ RECORDS = (
     "228", "230", "231", "232", "233", "234",
 )
 #RECORDS = ("100",)            # Current record selection.
-CHANNELS = (0,1)                 # Choose channel 0, 1, or both: (0, 1).
-SCALE_WAVEFORMS = True          # First-beat mean/std scaling; False keeps stored amplitudes.
+CHANNELS = (0,)                 # Choose channel 0, 1, or both: (0, 1).
+SCALE_WAVEFORMS = False          # First-beat mean/std scaling; False keeps stored amplitudes.
 UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 grid.
 INFERENCE_MODE = "offline"      # "offline", "online", or "online_fast".
-ENABLE_WARP = True              # The supported warping tutorial path is offline.
+ENABLE_WARP = True              # Whether to request alignment during fitting.
+ALIGNMENT_POLICY = "gp_flow"    # "gp" (legacy) or "gp_flow" (posterior input warp).
 VERBOSE = False                 # False: progress/summary; True: per-sample/iteration detail.
 SHARE_GP_FOR_PROPOSALS = True   # Offline proposals/new clusters start from a fitted GP copy.
 SAVE_PLOTS = True               # Also save the final figures when True.
+PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
 PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_mo"
 PLOT_DPI = 160
 
@@ -79,13 +82,14 @@ PROCESS_NOISE_BOUNDS = (0.001, 0.5)
 OFFLINE_ITERATIONS = 50
 RANDOM_SEED = 42
 
+
 DATA_DIRECTORY = Path(__file__).resolve().parents[1] / "hdpgpc" / "data" / "mitbih"
 
 
 def _configuration(grid: np.ndarray) -> HDPGPCConfig:
     """Build the full experiment recipe in one visible place."""
-    if ENABLE_WARP and INFERENCE_MODE != "offline":
-        raise ValueError("This example enables warping only with INFERENCE_MODE='offline'.")
+    if ENABLE_WARP and INFERENCE_MODE != "offline" and ALIGNMENT_POLICY != "gp_flow":
+        raise ValueError("Online warping in this example requires ALIGNMENT_POLICY='gp_flow'.")
     if len(CHANNELS) > 1 and INFERENCE_MODE in ("online", "online_fast"):
         raise ValueError("The characterized online multi-output path is unsupported; select one channel.")
 
@@ -108,7 +112,7 @@ def _configuration(grid: np.ndarray) -> HDPGPCConfig:
             bayesian_params=True,
         ),
         alignment=AlignmentConfig(
-            policy="gp" if ENABLE_WARP else "none",
+            policy=ALIGNMENT_POLICY if ENABLE_WARP else "none",
             x_basis_warp=grid if ENABLE_WARP else None,
             mode_warp="rough",
         ),
@@ -163,7 +167,7 @@ def _prepare_record(
         values = (raw - center[None, None, :]) / scale[None, None, :]
     else:
         values = raw
-    grid_end = 1.0 if unit_grid else 4.0
+    grid_end = 1.0 if unit_grid else raw.shape[1] - 1.0
     grid = np.linspace(0.0, grid_end, raw.shape[1], dtype=np.float64)[:, None]
     return values, grid
 
@@ -223,6 +227,7 @@ def _print_confusion_matrix(classes: np.ndarray, matrix: np.ndarray) -> None:
 
 
 def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
+               plot_warps: bool = PLOT_WARPS,
                plot_directory: Path = PLOT_DIRECTORY,
                scale_waveforms: bool = SCALE_WAVEFORMS,
                unit_grid: bool = UNIT_GRID) -> None:
@@ -236,7 +241,8 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     print(f"Input shape={values.shape} (beats, points, outputs), channels={CHANNELS}")
     print(f"Waveform scaling={'first-beat mean/std' if scale_waveforms else 'off'}, "
           f"grid range=0..{grid[-1, 0]:g}")
-    print(f"Schedule={INFERENCE_MODE}, warp={ENABLE_WARP}, verbose={VERBOSE}")
+    print(f"Schedule={INFERENCE_MODE}, warp={ENABLE_WARP}, "
+          f"alignment={ALIGNMENT_POLICY if ENABLE_WARP else 'none'}, verbose={VERBOSE}")
     print(f"Model={MODEL_TYPE}, HDP preset={HDP_PRESET}, cluster cap={MAX_CLUSTERS}")
 
     model = HDPGPC(config)
@@ -287,12 +293,29 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
             for axis in figure.axes:
                 if axis.get_ylabel() == "Scaled amplitude":
                     axis.set_ylabel("Stored amplitude")
+    warp_figures = []
+    if ENABLE_WARP and plot_warps:
+        # GP-flow uses one warp for all channels; legacy GP alignment may
+        # produce a different warp for each output.
+        outputs = (0,) if ALIGNMENT_POLICY == "gp_flow" else range(len(CHANNELS))
+        for output in outputs:
+            offsets, posterior_std = model_warp_arrays(model, grid, output=output)
+            figure = plot_warp_diagnostics(
+                grid, offsets, labels=assignments, posterior_std=posterior_std,
+                title=f"Record {record}, channel {CHANNELS[output]}: fitted input warps",
+            )
+            warp_figures.append((CHANNELS[output], figure))
     if save_plots:
         plot_directory.mkdir(parents=True, exist_ok=True)
         for channel, figure in zip(CHANNELS, figures):
             path = plot_directory / f"record_{record}_channel_{channel}_clustering.png"
             figure.savefig(path, dpi=PLOT_DPI)
             print(f"Saved plot: {path}")
+            plt.close(figure)
+        for channel, figure in warp_figures:
+            path = plot_directory / f"record_{record}_channel_{channel}_warps.png"
+            figure.savefig(path, dpi=PLOT_DPI)
+            print(f"Saved warp plot: {path}")
             plt.close(figure)
     else:
         plt.show()
@@ -336,7 +359,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--save-plots", action=argparse.BooleanOptionalAction, default=SAVE_PLOTS,
-        help="Save one PNG per selected channel without displaying figures (default: SAVE_PLOTS).",
+        help="Save figures without displaying them (default: SAVE_PLOTS).",
+    )
+    parser.add_argument(
+        "--plot-warps", action=argparse.BooleanOptionalAction, default=PLOT_WARPS,
+        help="Include fitted warp diagnostics when alignment is enabled (default: PLOT_WARPS).",
     )
     parser.add_argument(
         "--plot-dir", type=Path, default=PLOT_DIRECTORY,
@@ -352,7 +379,8 @@ def main() -> None:
                 print(f"Log file: {log_path}")
                 try:
                     run_record(
-                        record, save_plots=args.save_plots, plot_directory=args.plot_dir,
+                        record, save_plots=args.save_plots, plot_warps=args.plot_warps,
+                        plot_directory=args.plot_dir,
                         scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,
                     )
                 except BaseException:

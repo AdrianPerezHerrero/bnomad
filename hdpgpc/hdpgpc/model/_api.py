@@ -7,7 +7,7 @@ from copy import deepcopy
 from numbers import Integral
 
 from ..config import HDPGPCConfig
-from ._results import Prediction, LatentState, UpdateResult, _snapshot
+from ._results import Prediction, LatentState, UpdateResult, WarpPosterior, _snapshot
 
 
 def _data(value, name):
@@ -232,3 +232,36 @@ class HDPGPC:
                 smoothed_mean=_snapshot(gp.f_star_sm[-1]).reshape(-1),
                 smoothed_covariance=_snapshot(gp.cov_f_sm[-1])))
         return tuple(result)
+
+    def warp_posterior(self, x, *, grid=None, cluster=None) -> dict[int, WarpPosterior]:
+        """Infer a new beat's warp against the current cluster GP representers.
+
+        This is read-only: it neither assigns the beat nor changes the learned
+        emission state.  The candidate-conditioned posterior is inferred anew
+        for each current cluster.  ``cluster`` selects just one candidate.
+        Requires alignment.policy='gp_flow' and an already fitted model.
+        """
+        self._require_fitted()
+        if not getattr(self._backend.alignment, 'uses_posterior_flow', False):
+            raise ValueError("warp_posterior requires alignment.policy='gp_flow'")
+        values, coordinates = self._inputs(x, grid, batch=False)
+        if cluster is not None:
+            if (isinstance(cluster, bool) or not isinstance(cluster, Integral)
+                    or not 0 <= cluster < len(self._backend.gpmodels[0])):
+                raise ValueError('cluster must be a current candidate index')
+            cluster = int(cluster)
+        import torch
+        devices = [torch.cuda.current_device()] if self._backend.cuda else []
+        with torch.random.fork_rng(devices=devices):
+            results, scores = self._backend.alignment.posterior_next(
+                self._backend, coordinates, values, candidate=cluster)
+        return {m: WarpPosterior(
+            cluster=m, grid_samples=_snapshot(result.grid_samples),
+            mean_displacement=_snapshot(result.mean_displacement),
+            std_displacement=_snapshot(result.std_displacement),
+            mean_whitened=_snapshot(result.mean_whitened),
+            chol_whitened=_snapshot(result.chol_whitened),
+            score_by_output=_snapshot(scores[m]),
+            expected_log_likelihood=float(result.expected_log_likelihood),
+            kl=float(result.kl), elbo=float(result.elbo))
+            for m, result in results.items()}

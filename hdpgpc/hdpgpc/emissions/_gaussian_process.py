@@ -357,6 +357,109 @@ class GaussianProcessEmission:
             self.condition_observation(index, x_train, y, x_warped, posterior=False)
         return new_x_basis
 
+    def include_weighted_sample_flow(self, index, x_train, grid_samples, y, h):
+        """Variational Gaussian state update averaged over sampled input warps.
+
+        With q(g) fixed, E_q(g)[log p(y | f, g)] is quadratic in the basis
+        state f.  Averaging its precision and linear natural parameter gives
+        the optimal Gaussian coordinate update for this observation.
+        """
+        from ..alignment._gp_flow import _column, _kernel_torch
+
+        if h <= 0:
+            return self.x_basis
+        device = self.f_star_sm[-1].device
+        dtype = torch.float64
+        grids = torch.as_tensor(grid_samples, dtype=dtype, device=device)
+        if grids.ndim == 2:
+            grids = grids.unsqueeze(-1)
+        observation = _column(y, device=device)
+        mean_grid = grids.mean(0)
+        new_basis = self.x_basis
+        if self.N == 0 and not self.fitted:
+            valid = torch.allclose(torch.from_numpy(self.gp.kernel.theta),
+                                   torch.from_numpy(self.ini_kernel_theta))
+            new_basis, _ = self.fit_kernel_params(mean_grid, observation,
+                                                   self.Sigma[-1], self.Gamma[-1],
+                                                   valid=valid)
+
+        basis = _column(self.x_basis, device=device)
+
+        a = torch.as_tensor(self.A[-1], dtype=dtype, device=device)
+        gamma = torch.as_tensor(self.Gamma[-1], dtype=dtype, device=device)
+        c = torch.as_tensor(self.C[-1], dtype=dtype, device=device)
+        sigma = torch.as_tensor(self.Sigma[-1], dtype=dtype, device=device)
+        previous_mean = _column(self.f_star_sm[-1], device=device)
+        previous_cov = torch.as_tensor(self.cov_f_sm[-1], dtype=dtype, device=device)
+        first = self.N == 0
+        prior_mean = previous_mean if first else a @ previous_mean
+        prior_cov = previous_cov if first else a @ previous_cov @ a.T + gamma
+        eye_basis = torch.eye(len(basis), dtype=dtype, device=device)
+        prior_cov = 0.5 * (prior_cov + prior_cov.T) + 1e-6 * eye_basis
+        prior_chol = torch.linalg.cholesky(prior_cov)
+        prior_precision = torch.cholesky_inverse(prior_chol)
+
+        kernel = self.gp.kernel
+        kbb = _kernel_torch(kernel, basis, basis)
+        kbb_chol = torch.linalg.cholesky(0.5 * (kbb + kbb.T) + 1e-4 * eye_basis)
+        eye_y = torch.eye(len(observation), dtype=dtype, device=device)
+        natural_precision = prior_precision.clone()
+        natural_mean = prior_precision @ prior_mean
+        weight = float(h) / len(grids)
+        constant_noise = bool(torch.all(torch.isclose(
+            torch.diagonal(sigma), torch.diagonal(sigma).mean())))
+
+        for grid in grids:
+            kbg = _kernel_torch(kernel, basis, grid)
+            projection = torch.cholesky_solve(kbg, kbb_chol).T
+            measurement = projection @ c
+            if constant_noise:
+                residual_cov = torch.diagonal(sigma).mean() * eye_y
+            else:
+                kgg = _kernel_torch(kernel, grid)
+                residual_cov = (kgg - kbg.T @ projection.T
+                                + projection @ sigma @ projection.T)
+            residual_cov = 0.5 * (residual_cov + residual_cov.T) + 1e-6 * eye_y
+            residual_chol = torch.linalg.cholesky(residual_cov)
+            inv_measurement = torch.cholesky_solve(measurement, residual_chol)
+            inv_observation = torch.cholesky_solve(observation, residual_chol)
+            natural_precision = natural_precision + weight * measurement.T @ inv_measurement
+            natural_mean = natural_mean + weight * measurement.T @ inv_observation
+
+        posterior_chol = torch.linalg.cholesky(0.5 * (natural_precision + natural_precision.T))
+        posterior_cov = torch.cholesky_inverse(posterior_chol)
+        posterior_mean = posterior_cov @ natural_mean
+        self.N += 1
+        self.indexes.append(index)
+        self.x_train.append(mean_grid.detach())
+        self.y_train.append(observation.detach())
+        self.f_star.append(posterior_mean.detach())
+        self.f_star_sm.append(posterior_mean.detach())
+        self.cov_f.append(posterior_cov.detach())
+        self.cov_f_sm.append(posterior_cov.detach())
+        return new_basis
+
+    def full_pass_weighted_flow(self, x_trains, y_trains, resp, grid_samples,
+                                q=None, q_lat=None, snr=None):
+        """Offline pass using one MC warp posterior per observation."""
+        active = torch.nonzero(resp > 0, as_tuple=False).squeeze(1)
+        if active.numel() == 0:
+            return q, q_lat
+        dynamic = bool(torch.count_nonzero(self.Gamma[-1]))
+        for index in active.tolist():
+            h = float(resp[index].item())
+            self.include_weighted_sample_flow(index, x_trains[index],
+                                               grid_samples[index],
+                                               y_trains[index], h)
+            if dynamic:
+                self.backwards_pair(h)
+                self.bayesian_new_params(h)
+        if dynamic:
+            self.backwards()
+        mean_grids = torch.stack([samples.mean(0) for samples in grid_samples])
+        return (self.compute_sq_err_all(mean_grids, y_trains),
+                self.compute_q_lat_all(mean_grids))
+
     def full_pass_weighted(self, x_trains, y_trains, resp, q=None, q_lat=None, snr=None):
         """Full forward pass method used in the offline scheme."""
         if len(torch.nonzero(self.Gamma[-1])) < 1:

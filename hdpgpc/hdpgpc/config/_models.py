@@ -54,7 +54,7 @@ class DynamicsConfig:
 @dataclass(frozen=True)
 class AlignmentConfig:
     """Policy selection is separate from each inference call's warp request."""
-    policy: Literal['gp', 'none'] = 'gp'
+    policy: Literal['gp', 'gp_flow', 'none'] = 'gp'
     x_basis_warp: ndarray | list[ndarray] | None = None
     noise_warp: float = 0.05
     bound_noise_warp: Bounds = (1e-10, 1e10)
@@ -62,6 +62,14 @@ class AlignmentConfig:
     warp_updating: BoolOption = False
     method_compute_warp: Literal['standard', 'greedy', 'greedy_bound'] = 'greedy'
     mode_warp: Literal['balanced', 'fine', 'rough'] = 'rough'
+    flow_inducing: int = 10
+    flow_features: int = 64
+    flow_samples: int = 4
+    flow_steps: int = 10
+    flow_train_iter: int = 30
+    flow_lengthscale: float = 0.2
+    flow_amplitude: float = 0.1
+    flow_lr: float = 0.03
 
 
 @dataclass(frozen=True)
@@ -144,7 +152,9 @@ class NumericalConfig:
 SECTIONS = {'hdp': HDPConfig, 'emission': GPEmissionConfig, 'dynamics': DynamicsConfig,
             'alignment': AlignmentConfig, 'inference': InferenceConfig,
             'multi_output': MultiOutputConfig, 'numerics': NumericalConfig}
-NON_CONSTRUCTOR = {'alignment': {'policy'},
+NON_CONSTRUCTOR = {'alignment': {'policy', 'flow_inducing', 'flow_features',
+                                 'flow_samples', 'flow_steps', 'flow_train_iter',
+                                 'flow_lengthscale', 'flow_amplitude', 'flow_lr'},
                    'inference': {'schedule', 'with_warp', 'warp', 'force_model', 'minibatch', 'classify', 'it_limit'},
                    'numerics': {'seed', 'num_threads', 'dtype', 'deterministic'}}
 
@@ -244,5 +254,11 @@ def _initialization_options(config):
         result.update({f.name: getattr(section, f.name) for f in fields(section)
                        if f.name not in NON_CONSTRUCTOR.get(name, ())})
     from ..alignment import GPAlignment, NoAlignment
-    result['alignment'] = NoAlignment() if config.alignment.policy == 'none' else GPAlignment()
+    if config.alignment.policy == 'none':
+        result['alignment'] = NoAlignment()
+    elif config.alignment.policy == 'gp_flow':
+        from ..alignment._flow_integration import GPFlowAlignment
+        result['alignment'] = GPFlowAlignment(config.alignment)
+    else:
+        result['alignment'] = GPAlignment()
     return deepcopy(result)

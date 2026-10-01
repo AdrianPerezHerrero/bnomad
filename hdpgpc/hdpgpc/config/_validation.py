@@ -69,8 +69,15 @@ def validate(c, *, for_build=False):
     if o.reduce_outputs and int(np.rint(o.n_outputs * o.reduce_outputs_ratio)) < 1:
         raise ValueError('Output reduction would leave zero outputs')
     validate_inference(i)
-    if a.policy not in ('gp', 'none'):
+    if a.policy not in ('gp', 'gp_flow', 'none'):
         raise ValueError('Unknown alignment policy')
+    for name in ('flow_inducing', 'flow_features', 'flow_samples', 'flow_steps'):
+        integer(getattr(a, name), name, 1)
+    integer(a.flow_train_iter, 'flow_train_iter', 0)
+    for name in ('flow_lengthscale', 'flow_amplitude', 'flow_lr'):
+        value = getattr(a, name)
+        if not isinstance(value, Real) or not math.isfinite(value) or value <= 0:
+            raise ValueError(name + ' must be finite and positive')
     if a.method_compute_warp not in ('standard', 'greedy', 'greedy_bound'):
         raise ValueError('Unknown alignment method')
     if a.mode_warp not in ('balanced', 'fine', 'rough'):

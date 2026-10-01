@@ -47,7 +47,8 @@ The root namespace exports exactly these new names through `__all__`:
 | `Prediction` | A component's current observation mean and covariance |
 | `LatentState` | One output's latest stored filtered/smoothed state |
 
-The model/result types are also exported from `hdpgpc.model`. Public methods and
+The model/result types are also exported from `hdpgpc.model`, which additionally
+exports `WarpPosterior` for the opt-in GP-flow policy. Public methods and
 properties on `HDPGPC` are:
 
 | Name | Contract |
@@ -60,6 +61,7 @@ properties on `HDPGPC` are:
 | `n_clusters_` | Number of represented clusters, excluding empty reserved slots |
 | `predictive(cluster, *, grid=None)` | Read a component's current observation distribution |
 | `posterior(cluster)` | Copy its latest stored latent state for each output |
+| `warp_posterior(x, *, grid=None, cluster=None)` | Fit candidate-conditioned warp posteriors from the current model state without committing `x`; requires `gp_flow` |
 | `config` | An independent copy of the construction recipe |
 
 There is deliberately no ambiguous `predict(X)` method: assigning new curves,

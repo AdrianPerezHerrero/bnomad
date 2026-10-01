@@ -18,7 +18,7 @@ model = HDPGPC(restored).fit(waveforms())
 | `hdp` | `HDPConfig` | `M`, concentration preset, HMM dependence, maximum models |
 | `emission` | `GPEmissionConfig` | kernels, lengthscale/output/noise initialization and bounds, inducing points |
 | `dynamics` | `DynamicsConfig` | static/dynamic mode, process noise, ML/Bayesian updates, annealing, estimation limits |
-| `alignment` | `AlignmentConfig` | `gp`/`none`, basis, noise/bounds, recursion, warp mode |
+| `alignment` | `AlignmentConfig` | `gp`/`gp_flow`/`none`, basis, noise/bounds, recursion, warp mode |
 | `inference` | `InferenceConfig` | online/fast/offline schedule and separate call controls |
 | `multi_output` | `MultiOutputConfig` | output count, GP fitting sharing, SNR, output reduction |
 | `numerics` | `NumericalConfig` | device and opt-in seed/thread/dtype/determinism |
@@ -34,6 +34,8 @@ Alignment policy defaults to `gp`, replacing the serialized token `legacy` with
 the same scientific choice. Change that token explicitly in older recipes.
 `none` disables alignment even if requested by a call. Online `with_warp=True`
 and offline `warp=False` remain distinct defaults.
+`gp_flow` enables an opt-in variational monotonic GP-flow warp posterior; see
+[GP-flow alignment](gp_flow_alignment.md) for its objective, controls and limits.
 
 `schedule=None` selects offline for public `fit` and standard online for `update`.
 Explicit choices are `online`, `online_fast`, `offline`. `InferenceConfig.run`

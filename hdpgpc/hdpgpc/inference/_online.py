@@ -7,6 +7,39 @@ import torch
 from ..alignment import _components as _alignment
 
 
+def _flow_grid(self, candidate, original):
+    if getattr(self.alignment, 'uses_posterior_flow', False):
+        return self.alignment.grid_for_candidate(self, int(candidate), original)
+    return original
+
+
+def _flow_score(self, candidate, output, gp, observation, fallback):
+    if getattr(self.alignment, 'uses_posterior_flow', False):
+        return self.alignment.proposal_score(
+            self, int(candidate), output, gp, observation, fallback)
+    return fallback
+
+
+def _flow_observation(self, observation, output):
+    if getattr(self.alignment, 'uses_posterior_flow', False):
+        value = torch.as_tensor(observation)
+        if value.ndim == 2 and value.shape[1] == self.n_outputs:
+            return value[:, [output]]
+    return observation
+
+
+def _include_with_alignment(self, gp, index, candidate, original, observation, h,
+                            output=None):
+    if getattr(self.alignment, 'uses_posterior_flow', False):
+        samples = self.alignment.samples_for_candidate(self, int(candidate))
+        if samples is not None:
+            observation = _flow_observation(self, observation, output)
+            return gp.include_weighted_sample_flow(
+                index, original, samples, observation, h)
+    grid = _flow_grid(self, candidate, original)
+    return gp.include_weighted_sample(index, grid, grid, observation, h)
+
+
 def _report_assignment(self, sample_index, model, birth):
     if not self.verbose:
         return
@@ -64,7 +97,10 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
     for ld in range(self.n_outputs):
         for m, gp in enumerate(self.gpmodels[ld]):
             q_lat[:, m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
-            q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1) + liks[m]
+            if getattr(self.alignment, 'uses_posterior_flow', False) and m in self._flow_online_scores:
+                q_aux[-1, m, ld] = self._flow_online_scores[m][ld]
+            else:
+                q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1) + liks[m]
             #q_aux[[-1], m, ld] = self.estimate_new(t, gp, self.x_train[-1], y_mod[m][-1], h=1.0)
     if t > 0:
         resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
@@ -84,6 +120,8 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
         # Define order
         q_ord = torch.argsort(self.weight_mean(q_aux)[-1, :-1], descending=True)
         m = q_ord[-1].item()
+        if getattr(self.alignment, 'uses_posterior_flow', False) and with_warp:
+            self.alignment.prepare_birth(self, m, self.x_train[-1], y_mod[-1][-1])
         # m = q_ord[0].item()
         q_prev = torch.clone(q_aux)
         q_lat_prev = torch.clone(q_lat)
@@ -92,8 +130,13 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
             prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
             prov_gp.reinit_GP(save_last=False)
             prov_gp.reinit_LDS(save_last=False)
-            q_prev[[-1], -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_mod[-1][-1], h=1.0) + liks[-1]
-            prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[-1][-1], 1.0)
+            proposal_grid = _flow_grid(self, len(y_mod) - 1, self.x_train[-1])
+            point_score = self.estimate_new(t, prov_gp, proposal_grid,
+                                            _flow_observation(self, y_mod[-1][-1], ld), h=1.0) + liks[-1]
+            q_prev[[-1], -1, ld] = _flow_score(self, len(y_mod) - 1, ld, prov_gp,
+                                                y_mod[-1][-1], point_score)
+            _include_with_alignment(self, prov_gp, t, len(y_mod) - 1,
+                                    self.x_train[-1], y_mod[-1][-1], 1.0, ld)
             self.gpmodels[ld].append(prov_gp)
             # self.M = M + 1
             q_lat_prev[:, -1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
@@ -117,8 +160,13 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
                 saved_gps = [self.gpmodels[ld][m] for ld in range(self.n_outputs)]
                 for ld in range(self.n_outputs):
                     post_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
-                    q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0) + liks[m]
-                    post_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m][-1], 1.0)
+                    proposal_grid = _flow_grid(self, m, self.x_train[-1])
+                    point_score = self.estimate_new(t, post_gp, proposal_grid,
+                                                    _flow_observation(self, y_mod[m][-1], ld), h=1.0) + liks[m]
+                    q_post[[-1], m, ld] = _flow_score(self, m, ld, post_gp,
+                                                       y_mod[m][-1], point_score)
+                    _include_with_alignment(self, post_gp, t, m,
+                                            self.x_train[-1], y_mod[m][-1], 1.0, ld)
                     self.gpmodels[ld][m] = post_gp
                     post_gp.backwards_pair(1.0)
                     post_gp.bayesian_new_params(1.0)
@@ -201,6 +249,8 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
         for ld in range(self.n_outputs):
             self.gpmodels[ld].append(self.create_gp_default())
             self.wp_sys[ld].append(self.create_wp_sys_default())
+        if getattr(self.alignment, 'uses_posterior_flow', False) and with_warp:
+            self.alignment.bind_birth(self, M - 1)
         self.x_basis.append(self.x_basis_ini)
         resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
         startStateCount = resp[0]
@@ -272,7 +322,8 @@ def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, clas
         minibatch = None
     for ld in range(self.n_outputs):
         for m in range(M):
-            new_x_basis = self.gpmodels[ld][m].include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[reorder[m]][-1], resp_mod[m])
+            new_x_basis = _include_with_alignment(self, self.gpmodels[ld][m], t,
+                reorder[m], self.x_train[-1], y_mod[reorder[m]][-1], resp_mod[m], ld)
             self.x_basis[m] = self.cond_cuda(self.cond_to_torch(new_x_basis.detach()))
             if resp_mod[m] > 0.9:
                 self.y_train = torch.concatenate([self.y_train, torch.atleast_2d(y_mod[reorder[m]][-1]).T[:, :, np.newaxis]])
@@ -455,11 +506,14 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
 
     for ld in range(self.n_outputs):
         for m, gp in enumerate(self.gpmodels[ld]):
-            q_aux[-1, m, ld] = gp.log_sq_error(
-                self.cond_cuda(self.cond_to_torch(torch.from_numpy(np.array(self.x_train[-1])))),
-                y_mod[m][-1],
-                i=-1
-            )
+            if getattr(self.alignment, 'uses_posterior_flow', False) and m in self._flow_online_scores:
+                q_aux[-1, m, ld] = self._flow_online_scores[m][ld]
+            else:
+                q_aux[-1, m, ld] = gp.log_sq_error(
+                    self.cond_cuda(self.cond_to_torch(torch.from_numpy(np.array(self.x_train[-1])))),
+                    y_mod[m][-1],
+                    i=-1
+                )
 
     # --- SPECIAL CASE: first sample (t == 0) ---
     if t == 0:
@@ -509,6 +563,8 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
         q_ord = torch.argsort(self.weight_mean(q_aux)[-1, :-1], descending=True)
         m_template = int(
             q_ord[-1].item())  # template for prov_gp (same as update) :contentReference[oaicite:5]{index=5}
+        if getattr(self.alignment, 'uses_posterior_flow', False) and with_warp:
+            self.alignment.prepare_birth(self, m_template, self.x_train[-1], y_mod[-1][-1])
 
         # ========== Birth candidate ==========
         q_prev = torch.clone(q_aux)
@@ -522,9 +578,13 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
 
             # Keep original behavior: birth uses y_mod[-1][-1] :contentReference[oaicite:6]{index=6}
             y_birth = y_mod[-1][-1]
-            q_prev[-1, -1, ld] = self.estimate_new(t, prov_gp, self.x_train[-1], y_birth, h=1.0)
-
-            prov_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_birth, 1.0)
+            proposal_grid = _flow_grid(self, len(y_mod) - 1, self.x_train[-1])
+            point_score = self.estimate_new(t, prov_gp, proposal_grid,
+                                            _flow_observation(self, y_birth, ld), h=1.0)
+            q_prev[-1, -1, ld] = _flow_score(self, len(y_mod) - 1, ld,
+                                             prov_gp, y_birth, point_score)
+            _include_with_alignment(self, prov_gp, t, len(y_mod) - 1,
+                                    self.x_train[-1], y_birth, 1.0, ld)
             # q_lat for a new model is non-zero only at t (indexes contains only t) :contentReference[oaicite:7]{index=7}
             if self.model_type_def == 'dynamic':
                 q_lat_prev[:, -1, ld] = self._update_q_lat_tail(prov_gp, q_lat_prev[:, -1, ld], [t], h_ini=0.5) * 5.0
@@ -562,10 +622,13 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
                     post_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_cand])
 
                     # Use estimate_new so the sample is assumed INCLUDED (this is what you asked to restore) :contentReference[oaicite:9]{index=9}
-                    q_post[-1, m_cand, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m_cand][-1],
-                                                               h=1.0)
-
-                    post_gp.include_weighted_sample(t, self.x_train[-1], self.x_train[-1], y_mod[m_cand][-1], 1.0)
+                    proposal_grid = _flow_grid(self, m_cand, self.x_train[-1])
+                    point_score = self.estimate_new(t, post_gp, proposal_grid,
+                                                    _flow_observation(self, y_mod[m_cand][-1], ld), h=1.0)
+                    q_post[-1, m_cand, ld] = _flow_score(self, m_cand, ld, post_gp,
+                                                         y_mod[m_cand][-1], point_score)
+                    _include_with_alignment(self, post_gp, t, m_cand,
+                                            self.x_train[-1], y_mod[m_cand][-1], 1.0, ld)
                     post_gp.backwards_pair(1.0)  # tail-only smoothing :contentReference[oaicite:10]{index=10}
                     if self.bayesian_params:
                         post_gp.bayesian_new_params(1.0, model_type=self.model_type[m_cand])
@@ -639,6 +702,8 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
         for ld in range(self.n_outputs):
             self.gpmodels[ld].append(self.create_gp_default())
             self.wp_sys[ld].append(self.create_wp_sys_default())
+        if getattr(self.alignment, 'uses_posterior_flow', False) and with_warp:
+            self.alignment.bind_birth(self, M - 1)
         self.x_basis.append(self.x_basis_ini)
     if force_model is None:
         resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
@@ -664,11 +729,9 @@ def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0,
     for ld in range(self.n_outputs):
         for m in range(self.M):
             h = float(resp_mod[m]) if m < len(resp_mod) else 0.0
-            new_x_basis = self.gpmodels[ld][m].include_weighted_sample(
-                t, self.x_train[-1], self.x_train[-1],
-                y_mod[reorder[m]][-1] if m < len(y_mod) else y,
-                h
-            )
+            new_x_basis = _include_with_alignment(
+                self, self.gpmodels[ld][m], t, reorder[m], self.x_train[-1],
+                y_mod[reorder[m]][-1] if m < len(y_mod) else y, h, ld)
             self.x_basis[m] = self.cond_cuda(self.cond_to_torch(new_x_basis.detach()))
             if h == 1.0:
                 self.y_train = torch.concatenate(
