@@ -13,7 +13,7 @@ class DTWGPAlignment(GPFlowAlignment):
     def create_warper(self, *args, **kwargs):
         cfg = self.config
         return DTWGPWarp(*args, **kwargs, points=cfg.dtw_points,
-                         band=cfg.dtw_band, inducing=cfg.dtw_inducing,
+                         inducing=cfg.dtw_inducing,
                          lengthscale=cfg.dtw_lengthscale,
                          amplitude=cfg.dtw_amplitude,
                          anchor_noise=cfg.dtw_anchor_noise)

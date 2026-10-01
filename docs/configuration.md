@@ -37,8 +37,16 @@ defaults to `False` for both online and offline schedules; set it to `True` to
 request alignment with either schedule.
 `gp_flow` enables an opt-in variational monotonic GP-flow warp posterior; see
 [GP-flow alignment](gp_flow_alignment.md) for its objective, controls and limits.
-`dtw_gp` estimates a cheaper monotone point warp with narrow DTW and a smooth
+`dtw_gp` estimates a cheaper monotone point warp with unrestricted DTW and a smooth
 GP displacement prior; see [DTW–GP alignment](dtw_gp_alignment.md).
+
+For either online schedule, `verbose=True` prints the baseline objective and
+the birth and absorb proposals for each subsequent sample. Each proposal shows
+its emission, latent, HDP, and LDS terms, total ELBO, change from the baseline,
+and the signed warp objective contribution when available. The emission term
+already includes that negative contribution. Candidate cluster numbers refer to the order
+before the selected state is reordered. If the birth emission gate fails, the
+proposal comparisons are diagnostic and do not affect the assignment.
 
 `schedule=None` selects offline for public `fit` and standard online for `update`.
 Explicit choices are `online`, `online_fast`, `offline`. `InferenceConfig.run`

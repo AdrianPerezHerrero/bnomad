@@ -8,7 +8,6 @@ point GP gives their regularized posterior mean. No ODE or optimizer is used.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import math
 
 import numpy as np
 import torch
@@ -16,8 +15,8 @@ import torch
 from ._identity import _ZeroWarpScore
 
 
-def _dtw_displacement(observed, template, grid, points, band):
-    """Map observation indices to template coordinates using a narrow DTW path."""
+def _dtw_displacement(observed, template, grid, points):
+    """Map observation indices to template coordinates using an unrestricted DTW path."""
     length = len(grid)
     take = np.rint(np.linspace(0, length - 1, min(points, length))).astype(int)
     x = grid[take]
@@ -28,12 +27,11 @@ def _dtw_displacement(observed, template, grid, points, band):
     b = (b - b.mean(0)) / np.maximum(b.std(0), 1e-6)
     cost = np.sum((a[:, None, :] - b[None, :, :]) ** 2, axis=-1)
     n = len(x)
-    width = max(1, int(math.ceil(band * (n - 1))))
     accumulated = np.full((n + 1, n + 1), np.inf)
     previous = np.zeros((n, n), dtype=np.uint8)
     accumulated[0, 0] = 0.0
     for i in range(n):
-        for j in range(max(0, i - width), min(n, i + width + 1)):
+        for j in range(n):
             best = accumulated[i, j]
             direction = 0  # prefer diagonal in ties
             if accumulated[i, j + 1] < best:
@@ -78,19 +76,18 @@ class PointWarpResult:
     grid_samples: torch.Tensor       # one deterministic grid, (1,T,1)
     mean_displacement: torch.Tensor  # (T,1)
     std_displacement: torch.Tensor   # zero: not a posterior uncertainty
-    kl: torch.Tensor                 # MAP GP prior penalty, not a KL divergence
+    kl: torch.Tensor                 # final-map GP quadratic penalty, not a KL divergence
 
 
 class DTWGPWarp:
-    """Band-limited coarse DTW followed by inducing-point GP smoothing."""
+    """Coarse DTW followed by inducing-point GP smoothing and prior scoring."""
 
     def __init__(self, x_basis_warp, noise_warp=0.05,
                  bound_noise_warp=(1e-10, 1e10), recursive=False, cuda=False,
-                 bayesian=True, mode='balanced', *, points=24, band=0.15,
-                 inducing=10, lengthscale=0.2, amplitude=0.1, anchor_noise=0.04):
+                 bayesian=True, mode='balanced', *, points=24,
+                 inducing=10, lengthscale=0.2, amplitude=0.005, anchor_noise=0.0005):
         self.device = torch.device('cuda' if cuda and torch.cuda.is_available() else 'cpu')
         self.points = int(points)
-        self.band = float(band)
         self.inducing = int(inducing)
         self.lengthscale = float(lengthscale)
         self.amplitude = float(amplitude)
@@ -133,8 +130,7 @@ class DTWGPWarp:
         with torch.no_grad():
             template = torch.stack([gp.mean_at(x[:, None]).reshape(-1)
                                     for gp in representers], dim=-1).cpu().numpy()
-        displacement = _dtw_displacement(observed, template, grid,
-                                         self.points, self.band)
+        displacement = _dtw_displacement(observed, template, grid, self.points)
         basis, projector = self._smoother(grid)
         span = grid[-1] - grid[0]
         whitened = projector @ (displacement / span)
@@ -144,8 +140,18 @@ class DTWGPWarp:
                                  device=self.device)[:, None]
         warped = torch.as_tensor(mapped, dtype=x.dtype,
                                   device=self.device)[None, :, None]
-        penalty = torch.as_tensor(0.5 * whitened @ whitened,
-                                   dtype=x.dtype, device=self.device)
+        # Score the map actually returned after monotonic projection. For
+        # K = B B.T + anchor_noise**2 I, this is 0.5 v.T K^-1 v (the
+        # log-determinant is fixed for a common grid and cancels between
+        # candidate clusters). The residual term matters when projection
+        # moves the map outside the inducing GP subspace.
+        final_displacement = (mapped - grid) / span
+        final_whitened = projector @ final_displacement
+        residual = final_displacement - basis @ final_whitened
+        gp_penalty = 0.5 * (final_whitened @ final_whitened
+                            + residual @ residual / self.anchor_noise ** 2)
+        penalty = torch.as_tensor(gp_penalty, dtype=x.dtype,
+                                  device=self.device)
         return PointWarpResult(warped, offset, torch.zeros_like(offset), penalty)
 
     def update_warp(self, x_train, x_warp):

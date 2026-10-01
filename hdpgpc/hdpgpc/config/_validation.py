@@ -80,8 +80,6 @@ def validate(c, *, for_build=False):
             raise ValueError(name + ' must be finite and positive')
     for name in ('dtw_points', 'dtw_inducing'):
         integer(getattr(a, name), name, 2)
-    if not isinstance(a.dtw_band, Real) or not math.isfinite(a.dtw_band) or not 0 < a.dtw_band <= 1:
-        raise ValueError('dtw_band must be in (0, 1]')
     for name in ('dtw_lengthscale', 'dtw_amplitude', 'dtw_anchor_noise'):
         value = getattr(a, name)
         if not isinstance(value, Real) or not math.isfinite(value) or value <= 0:

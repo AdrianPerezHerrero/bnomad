@@ -48,6 +48,29 @@ def _report_assignment(self, sample_index, model, birth):
     print(f"Sample {sample_index + 1}: assigned to cluster {model + 1}.", flush=True)
 
 
+def _online_objective(self, resp, resp_pair, q, q_lat, gpmodels, models, **kwargs):
+    """Expose terms already calculated by the objective only for verbose runs."""
+    result = self.compute_q_elbo(
+        resp, resp_pair, q, q_lat, gpmodels, models,
+        verb=False, return_components=self.verbose, **kwargs)
+    return result if self.verbose else (*result, None)
+
+
+def _report_online_objective(self, sample_index, label, q, elbo, components,
+                             baseline=None, candidate=None):
+    if not self.verbose:
+        return
+    total = float((q + elbo).item())
+    delta = '' if baseline is None else f", delta_ELBO={total - float(baseline):+.6g}"
+    warp = getattr(self, '_flow_online_posteriors', {}).get(candidate)
+    warp_term = '' if warp is None else f", warp_ELBO_term={-float(warp.kl.item()):.6g}"
+    print(f"Sample {sample_index + 1}: {label}: ELBO={total:.6g}{delta}, "
+          f"emission={float(components['emission'].item()):.6g}, "
+          f"latent={float(components['latent'].item()):.6g}, "
+          f"HDP={float(components['hdp'].item()):.6g}, "
+          f"LDS={float(components['lds'].item()):.6g}{warp_term}", flush=True)
+
+
 def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify=False):
     """
     Include the sample received and restimate all the parameters of the
@@ -107,15 +130,15 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
         q_all, elbo = self.compute_q_elbo(resp[:-1,:-1], respPair[:-1,:-1,:-1], self.weight_mean(q_aux)[:-1,:-1],
                                                           self.weight_mean(q_lat)[:-1,:-1],
                                                           self.gpmodels, self.M, snr='saved', post=False,
-                                                          one_sample=True, verb=self.verbose)
+                                                          one_sample=True, verb=False)
     if t > 0:
         resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta,
                                                                               self.startTheta)
-        q_all, elbo = self.compute_q_elbo(resp[:-1, :-1], respPair[:-1, :-1, :-1],
-                                          self.weight_mean(q_aux)[:-1, :-1],
-                                          self.weight_mean(q_lat)[:-1, :-1],
-                                          self.gpmodels, self.M, snr='saved', post=False,
-                                          one_sample=True, verb=self.verbose)
+        q_all, elbo, baseline_parts = _online_objective(
+            self, resp[:-1, :-1], respPair[:-1, :-1, :-1],
+            self.weight_mean(q_aux)[:-1, :-1],
+            self.weight_mean(q_lat)[:-1, :-1], self.gpmodels, self.M,
+            snr='saved', post=False, one_sample=True)
     if t > 0 and not classify:
         # Define order
         q_ord = torch.argsort(self.weight_mean(q_aux)[-1, :-1], descending=True)
@@ -144,19 +167,38 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
                                                                                                   self.transTheta,
                                                                                                   self.startTheta,
                                                                                                   liks)
-        q_prev_post, elbo_prev_post = self.compute_q_elbo(resp_prev, respPair_prev, self.weight_mean(q_prev),
-                                                          self.weight_mean(q_lat_prev),
-                                                          self.gpmodels, self.M, snr='saved', one_sample=True,
-                                                          post=True, verb=self.verbose)
+        q_prev_post, elbo_prev_post, birth_parts = _online_objective(
+            self, resp_prev, respPair_prev, self.weight_mean(q_prev),
+            self.weight_mean(q_lat_prev), self.gpmodels, self.M,
+            snr='saved', one_sample=True, post=True)
+        if self.verbose:
+            baseline_total = q_all + elbo
+            _report_online_objective(self, t, 'baseline before sample',
+                                     q_all, elbo, baseline_parts)
+            _report_online_objective(self, t, 'birth proposal',
+                                     q_prev_post, elbo_prev_post, birth_parts,
+                                     baseline_total, candidate=M)
         elbo_prev_post = elbo_prev_post - elbo  # / np.log(self.T + 1)
         q_prev_post = q_prev_post - q_all
         for ld in range(self.n_outputs):
             self.gpmodels[ld].pop()
             self.M = M
-        if torch.argmax(q_prev[-1]) == self.M:
+        birth_gate = bool(torch.argmax(q_prev[-1]) == self.M)
+        if self.verbose:
+            print(f"Sample {t + 1}: birth emission gate="
+                  f"{'passed' if birth_gate else 'failed'}; "
+                  f"candidate comparisons={'active' if birth_gate else 'diagnostic only'}.",
+                  flush=True)
+        if birth_gate or self.verbose:
             q_post = torch.clone(q_aux)
             q_lat_post = torch.clone(q_lat)
+            q_chos, q_lat_chos = q_prev, q_lat_prev
+            resp, resplog, respPair, respPairlog = resp_prev, resp_prev_log, respPair_prev, respPair_prev_log
+            absorb_chosen = False
             for m in q_ord:
+                if absorb_chosen or not birth_gate:
+                    q_post = torch.clone(q_aux)
+                    q_lat_post = torch.clone(q_lat)
                 saved_gps = [self.gpmodels[ld][m] for ld in range(self.n_outputs)]
                 for ld in range(self.n_outputs):
                     post_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
@@ -177,34 +219,43 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
                                                                                                           self.transTheta,
                                                                                                           self.startTheta,
                                                                                                           liks)
-                q_bas_post, elbo_bas_post = self.compute_q_elbo(resp_post[:, :-1], respPair_post[:, :-1, :-1],
-                                                                self.weight_mean(q_post)[:, :-1],
-                                                                self.weight_mean(q_lat_post)[:, :-1],
-                                                                self.gpmodels, self.M, snr='saved', post=False,
-                                                                one_sample=True, verb=self.verbose)
+                q_bas_post, elbo_bas_post, absorb_parts = _online_objective(
+                    self, resp_post[:, :-1], respPair_post[:, :-1, :-1],
+                    self.weight_mean(q_post)[:, :-1],
+                    self.weight_mean(q_lat_post)[:, :-1],
+                    self.gpmodels, self.M, snr='saved', post=False,
+                    one_sample=True)
+                if self.verbose:
+                    _report_online_objective(
+                        self, t, f'absorb into cluster {int(m) + 1}',
+                        q_bas_post, elbo_bas_post, absorb_parts,
+                        baseline_total, candidate=int(m))
                 elbo_bas_post = elbo_bas_post - elbo  # / np.log(self.T + 1)
                 q_bas_post = q_bas_post - q_all
 
-                if q_bas_post + elbo_bas_post > q_prev_post + elbo_prev_post:
+                if birth_gate and not absorb_chosen and q_bas_post + elbo_bas_post > q_prev_post + elbo_prev_post:
                     resp, resplog, respPair, respPairlog = self.variational_local_terms(q_post, self.transTheta,
                                                                                         self.startTheta, liks)
-                    q_chos = q_post
-                    q_lat_chos = q_lat_post
-                    for ld in range(self.n_outputs):
-                        self.gpmodels[ld][m] = saved_gps[ld]
+                    q_chos = torch.clone(q_post)
+                    q_lat_chos = torch.clone(q_lat_post)
+                    absorb_chosen = True
+                for ld in range(self.n_outputs):
+                    self.gpmodels[ld][m] = saved_gps[ld]
+                if absorb_chosen and not self.verbose:
                     break
-                else:
-                    for ld in range(self.n_outputs):
-                        self.gpmodels[ld][m] = saved_gps[ld]
-                    q_chos = q_prev
-                    q_lat_chos = q_lat_prev
-                    resp, resplog, respPair, respPairlog = resp_prev, resp_prev_log, respPair_prev, respPair_prev_log
+            if not birth_gate:
+                q_chos, q_lat_chos = q_aux, q_lat
+                resp, resplog, respPair, respPairlog = self.variational_local_terms(
+                    q_aux, self.transTheta, self.startTheta, liks)
         else:
             q_chos = q_aux
             q_lat_chos = q_lat
             resp, resplog, respPair, respPairlog = self.variational_local_terms(q_chos, self.transTheta,
                                                                                 self.startTheta, liks)
     else:
+        if self.verbose and not classify:
+            print(f"Sample {t + 1}: initial cluster; birth and absorb ELBO "
+                  "comparisons need a previous sample.", flush=True)
         q_chos = q_aux
         q_lat_chos = q_lat
         resp, resplog, respPair, respPairlog = self.variational_local_terms(q_aux, self.transTheta, self.startTheta,
@@ -233,6 +284,9 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
 
     # When converged apply all transformations to real models.
     if not force_model is None:
+        if self.verbose:
+            print(f"Sample {t + 1}: assignment overridden by forced cluster "
+                  f"{int(force_model) + 1}.", flush=True)
         resp_mod[:] = 0.0
         resp_mod[force_model] = 1.0
         model = np.argmax(resp_mod)
@@ -334,9 +388,13 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
                                                          max_samples=self.max_samples,
                                                          div_samples=self.div_samples, verbose=False,
                                                          model_type=self.model_type[m], check_var=self.check_var)
-    self.compute_q_elbo(resp[:, :M], respPair[:, :M, :M], self.weight_mean(q_chos)[:, :M],
-                        self.weight_mean(q_lat_chos)[:, :M],
-                        self.gpmodels, self.M, snr='saved', post=False, one_sample=True)
+    initial_q, initial_elbo, initial_parts = _online_objective(
+        self, resp[:, :M], respPair[:, :M, :M],
+        self.weight_mean(q_chos)[:, :M], self.weight_mean(q_lat_chos)[:, :M],
+        self.gpmodels, self.M, snr='saved', post=False, one_sample=True)
+    if t == 0:
+        _report_online_objective(self, t, 'initial assignment',
+                                 initial_q, initial_elbo, initial_parts)
     # q_ = torch.zeros((self.T, self.M, self.n_outputs))
     # for ld in range(self.n_outputs):
     #     q_[:,:,ld] = self.compute_q(y=y_mod, gpmodels=self.gpmodels[ld], ld=ld)
@@ -517,6 +575,9 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
 
     # --- SPECIAL CASE: first sample (t == 0) ---
     if t == 0:
+        if self.verbose and not classify:
+            print("Sample 1: initial cluster; birth and absorb ELBO "
+                  "comparisons need a previous sample.", flush=True)
         init_state = 0 if (force_model is None) else int(force_model)
 
         # Hard resp for first time step
@@ -539,14 +600,19 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         self.q.append(q_chos.detach())
     else:
         # --- Baseline (previous step) score (used for deltas) ---
-        base_q, base_elbo = self.compute_q_elbo(
-            self.resp_last, self.respPair_last,
+        base_q, base_elbo, base_parts = _online_objective(
+            self, self.resp_last, self.respPair_last,
             self.weight_mean(self.q_last, self.snr_norm[:-1, np.newaxis]),
             self.weight_mean(self.q_lat_last, self.snr_norm[:-1, np.newaxis]),
             self.gpmodels, self.M,
-            snr='saved', post=False, one_sample=True, verb=False
+            snr='saved', post=False, one_sample=True
         )
         base_total = (base_q + base_elbo).detach()
+        _report_online_objective(self, t, 'baseline before sample',
+                                 base_q, base_elbo, base_parts)
+        if self.verbose and force_model is not None:
+            print(f"Sample {t + 1}: proposal comparisons skipped because "
+                  f"cluster {int(force_model) + 1} was forced.", flush=True)
 
         # Default choice: no birth, just keep q_aux/q_lat and pick best SSE model
         q_chos, q_lat_chos = q_aux, q_lat
@@ -592,7 +658,13 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
             prov_gps.append(prov_gp)
 
         # Gate (same intent as original): only compare absorb if birth is best by emission :contentReference[oaicite:8]{index=8}
-        if int(torch.argmax(self.weight_mean(q_prev)[-1]).item()) == M:
+        birth_gate = int(torch.argmax(self.weight_mean(q_prev)[-1]).item()) == M
+        if self.verbose:
+            print(f"Sample {t + 1}: birth emission gate="
+                  f"{'passed' if birth_gate else 'failed'}; "
+                  f"candidate comparisons={'active' if birth_gate else 'diagnostic only'}.",
+                  flush=True)
+        if birth_gate or self.verbose:
             # Forced hard resp for birth
             resp_birth, respPair_birth = self._append_hard_step(self.resp_last, self.respPair_last, new_state=M,
                                                                 K=M + 1)
@@ -600,15 +672,17 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
             for ld in range(self.n_outputs):
                 gpmodels_birth[ld] = list(self.gpmodels[ld]) + [prov_gps[ld]]
 
-            q_b, elbo_b = self.compute_q_elbo(
-                resp_birth, respPair_birth,
+            q_b, elbo_b, birth_parts = _online_objective(
+                self, resp_birth, respPair_birth,
                 self.weight_mean(q_prev), self.weight_mean(q_lat_prev),
                 gpmodels_birth, M + 1,
-                snr='saved', post=True, one_sample=True, verb=False
+                snr='saved', post=True, one_sample=True
             )
+            _report_online_objective(self, t, 'birth proposal', q_b, elbo_b,
+                                     birth_parts, base_total, candidate=M)
             best_total = (q_b + elbo_b).detach() - base_total
-            best_kind = ("birth", None)
             best_pack = (q_prev, q_lat_prev, resp_birth, respPair_birth)
+            absorb_chosen = False
 
             # ========== Absorb candidates (ordered) ==========
             for m_cand in q_ord:
@@ -653,27 +727,32 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                 resp_abs, respPair_abs = self._append_hard_step(self.resp_last, self.respPair_last,
                                                                 new_state=m_cand, K=M)
 
-                q_a, elbo_a = self.compute_q_elbo(
-                    resp_abs, respPair_abs,
+                q_a, elbo_a, absorb_parts = _online_objective(
+                    self, resp_abs, respPair_abs,
                     self.weight_mean(q_post)[:, :M],
                     self.weight_mean(q_lat_post)[:, :M],
                     gpmodels_post, M,
-                    snr='saved', post=False, one_sample=True, verb=False
+                    snr='saved', post=False, one_sample=True
                 )
+                _report_online_objective(
+                    self, t, f'absorb into cluster {m_cand + 1}',
+                    q_a, elbo_a, absorb_parts, base_total, candidate=m_cand)
                 absorb_total = (q_a + elbo_a).detach() - base_total
 
-                if absorb_total > best_total:
+                if birth_gate and not absorb_chosen and absorb_total > best_total:
                     best_total = absorb_total
-                    best_kind = ("absorb", m_cand)
+                    absorb_chosen = True
                     # Expand absorb resp to M+1 columns for downstream compatibility
                     resp_full = torch.zeros((self.T, M + 1), device=self.device, dtype=torch.float64)
                     resp_full[:, :M] = resp_abs
                     respPair_full = torch.zeros((self.T, M + 1, M + 1), device=self.device, dtype=torch.float64)
                     respPair_full[:, :M, :M] = respPair_abs
                     best_pack = (q_post, q_lat_post, resp_full, respPair_full)
-                    break  # same behavior as original: accept first improving candidate
+                    if not self.verbose:
+                        break  # retain the existing first-improvement decision
 
-            q_chos, q_lat_chos, resp, respPair = best_pack
+            if birth_gate:
+                q_chos, q_lat_chos, resp, respPair = best_pack
 
     # ---- Now continue like update: choose model, apply birth, update GPs, etc. ----
     resp_mod = self.cond_to_numpy(self.cond_cpu(resp[-1]))
@@ -690,6 +769,9 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         model = force_model
 
     if force_model is not None:
+        if self.verbose:
+            print(f"Sample {t + 1}: assignment overridden by forced cluster "
+                  f"{int(force_model) + 1}.", flush=True)
         resp_mod[:] = 0.0
         resp_mod[force_model] = 1.0
         model = int(np.argmax(resp_mod))
@@ -754,6 +836,14 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
     self.q_lat_last = q_lat_chos[:, :self.M, :].detach()
     self.resp_last = resp[:, :self.M].detach()
     self.respPair_last = respPair[:, :self.M, :self.M].detach()
+
+    if t == 0 and self.verbose:
+        initial_q, initial_elbo, initial_parts = _online_objective(
+            self, self.resp_last, self.respPair_last,
+            self.weight_mean(self.q_last), self.weight_mean(self.q_lat_last),
+            self.gpmodels, self.M, snr='saved', post=False, one_sample=True)
+        _report_online_objective(self, t, 'initial assignment',
+                                 initial_q, initial_elbo, initial_parts)
 
     for ld in range(self.n_outputs):
         _alignment.configured(self).update_selected(self, ld, model, x_train, warp)

@@ -71,11 +71,10 @@ class AlignmentConfig:
     flow_amplitude: float = 0.1
     flow_lr: float = 0.03
     dtw_points: int = 24
-    dtw_band: float = 0.15
     dtw_inducing: int = 10
     dtw_lengthscale: float = 0.2
-    dtw_amplitude: float = 0.1
-    dtw_anchor_noise: float = 0.04
+    dtw_amplitude: float = 0.005
+    dtw_anchor_noise: float = 0.0005
 
 
 @dataclass(frozen=True)
@@ -160,7 +159,7 @@ SECTIONS = {'hdp': HDPConfig, 'emission': GPEmissionConfig, 'dynamics': Dynamics
 NON_CONSTRUCTOR = {'alignment': {'policy', 'flow_inducing', 'flow_features',
                                  'flow_samples', 'flow_steps', 'flow_train_iter',
                                  'flow_lengthscale', 'flow_amplitude', 'flow_lr',
-                                 'dtw_points', 'dtw_band', 'dtw_inducing',
+                                 'dtw_points', 'dtw_inducing',
                                  'dtw_lengthscale', 'dtw_amplitude', 'dtw_anchor_noise'},
                    'inference': {'schedule', 'warp', 'force_model', 'minibatch', 'classify', 'it_limit'},
                    'numerics': {'seed', 'num_threads', 'dtype', 'deterministic'}}

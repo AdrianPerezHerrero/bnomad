@@ -61,7 +61,7 @@ UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 g
 INFERENCE_MODE = "online_fast"      # "offline", "online", or "online_fast".
 ENABLE_WARP = True              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
-VERBOSE = False                 # False: progress/summary; True: per-sample/iteration detail.
+VERBOSE = True                 # False: progress/summary; True: per-sample/iteration detail.
 SHARE_GP_FOR_PROPOSALS = True   # Offline proposals/new clusters start from a fitted GP copy.
 SAVE_PLOTS = True               # Also save the final figures when True.
 PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
@@ -75,21 +75,12 @@ HDP_PRESET = "more"            # "less", "balanced" or "more" (see HDPConfig pre
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
 INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 4.0)
-INITIAL_OBSERVATION_NOISE = 0.1
-OBSERVATION_NOISE_BOUNDS = (0.001, 0.5)
-INITIAL_PROCESS_NOISE = 0.1
-PROCESS_NOISE_BOUNDS = (0.001, 0.5)
+INITIAL_OBSERVATION_NOISE = 1.0e+4
+OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+6)
+INITIAL_PROCESS_NOISE = 1.0e+4
+PROCESS_NOISE_BOUNDS = (0.001, 1.0e+6)
 OFFLINE_ITERATIONS = 50
 RANDOM_SEED = 42
-
-# Used only with ALIGNMENT_POLICY="dtw_gp". GP scales are on a grid normalized to 0..1.
-DTW_POINTS = 24
-DTW_BAND = 0.15
-DTW_INDUCING = 10
-DTW_LENGTHSCALE = 0.2
-DTW_AMPLITUDE = 0.1
-DTW_ANCHOR_NOISE = 0.04
-
 
 DATA_DIRECTORY = Path(__file__).resolve().parents[1] / "hdpgpc" / "data" / "mitbih"
 
@@ -123,12 +114,6 @@ def _configuration(grid: np.ndarray) -> HDPGPCConfig:
             policy=ALIGNMENT_POLICY if ENABLE_WARP else "none",
             x_basis_warp=grid if ENABLE_WARP else None,
             mode_warp="rough",
-            dtw_points=DTW_POINTS,
-            dtw_band=DTW_BAND,
-            dtw_inducing=DTW_INDUCING,
-            dtw_lengthscale=DTW_LENGTHSCALE,
-            dtw_amplitude=DTW_AMPLITUDE,
-            dtw_anchor_noise=DTW_ANCHOR_NOISE,
         ),
         inference=InferenceConfig(
             schedule=INFERENCE_MODE,

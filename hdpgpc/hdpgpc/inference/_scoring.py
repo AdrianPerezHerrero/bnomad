@@ -21,7 +21,7 @@ from ..hdp._entropy import state_entropy_terms, pair_entropy_terms
 
 
 def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, post=False,
-                   one_sample=False, verb=None):
+                   one_sample=False, verb=None, return_components=False):
     """ Method to compute ELBO terms.
     """
     if verb is None:
@@ -51,6 +51,15 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
         elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0),
                                                          one_sample=one_sample) * frac[i]
 
+    components = None
+    if return_components:
+        components = {
+            'emission': q_bas,
+            'latent': elbo_latent if self.hmm_switch else torch.zeros_like(elbo_latent),
+            'hdp': torch.as_tensor(elbo_bas) if self.hmm_switch else torch.zeros_like(q_bas),
+            'lds': elbo_bas_LDS if self.hmm_switch else torch.zeros_like(elbo_bas_LDS),
+        }
+
     # elbo_bas = elbo_bas + elbo_latent
     # elbo_bas = 0
     if verb:
@@ -62,6 +71,8 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
         elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
     else:
         elbo_bas = elbo_latent
+    if return_components:
+        return q_bas, elbo_bas, components
     return q_bas, elbo_bas
 
 
