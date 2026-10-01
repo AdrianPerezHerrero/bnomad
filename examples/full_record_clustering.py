@@ -5,18 +5,23 @@ Run from the repository root after installing the package::
     python examples/full_record_clustering.py
     python examples/full_record_clustering.py --records 101 102
     python examples/full_record_clustering.py --records 100 --save-plots
+    python examples/full_record_clustering.py --records 100 --no-scale-waveforms --unit-grid
 
 Edit the experiment controls below to choose records, channels, inference schedule,
 warping, and model hyperparameters. If there is one extra trailing annotation,
 the script crops the annotation vector to the number of fitted observations.
+Console output is also saved to one log file per record in the plot directory.
 """
 
 from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+import sys
 import time
+import traceback
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -40,35 +45,38 @@ from hdpgpc.config import (
 # Experiment controls: edit these values for the desired whole-record run.
 # -----------------------------------------------------------------------------
 # Full run: uncomment this tuple and comment out the single-record choice below.
-# RECORDS = (
-#     "100", "101", "102", "103", "104", "105", "106", "107", "108", "109",
-#     "111", "112", "113", "114", "115", "116", "117", "118", "119",
-#     "121", "122", "123", "124",
-#     "200", "201", "202", "203", "205", "207", "208", "209", "210",
-#     "212", "213", "214", "215", "217", "219", "220", "221", "222", "223",
-#     "228", "230", "231", "232", "233", "234",
-# )
-RECORDS = ("100",)            # Current record selection.
-CHANNELS = (0,)                 # Choose channel 0, 1, or both: (0, 1).
+RECORDS = (
+    "100", "101", "102", "103", "104", "105", "106", "107", "108", "109",
+    "111", "112", "113", "114", "115", "116", "117", "118", "119",
+    "121", "122", "123", "124",
+    "200", "201", "202", "203", "205", "207", "208", "209", "210",
+    "212", "213", "214", "215", "217", "219", "220", "221", "222", "223",
+    "228", "230", "231", "232", "233", "234",
+)
+#RECORDS = ("100",)            # Current record selection.
+CHANNELS = (0,1)                 # Choose channel 0, 1, or both: (0, 1).
+SCALE_WAVEFORMS = True          # First-beat mean/std scaling; False keeps stored amplitudes.
+UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 grid.
 INFERENCE_MODE = "offline"      # "offline", "online", or "online_fast".
 ENABLE_WARP = True              # The supported warping tutorial path is offline.
 VERBOSE = False                 # False: progress/summary; True: per-sample/iteration detail.
 SHARE_GP_FOR_PROPOSALS = True   # Offline proposals/new clusters start from a fitted GP copy.
 SAVE_PLOTS = True               # Also save the final figures when True.
-PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots"
+PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_mo"
 PLOT_DPI = 160
 
 # Typed configuration values; these are experiment settings, not package defaults.
-MAX_CLUSTERS = 12
+# Lengthscale is measured in the selected grid units; noise settings depend on waveform scale.
+MAX_CLUSTERS = 30
 HDP_PRESET = "more"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
-INITIAL_LENGTHSCALE = 1.5
+INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 4.0)
 INITIAL_OBSERVATION_NOISE = 0.1
 OBSERVATION_NOISE_BOUNDS = (0.001, 0.5)
 INITIAL_PROCESS_NOISE = 0.1
 PROCESS_NOISE_BOUNDS = (0.001, 0.5)
-OFFLINE_ITERATIONS = 20
+OFFLINE_ITERATIONS = 50
 RANDOM_SEED = 42
 
 DATA_DIRECTORY = Path(__file__).resolve().parents[1] / "hdpgpc" / "data" / "mitbih"
@@ -141,22 +149,29 @@ def _load_record(record: str) -> tuple[np.ndarray, np.ndarray]:
     return signal, labels
 
 
-def _prepare_record(signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Keep every point and scale each selected channel from the first beat only."""
+def _prepare_record(
+    signal: np.ndarray, *, scale_waveforms: bool = SCALE_WAVEFORMS,
+    unit_grid: bool = UNIT_GRID,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Keep every point and apply the selected waveform/grid scaling."""
     raw = np.asarray(signal[:, :, CHANNELS], dtype=np.float64)
-    center = raw[0].mean(axis=0)
-    scale = raw[0].std(axis=0)
-    if np.any(~np.isfinite(scale)) or np.any(scale <= np.finfo(np.float64).eps):
-        raise ValueError("The first beat has a zero/invalid scale in a selected channel.")
-    values = (raw - center[None, None, :]) / scale[None, None, :]
-    grid = np.linspace(0.0, 4.0, raw.shape[1], dtype=np.float64)[:, None]
+    if scale_waveforms:
+        center = raw[0].mean(axis=0)
+        scale = raw[0].std(axis=0)
+        if np.any(~np.isfinite(scale)) or np.any(scale <= np.finfo(np.float64).eps):
+            raise ValueError("The first beat has a zero/invalid scale in a selected channel.")
+        values = (raw - center[None, None, :]) / scale[None, None, :]
+    else:
+        values = raw
+    grid_end = 1.0 if unit_grid else 4.0
+    grid = np.linspace(0.0, grid_end, raw.shape[1], dtype=np.float64)[:, None]
     return values, grid
 
 
 def _classification_statistics(
     assignments: np.ndarray, labels: np.ndarray,
-) -> tuple[dict[str, float], np.ndarray, np.ndarray, np.ndarray]:
-    """Return scores and annotation-by-cluster counts with their row/column labels."""
+) -> tuple[dict[str, float], np.ndarray, np.ndarray, dict[int, str]]:
+    """Score clusters after assigning each its majority ECG annotation."""
     assignments = np.asarray(assignments).reshape(-1)
     labels = np.asarray(labels).reshape(-1)
     if len(assignments) != len(labels):
@@ -171,7 +186,13 @@ def _classification_statistics(
         for column, label in enumerate(classes):
             contingency[row, column] = counts[label]
 
-    majority_correct = int(contingency.max(axis=1).sum())
+    majority_labels = classes[np.argmax(contingency, axis=1)]
+    cluster_annotations = dict(zip(clusters.tolist(), majority_labels.tolist()))
+    assigned_labels = majority_labels[np.searchsorted(clusters, assignments)]
+    confusion = np.zeros((len(classes), len(classes)), dtype=np.int64)
+    np.add.at(confusion, (np.searchsorted(classes, labels),
+                          np.searchsorted(classes, assigned_labels)), 1)
+    majority_correct = int(np.trace(confusion))
     scores = {
         "purity": majority_correct / len(labels),
         "majority_label_accuracy_in_sample": majority_correct / len(labels),
@@ -180,17 +201,16 @@ def _classification_statistics(
             normalized_mutual_info_score(labels, assignments, average_method="arithmetic")
         ),
     }
-    return scores, classes, clusters, contingency.T
+    return scores, classes, confusion, cluster_annotations
 
 
-def _print_confusion_matrix(classes: np.ndarray, clusters: np.ndarray,
-                            matrix: np.ndarray) -> None:
-    """Print annotation counts by assigned cluster, including row/column totals."""
-    row_width = max(10, *(len(str(label)) for label in classes))
-    column_names = [f"C{cluster}" for cluster in clusters]
+def _print_confusion_matrix(classes: np.ndarray, matrix: np.ndarray) -> None:
+    """Print true annotations against cluster-assigned annotations."""
+    row_width = max(13, *(len(str(label)) for label in classes))
+    column_names = [str(label) for label in classes]
     cell_width = max(5, len(str(matrix.sum())), *(len(name) for name in column_names))
-    print("Confusion matrix (rows=annotations, columns=assigned clusters; counts):")
-    print(f"  {'Annotation':>{row_width}} | "
+    print("Confusion matrix (rows=real annotation, columns=cluster-assigned annotation; counts):")
+    print(f"  {'Real/assigned':>{row_width}} | "
           + " ".join(f"{name:>{cell_width}}" for name in column_names)
           + f" | {'Total':>{cell_width}}")
     for label, row in zip(classes, matrix):
@@ -203,13 +223,19 @@ def _print_confusion_matrix(classes: np.ndarray, clusters: np.ndarray,
 
 
 def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
-               plot_directory: Path = PLOT_DIRECTORY) -> None:
+               plot_directory: Path = PLOT_DIRECTORY,
+               scale_waveforms: bool = SCALE_WAVEFORMS,
+               unit_grid: bool = UNIT_GRID) -> None:
     signal, annotations = _load_record(record)
-    values, grid = _prepare_record(signal)
+    values, grid = _prepare_record(
+        signal, scale_waveforms=scale_waveforms, unit_grid=unit_grid,
+    )
     config = _configuration(grid)
 
     print(f"\nRecord {record}: waveform shape={signal.shape}, annotations={len(annotations)}")
     print(f"Input shape={values.shape} (beats, points, outputs), channels={CHANNELS}")
+    print(f"Waveform scaling={'first-beat mean/std' if scale_waveforms else 'off'}, "
+          f"grid range=0..{grid[-1, 0]:g}")
     print(f"Schedule={INFERENCE_MODE}, warp={ENABLE_WARP}, verbose={VERBOSE}")
     print(f"Model={MODEL_TYPE}, HDP preset={HDP_PRESET}, cluster cap={MAX_CLUSTERS}")
 
@@ -233,14 +259,18 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
             f"got {len(assignments)} observations and {len(annotations)} annotations."
         )
     else:
-        scores, classes, clusters, confusion = _classification_statistics(assignments, annotations)
+        scores, classes, confusion, cluster_annotations = _classification_statistics(
+            assignments, annotations
+        )
         print("Label-based clustering statistics:")
         print(f"  Purity:                         {scores['purity']:.4f}")
         print(f"  Adjusted Rand index:            {scores['adjusted_rand_index']:.4f}")
         print(f"  Normalized mutual information:  {scores['normalized_mutual_information']:.4f}")
         print(f"  Majority-label accuracy*:       {scores['majority_label_accuracy_in_sample']:.4f}")
         print("  * Cluster-to-label mapping is fitted and scored on this same record.")
-        _print_confusion_matrix(classes, clusters, confusion)
+        print("Cluster annotation assignments (majority vote): "
+              + ", ".join(f"C{cluster}={label}" for cluster, label in cluster_annotations.items()))
+        _print_confusion_matrix(classes, confusion)
 
     figures = plot_record_results(
         model,
@@ -252,13 +282,40 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         channels=CHANNELS,
         warped=ENABLE_WARP,
     )
+    if not scale_waveforms:
+        for figure in figures:
+            for axis in figure.axes:
+                if axis.get_ylabel() == "Scaled amplitude":
+                    axis.set_ylabel("Stored amplitude")
     if save_plots:
         plot_directory.mkdir(parents=True, exist_ok=True)
         for channel, figure in zip(CHANNELS, figures):
             path = plot_directory / f"record_{record}_channel_{channel}_clustering.png"
             figure.savefig(path, dpi=PLOT_DPI)
             print(f"Saved plot: {path}")
-    plt.show()
+            plt.close(figure)
+    else:
+        plt.show()
+
+
+class _Tee:
+    """Write Python console output to the terminal and a record log."""
+
+    def __init__(self, terminal, log_file):
+        self.terminal = terminal
+        self.log_file = log_file
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log_file.write(message)
+        return len(message)
+
+    def flush(self):
+        self.terminal.flush()
+        self.log_file.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.terminal, name)
 
 
 def main() -> None:
@@ -270,16 +327,37 @@ def main() -> None:
         help="MIT-BIH record stems to run; defaults to the RECORDS tuple in this script.",
     )
     parser.add_argument(
+        "--scale-waveforms", action=argparse.BooleanOptionalAction, default=SCALE_WAVEFORMS,
+        help="Scale each channel with the first beat's mean/std (default: SCALE_WAVEFORMS).",
+    )
+    parser.add_argument(
+        "--unit-grid", action=argparse.BooleanOptionalAction, default=UNIT_GRID,
+        help="Use grid coordinates 0..1 instead of the existing 0..4 (default: UNIT_GRID).",
+    )
+    parser.add_argument(
         "--save-plots", action=argparse.BooleanOptionalAction, default=SAVE_PLOTS,
-        help="Save one PNG for each selected channel (default: SAVE_PLOTS).",
+        help="Save one PNG per selected channel without displaying figures (default: SAVE_PLOTS).",
     )
     parser.add_argument(
         "--plot-dir", type=Path, default=PLOT_DIRECTORY,
-        help="Directory for saved PNGs (default: PLOT_DIRECTORY).",
+        help="Directory for saved PNGs and record logs (default: PLOT_DIRECTORY).",
     )
     args = parser.parse_args()
+    args.plot_dir.mkdir(parents=True, exist_ok=True)
     for record in args.records:
-        run_record(str(record), save_plots=args.save_plots, plot_directory=args.plot_dir)
+        record = str(record)
+        log_path = args.plot_dir / f"record_{record}_clustering.log"
+        with log_path.open("w", encoding="utf-8", buffering=1) as log_file:
+            with redirect_stdout(_Tee(sys.stdout, log_file)), redirect_stderr(_Tee(sys.stderr, log_file)):
+                print(f"Log file: {log_path}")
+                try:
+                    run_record(
+                        record, save_plots=args.save_plots, plot_directory=args.plot_dir,
+                        scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,
+                    )
+                except BaseException:
+                    traceback.print_exc(file=log_file)
+                    raise
 
 
 if __name__ == "__main__":
