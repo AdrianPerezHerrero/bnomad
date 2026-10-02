@@ -5,7 +5,12 @@ import torch
 
 
 class matrix_normal_inv_wishart():
-    """ Class to define the Matrix Normal Inverse Wishart distribution (MNIW) for the LDS parameters.
+    """MNIW prior for an LDS matrix and its row covariance.
+
+    ``m_r_cov`` is the matrix-normal column precision. ``scale`` is the
+    inverse-Wishart covariance mean; ``n0`` is its degrees of freedom in
+    excess of ``row_dimension + 1``. This keeps the configured small prior
+    strengths valid when the observation vector has many points.
     """
     def __init__(self, m_mean, m_r_cov, n0, scale):
         if type(m_mean) is torch.Tensor:
@@ -25,8 +30,6 @@ class matrix_normal_inv_wishart():
         self.b = 0.7
 
     def posterior(self, n_k, y1, y2, cov, cov_, cov_cross, sse_matrix=None, annealing=False):
-        y_k = y1
-        y_k_ = y2
         new_n0 = self.n0 + n_k
 
         device = self.scale.device
@@ -37,38 +40,27 @@ class matrix_normal_inv_wishart():
         if sse_matrix is None:
             sse_matrix = id_d
 
-        scale = 0.5 * (self.m_r_cov + self.m_r_cov.T)
-        jitter = 1e-2 * torch.mean(torch.diag(self.scale).abs()).clamp_min(torch.finfo(dtype).eps)
-        L_scale = torch.linalg.cholesky(scale + jitter * id_d)
-        scale_inv = torch.cholesky_solve(id_d, L_scale)
+        observations = sse_matrix @ y1
+        latents = sse_matrix @ y2
+        s_xx = latents @ latents.T + sse_matrix @ cov_ @ sse_matrix.T
+        s_yx = observations @ latents.T + sse_matrix @ cov_cross @ sse_matrix.T
+        s_yy = observations @ observations.T + sse_matrix @ cov @ sse_matrix.T
 
-        y2p = sse_matrix @ y_k_
-        y1p = sse_matrix @ y_k
+        prior_precision = self.m_r_cov
+        new_precision = prior_precision + s_xx
+        weighted_cross = self.m_mean @ prior_precision + s_yx
+        chol = torch.linalg.cholesky(0.5 * (new_precision + new_precision.T))
+        new_mean = torch.cholesky_solve(weighted_cross.T, chol).T
 
-        exp_f_f_ = y2p @ y2p.T + sse_matrix @ cov_ @ sse_matrix.T
-        exp_ff_ = y1p @ y2p.T + sse_matrix @ cov_cross @ sse_matrix.T
-        #exp_ff = y1p @ y1p.T + sse_matrix @ cov @ sse_matrix.T
-
-        S__ = exp_f_f_ + scale_inv
-        S_ = exp_ff_ + self.m_mean @ scale_inv
-        #S = exp_ff + self.m_mean @ scale_inv @ self.m_mean.T
-
-        L_S__ = torch.linalg.cholesky(0.5 * (S__ + S__.T) + 1e-8 * id_d)
-        part_mean = torch.cholesky_solve(S_.T, L_S__).T
-
-        if n_k == 1:
-            new_m_mean = ((self.n0 - 2) * self.m_mean + part_mean) / (new_n0 - 2)
-            e = y1p - y2p
-            e2 = e @ e.T
-            new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
-        else:
-            new_m_mean = part_mean
-            e = y_k - new_m_mean @ y_k_
-            e2 = e @ e.T
-            new_scale = ((self.n0 - 2) * self.scale + e2) / (new_n0 - 2)
-
-        new_m_r_cov = S__
-        return matrix_normal_inv_wishart(new_m_mean, new_m_r_cov, new_n0, new_scale)
+        # Equivalent to Psi_0 + S_yy + M_0 Lambda_0 M_0^T
+        # - M_n Lambda_n M_n^T, written as residual sums for stability.
+        delta = new_mean - self.m_mean
+        residual = (s_yy - new_mean @ s_yx.T - s_yx @ new_mean.T
+                    + new_mean @ s_xx @ new_mean.T
+                    + delta @ prior_precision @ delta.T)
+        new_scale = (self.n0 * self.scale + residual) / new_n0
+        new_scale = 0.5 * (new_scale + new_scale.T)
+        return matrix_normal_inv_wishart(new_mean, new_precision, new_n0, new_scale)
 
     def log_likelihood_MNIW(self, M, Sigma, n0):
         """Compute MNIW log-likelihood with cheaper SPD solves."""
@@ -92,10 +84,7 @@ class matrix_normal_inv_wishart():
         return self.m_mean
 
     def get_scale(self, final=False):
-        if final:
-            return self.scale
-        else:
-            return self.scale * self.n0 / (self.n0 - 2)
+        return self.scale
 
 
     def set_scale(self, scale):

@@ -172,8 +172,8 @@ def forward(self, pi=None, trans_A=None, q=None):
     if torch.any(torch.isnan(torch.log(fmsg))):
         print("Error nan")
         return None, None
-    if torch.argmax(fmsg[-1]) != torch.argmax(q[-1]) and self.verbose:
-        print("Miss")
+    # if torch.argmax(fmsg[-1]) != torch.argmax(q[-1]) and self.verbose:
+    #     print("Miss")
     return fmsg, margPrObs
 
 
