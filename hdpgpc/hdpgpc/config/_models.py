@@ -40,14 +40,16 @@ class GPEmissionConfig:
 
 @dataclass(frozen=True)
 class DynamicsConfig:
-    """Supported static/LDS formulation and existing parameter-learning controls."""
+    """Static/LDS controls; omitted MNIW degrees of freedom follow the schedule."""
     model_type: Literal['static', 'dynamic'] | list[Literal['static', 'dynamic']] | ndarray = 'dynamic'
     ini_gamma: ScalarOption = None
     bound_gamma: Bounds = (1e-1, 1e2)
     annealing: BoolOption = True
     bayesian_params: bool = True
     estimation_limit: int | list[int | None] | ndarray | None = None
-    free_deg_MNIV: int = 5
+    # None selects a schedule-aware prior: 5 offline, 20 online.
+    # An integer is always used exactly as supplied.
+    free_deg_MNIV: int | None = None
     reest_conditions: list[int] = field(default_factory=lambda: [1, 20, 5])
 
 
@@ -201,12 +203,12 @@ class HDPGPCConfig:
 
 
 
-    def build_model(self):
-        """Construct private native state for advanced engine use."""
+    def build_model(self, *, schedule=None):
+        """Construct native state; pass a schedule for an unselected online call."""
         self.validate(for_build=True)
         from ..model._state import ModelState
         self.numerics.apply()
-        return ModelState(self)
+        return ModelState(self, schedule=schedule)
 
     def to_dict(self):
         from ._codec import encode
@@ -251,14 +253,20 @@ class HDPGPCConfig:
         return cls.from_dict(data)
 
 
-def _initialization_options(config):
+def _initialization_options(config, *, schedule=None):
     """Private expansion into algorithm locals; preserve cross-field aliasing."""
     config.validate(for_build=True)
+    if schedule is None:
+        schedule = config.inference.schedule or 'offline'
+    if schedule not in ('offline', 'online', 'online_fast'):
+        raise ValueError('Unknown inference schedule')
     result = {'x_basis': config.x_basis, 'verbose': config.verbose}
     for name in SECTIONS:
         section = getattr(config, name)
         result.update({f.name: getattr(section, f.name) for f in fields(section)
                        if f.name not in NON_CONSTRUCTOR.get(name, ())})
+    if result['free_deg_MNIV'] is None:
+        result['free_deg_MNIV'] = 5 if schedule == 'offline' else 20
     from ..alignment import GPAlignment, NoAlignment
     if config.alignment.policy == 'none':
         result['alignment'] = NoAlignment()

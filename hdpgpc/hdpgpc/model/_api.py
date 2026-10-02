@@ -92,11 +92,11 @@ class HDPGPC:
         inference = self._config.inference
         if inference.classify:
             raise ValueError('fit/update require classify=False; use OfflineInference for classification')
-        backend = self._config.build_model()
+        self._mode = inference.schedule or 'offline'
+        backend = self._config.build_model(schedule=self._mode)
         self._backend = backend
         self._has_data = False
         self._failed = False
-        self._mode = inference.schedule or 'offline'
         try:
             if self._mode == 'offline':
                 backend.offline.fit(coordinates, values, it_limit=inference.it_limit, warp=inference.warp)
@@ -136,8 +136,8 @@ class HDPGPC:
             raise ValueError('fit/update require classify=False; use OfflineInference for classification')
         values, coordinates = self._inputs(x, grid, batch=False)
         if self._backend is None:
-            self._backend = self._config.build_model()
             self._mode = inference.schedule or 'online'
+            self._backend = self._config.build_model(schedule=self._mode)
         before = self._backend.M
         try:
             self._include(coordinates, values)

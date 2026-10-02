@@ -49,6 +49,19 @@ before the selected state is reordered. If the birth emission gate fails, the
 proposal comparisons are diagnostic and do not affect the assignment.
 
 `schedule=None` selects offline for public `fit` and standard online for `update`.
+When `DynamicsConfig.free_deg_MNIV` is omitted (`None`), model construction
+uses `5` for offline inference and `20` for `online` or `online_fast`. An
+explicit integer, including `5`, overrides this choice in either schedule.
+Existing configuration files that contain `free_deg_MNIV: 5` therefore keep
+the prior strength they request.
+The one-observation MNIW mean update weights the new estimate by
+`1/(free_deg_MNIV - 1)`: `1/4` with `5`, versus `1/19` with `20`.
+The prior also slows process and observation covariance updates. This applies
+to Bayesian LDS parameter learning; latent-state filtering can still adapt
+to each observation. For advanced direct construction with no configured
+schedule, pass `config.build_model(schedule='online')` to select the online
+default; otherwise direct construction assumes offline.
+
 Explicit choices are `online`, `online_fast`, `offline`. `InferenceConfig.run`
 dispatches one observation or batch to the native engine. `config.build_model()`
 constructs opaque native state for advanced engine workflows; normal usage should

@@ -38,9 +38,9 @@ class ModelState:
     Bindings are descriptors to those exact functions (no copied bodies/wrappers).
     The public model is HDPGPC; this class is not a compatibility constructor.
     """
-    def __init__(self, config):
+    def __init__(self, config, *, schedule=None):
         from ..config._models import _initialization_options
-        options = _initialization_options(config)
+        options = _initialization_options(config, schedule=schedule)
         x_basis = options['x_basis']
         M = options['M']
         n_outputs = options['n_outputs']

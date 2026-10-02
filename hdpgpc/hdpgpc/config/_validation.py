@@ -92,7 +92,7 @@ def validate(c, *, for_build=False):
         raise ValueError('noise_warp must be finite and positive')
     # NoAlignment deliberately overrides True request flags: that is valid.
     validate_numerics(n)
-    integer(d.free_deg_MNIV, 'free_deg_MNIV', 1)
+    integer(d.free_deg_MNIV, 'free_deg_MNIV', 1, optional=True)
     if not isinstance(d.reest_conditions, (list, tuple)) or len(d.reest_conditions) != 3:
         raise ValueError('reest_conditions must contain min_samples, max_samples, divisor')
     for v in d.reest_conditions:
