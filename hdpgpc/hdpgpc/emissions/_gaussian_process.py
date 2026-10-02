@@ -91,11 +91,45 @@ class GaussianProcessEmission:
     def _log2pi(self, ref):
         return torch.tensor(math.log(2.0 * math.pi), device=ref.device, dtype=ref.dtype)
 
-    def _gaussian_score_shared_cov(self, Y, mean, cov):
+    def _observation_latent_cov(self, x_post, latent_cov, C):
+        """Project C Var[f] C.T onto the grid used by an observation score."""
+        latent_cov = torch.as_tensor(latent_cov, dtype=C.dtype, device=C.device)
+        projected = C @ latent_cov @ C.T
+        x_post = self.cond_to_torch(x_post).to(self.x_basis.device)
+        if torch.equal(x_post, self.x_basis):
+            return projected
+
+        x_basis_np = self.x_basis.detach().cpu().numpy()
+        x_post_np = x_post.detach().cpu().numpy()
+        K_ff = torch.as_tensor(self.gp.kernel(x_basis_np, x_basis_np),
+                               dtype=C.dtype, device=C.device)
+        K_fp = torch.as_tensor(self.gp.kernel(x_basis_np, x_post_np),
+                               dtype=C.dtype, device=C.device)
+        projection = torch.cholesky_solve(K_fp, self._chol_spd(K_ff)).T
+        return projection @ projected @ projection.T
+
+    def _observation_params(self, i=None, params=None):
+        """Return the latent covariance and C used by observe/step_forward_last."""
+        if params is not None:
+            return params[1], params[2]
+        if i is None:
+            return self.cov_f_sm[-1], self.C[-1]
+        if not self.indexes:
+            return self.cov_f[0], self.C[0]
+        if len(self.indexes) <= i:
+            return self.cov_f[-1], self.C[-1]
+        if self.estimation_limit <= i:
+            return self.cov_f[i], self.C[-1]
+        return self.cov_f[i], self.get_params(i)[2]
+
+    def _gaussian_score_shared_cov(self, Y, mean, cov, latent_cov=None):
         """
+        Expected Gaussian observation log density on a shared grid.
+
         Y    : (B,T,1) or (B,T)
         mean : (T,1) or (T,)
-        cov  : (T,T)
+        cov  : (T,T) observation noise covariance
+        latent_cov : (T,T) projected latent posterior covariance
         returns: (B,)
         """
         if Y.ndim == 3:
@@ -112,7 +146,12 @@ class GaussianProcessEmission:
         L = self._chol_spd(cov)
         alpha = torch.cholesky_solve(diff, L)
         q = diff.shape[0]
-        return -0.5 * torch.sum(diff * alpha, dim=0) - 0.5 * q * self._log2pi(diff)
+        logdet = 2.0 * torch.log(torch.diag(L)).sum()
+        trace = 0.0
+        if latent_cov is not None:
+            trace = torch.trace(torch.cholesky_solve(latent_cov, L))
+        return -0.5 * (torch.sum(diff * alpha, dim=0) + trace
+                       + logdet + q * self._log2pi(diff))
 
     def initial_conditions(self, ini_mean=None, ini_cov=None,
                            ini_A=None, ini_Gamma=None, ini_C=None, ini_Sigma=None):
@@ -231,7 +270,7 @@ class GaussianProcessEmission:
         return lik_post
 
     def log_sq_error(self, x_train, y, mean=None, cov=None, C=None, Sigma=None, i=None, proj=False, first=False):
-        """Compute the log-squared-error of a sample assuming a specific iteration of the model."""
+        """Expected Gaussian observation log density at a model iteration."""
         y = self.cond_to_cuda(self.cond_to_torch(y)).to(torch.float64)
         mean = self.cond_to_torch(mean)
         cov = self.cond_to_torch(cov)
@@ -264,46 +303,59 @@ class GaussianProcessEmission:
         L = self._chol_spd(cov_f)
         alpha = torch.cholesky_solve(diff, L)
         q = diff.shape[0]
-
-        err = -0.5 * torch.sum(diff * alpha) - 0.5 * q * self._log2pi(diff)
+        latent_cov, C_mat = self._observation_params(i, params)
+        output_latent_cov = self._observation_latent_cov(x_train, latent_cov, C_mat)
+        trace = torch.trace(torch.cholesky_solve(output_latent_cov, L))
+        logdet = 2.0 * torch.log(torch.diag(L)).sum()
+        err = -0.5 * (torch.sum(diff * alpha) + trace
+                      + logdet + q * self._log2pi(diff))
         return err
 
     def log_lat_error(self, i, h_ini):
-        """Compute the log-squared-error of the latent process."""
+        """Expected Gaussian state log density plus its chain entropy."""
+        mean_cur = self.f_star_sm[i + 1].reshape(-1, 1)
+        cov_cur = self.cov_f_sm[i + 1]
         if i == 0:
-            cov_f_prev = self.cov_f_sm[i + 1]
-            lat_prev = self.f_star_sm[i + 1]
-            Gamma_mat = self.Gamma[-1] * h_ini
-            A = self.A[-1]
+            # The filtering code starts at the GP prior, without an A/Gamma step.
+            prior_mean = self.f_star_sm[0].reshape(-1, 1)
+            prior_cov = self.cov_f_sm[0] * h_ini
+            residual = mean_cur - prior_mean
+            residual_cov = cov_cur
+            conditional_cov = cov_cur
+            noise_cov = prior_cov
         else:
-            cov_f_prev = self.cov_f_sm[i]
-            lat_prev = self.f_star_sm[i]
+            mean_prev = self.f_star_sm[i].reshape(-1, 1)
+            cov_prev = self.cov_f_sm[i]
+            filtered_prev = self.cov_f[i]
             if i + 1 < len(self.Gamma):
-                Gamma_mat = self.Gamma[i + 1]
-                A = self.A[i + 1]
+                noise_cov, A = self.Gamma[i + 1], self.A[i + 1]
             else:
-                Gamma_mat = self.Gamma[-1]
-                A = self.A[-1]
+                noise_cov, A = self.Gamma[-1], self.A[-1]
 
-        lat_cur = self.f_star_sm[i + 1]
+            predicted_cov = A @ filtered_prev @ A.T + noise_cov
+            gain = torch.cholesky_solve(A @ filtered_prev,
+                                        self._chol_spd(predicted_cov)).T
+            cross_cov = gain @ cov_cur  # Cov_q(f_previous, f_current)
+            residual = mean_cur - A @ mean_prev
+            residual_cov = (cov_cur + A @ cov_prev @ A.T
+                            - A @ cross_cov - cross_cov.T @ A.T)
+            conditional_cov = (cov_cur - cross_cov.T @
+                               torch.cholesky_solve(cross_cov,
+                                                    self._chol_spd(cov_prev)))
 
-        if lat_prev.ndim == 1:
-            lat_prev = lat_prev.unsqueeze(-1)
-        if lat_cur.ndim == 1:
-            lat_cur = lat_cur.unsqueeze(-1)
-
-        resid = lat_cur - A @ lat_prev
-        Lg = self._chol_spd(Gamma_mat)
-
-        alpha_resid = torch.cholesky_solve(resid, Lg)  # Gamma^{-1} resid
-        Gamma_inv_A = torch.cholesky_solve(A, Lg)  # Gamma^{-1} A
-
-        q = resid.shape[0]
-        mahal = torch.sum(resid * alpha_resid)
-        trace_term = torch.trace(A.T @ Gamma_inv_A @ cov_f_prev)
-
-        err = -0.5 * (mahal + trace_term) - 0.5 * q * self._log2pi(resid)
-        return err
+        L_noise = self._chol_spd(noise_cov)
+        logdet_noise = 2.0 * torch.log(torch.diag(L_noise)).sum()
+        quadratic = torch.sum(residual * torch.cholesky_solve(residual, L_noise))
+        trace = torch.trace(torch.cholesky_solve(residual_cov, L_noise))
+        dimension = residual.shape[0]
+        expected_log_transition = -0.5 * (quadratic + trace + logdet_noise
+                                          + dimension * self._log2pi(residual))
+        # H[q(f_1)] or H[q(f_t | f_{t-1})] completes the Gaussian latent term.
+        L_conditional = self._chol_spd(conditional_cov)
+        logdet_conditional = 2.0 * torch.log(torch.diag(L_conditional)).sum()
+        entropy = 0.5 * (dimension * (1.0 + self._log2pi(residual))
+                         + logdet_conditional)
+        return expected_log_transition + entropy
 
     def condition_observation(self, index, x_train, y, x_warped=None, h=1.0, posterior=True, embedding=True, include_index=False):
         """ Method to include sample in the model, compute the posterior and add the data.
@@ -573,7 +625,10 @@ class GaussianProcessEmission:
                     ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-2
                     cov_f = cov_f + ini_noise * self._eye_cached(len(x0), cov_f.device, cov_f.dtype)
 
-                sq_err[ids] = self._gaussian_score_shared_cov(y_trains[ids], f_star, cov_f)
+                latent_cov, C_mat = self._observation_params(i_cur)
+                output_latent_cov = self._observation_latent_cov(x0, latent_cov, C_mat)
+                sq_err[ids] = self._gaussian_score_shared_cov(
+                    y_trains[ids], f_star, cov_f, output_latent_cov)
 
             return sq_err
 
@@ -592,7 +647,7 @@ class GaussianProcessEmission:
         return sq_err
 
     def compute_q_lat_all(self, x_trains, h_ini=1.0):
-        """Method to compute the latent squared error accumulated.
+        """Compute each included state's Gaussian prior and entropy contribution.
         """
         sq_err = torch.zeros(x_trains.shape[0], device=x_trains[0].device)
         if self.N == 0:
