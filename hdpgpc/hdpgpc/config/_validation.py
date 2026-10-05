@@ -19,7 +19,7 @@ def boolean(value, name):
 def validate_inference(c):
     if c.schedule not in (None, 'online', 'online_fast', 'offline'):
         raise ValueError('Unknown inference schedule')
-    for name in ('warp', 'classify', 'reestimate_initial_params'):
+    for name in ('warp', 'classify', 'reestimate_initial_params', 'hard_assignments'):
         boolean(getattr(c, name), name)
     for name in ('batch', 'force_model'):
         integer(getattr(c, name), name, optional=True)
@@ -69,6 +69,8 @@ def validate(c, *, for_build=False):
     if o.reduce_outputs and int(np.rint(o.n_outputs * o.reduce_outputs_ratio)) < 1:
         raise ValueError('Output reduction would leave zero outputs')
     validate_inference(i)
+    if not i.hard_assignments and not d.bayesian_params:
+        raise ValueError('soft assignments require bayesian_params=True for weighted LDS updates')
     if a.policy not in ('gp', 'gp_flow', 'dtw_gp', 'none'):
         raise ValueError('Unknown alignment policy')
     for name in ('flow_inducing', 'flow_features', 'flow_samples', 'flow_steps'):
@@ -93,6 +95,11 @@ def validate(c, *, for_build=False):
     # NoAlignment deliberately overrides True request flags: that is valid.
     validate_numerics(n)
     integer(d.free_deg_MNIV, 'free_deg_MNIV', 1, optional=True)
+    if d.lds_update not in ('conjugate', 'natural_gradient', 'legacy'):
+        raise ValueError('lds_update must be conjugate, natural_gradient, or legacy')
+    if (isinstance(d.lds_step_size, bool) or not isinstance(d.lds_step_size, Real)
+            or not math.isfinite(d.lds_step_size) or not 0 < d.lds_step_size <= 1):
+        raise ValueError('lds_step_size must be finite and in (0, 1]')
     if not isinstance(d.reest_conditions, (list, tuple)) or len(d.reest_conditions) != 3:
         raise ValueError('reest_conditions must contain min_samples, max_samples, divisor')
     for v in d.reest_conditions:

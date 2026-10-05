@@ -30,39 +30,35 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
     self.C = [ini_C]
     self.Sigma = [ini_Sigma]
     self.internal_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
-    self.observation_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
+    if torch.count_nonzero(ini_Gamma) == 0:
+        self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
+    else:
+        self.observation_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
     if return_likelihood:
         return self.internal_params.log_likelihood_MNIW(A_, Gam_), self.observation_params.log_likelihood_MNIW(C_, Sig_)
 
 
 def return_LDS_param_likelihood(self, first=False):
-    """ Method to compute the likelihood of LDS parameters over the prior.
-    """
-    elb_LDS = 0
-    #for i in range(len(self.A)):
-    ini_A, ini_Gamma, ini_C, ini_Sigma, n0 = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def, self.internal_params.n0
-    if first:
-        #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
-        ini_noise = torch.mean(torch.diag(self.Sigma[-1])) * 2e-0
-        ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) * 2e-0
-        A_, Gam_, C_, Sig_ = (self.A[-1],
-                              self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Gamma[-1].shape[0],
-                                                                              device=ini_noise.device)),
-                              self.C[-1],
-                              self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
-                                                                              device=ini_noise.device)))
-        # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
-        #                        self.Sigma[-1] + self.cov_f[-1])
+    """Return the LDS parameter contribution, minus the posterior-to-prior KLs."""
+    if not self.bayesian:
+        return self.Sigma_def.new_zeros(())
+
+    contribution = self.Sigma_def.new_zeros(())
+    if torch.count_nonzero(self.Gamma_def) > 0:
+        prior_A = matrix_normal_inv_wishart(
+            self.A_def, torch.eye(self.A_def.shape[1], device=self.A_def.device,
+                                  dtype=self.A_def.dtype),
+            self.free_deg_MNIV, self.Gamma_def)
+        contribution = contribution - self.internal_params.kl_divergence(prior_A)
+
+    if isinstance(self.observation_params, inv_wishart):
+        prior_C = inv_wishart(self.free_deg_MNIV, self.Sigma_def, self.C_def)
     else:
-        A_, Gam_, C_, Sig_, n0 = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1], self.internal_params.n0
-    if len(torch.nonzero(ini_Gamma))< 1:
-        log_lik_A_Gam = 0.0
-    else:
-        int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
-        log_lik_A_Gam = int_params.log_likelihood_MNIW(A_, Gam_, n0)
-    obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
-    elb_LDS = elb_LDS + log_lik_A_Gam + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
-    return elb_LDS / ini_A.shape[0] * 100
+        prior_C = matrix_normal_inv_wishart(
+            self.C_def, torch.eye(self.C_def.shape[1], device=self.C_def.device,
+                                  dtype=self.C_def.dtype),
+            self.free_deg_MNIV, self.Sigma_def)
+    return contribution - self.observation_params.kl_divergence(prior_C)
 
 
 def backwards(self, h=1.0):
@@ -72,7 +68,7 @@ def backwards(self, h=1.0):
         model_type = 'static'
     else:
         model_type = 'dynamic'
-    if h == 1.0:
+    if h > 0.0:
         mean = list(self.f_star[1:])
         covs = list(self.cov_f[1:])
         if model_type == 'dynamic':
@@ -88,7 +84,7 @@ def backwards_pair(self, h, snr=None):
     """ Fast method to compute the last two backward iterations.
     """
     if len(self.indexes) > 1:
-        if h == 1.0:
+        if h > 0.0:
             if snr is None:
                 mean = list(self.f_star[-2:])
                 covs = list(self.cov_f[-2:])
@@ -239,15 +235,43 @@ def new_params_weighted(self, h, batch=None, reestimate=True, model_type='dynami
             self.new_params(0, reestimate=False, verbose=verbose)
 
 
+def _lds_posterior(self, distribution, n_k, y1, y2, cov, cov_, cov_cross,
+                   *, sse_matrix=None, annealing=False):
+    """Select the configured update without changing sufficient-statistic routing."""
+    kwargs = {'sse_matrix': sse_matrix, 'annealing': annealing}
+    policy = getattr(self, 'lds_update', 'conjugate')
+    if policy == 'natural_gradient':
+        return distribution.posterior_natural_gradient(
+            n_k, y1, y2, cov, cov_, cov_cross,
+            step_size=getattr(self, 'lds_step_size', 0.2), **kwargs,
+        )
+    if policy == 'legacy' and isinstance(distribution, matrix_normal_inv_wishart):
+        return distribution.posterior_legacy(n_k, y1, y2, cov, cov_, cov_cross, **kwargs)
+    if policy not in ('conjugate', 'legacy'):
+        raise ValueError(f'Unknown LDS update policy: {policy}')
+    return distribution.posterior(n_k, y1, y2, cov, cov_, cov_cross, **kwargs)
+
+
+def _lds_scale(self, distribution, *, final):
+    scale = distribution.get_scale(final=final)
+    # The historical MNIW getter inflated the online scale but returned the
+    # stored scale for a full-data update. Keep that behavior with legacy.
+    if (getattr(self, 'lds_update', 'conjugate') == 'legacy'
+            and isinstance(distribution, matrix_normal_inv_wishart) and not final):
+        return scale * distribution.n0 / (distribution.n0 - 2)
+    return scale
+
+
 def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False, snr=1.0):
     """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
         Can use full data batch n-step estimation or 1-step estimation.
     """
     if len(torch.nonzero(self.Gamma[-1]))< 1:
         model_type = 'static'
-    if h == 1.0:
+    if h > 0.0:
         if snr > 0.5:
             if (full_data and 1 < self.N) or 1 < self.N < self.estimation_limit or force:
+                failure_stage = 'internal predictive covariance'
                 try:
                     # if not full_data:
                     #     self.backwards()
@@ -288,15 +312,22 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                                 cov_cross = cov_cross + J @ self.cov_f_sm[t + 1]
                             cov_cross = 0.5 * (cov_cross + cov_cross.T)
                         if not full_data:
-                            N_k = 1
+                            N_k = h
                         elif self.estimation_limit != np.PINF:
                             N_k = self.estimation_limit
                         else:
                             N_k = samples_A.shape[1]
-                        new_int_dist = self.internal_params.posterior(N_k, samples_A, samples_A_, cov, cov_, cov_cross,
-                                                                      annealing=self.annealing)
+                        if h < 1.0 and not full_data:
+                            root_h = np.sqrt(h)
+                            samples_A, samples_A_ = samples_A * root_h, samples_A_ * root_h
+                            cov, cov_, cov_cross = cov * h, cov_ * h, cov_cross * h
+                        failure_stage = 'internal MNIW posterior'
+                        new_int_dist = _lds_posterior(
+                            self, self.internal_params, N_k, samples_A, samples_A_,
+                            cov, cov_, cov_cross, annealing=self.annealing,
+                        )
                     elif model_type == 'static':
-                        N_k = 1
+                        N_k = h
                         new_int_dist = self.internal_params
                     else:
                         print("Only programmed static and dynamic models.")
@@ -325,6 +356,7 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                         cov = torch.zeros(cov_.shape, device=cov_.device)
                         C, Sigma = self.C[-1], self.Sigma[-1]
                         cov_cross = torch.zeros_like(cov_)
+                        failure_stage = 'observation predictive covariance'
                         for t in range(n_f + 1):
                             P = C @ self.cov_f_sm[t] @ C.T + Sigma
                             L_P = self._chol_spd(P)
@@ -335,14 +367,28 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                             cov = torch.zeros(cov.shape, device=cov.device)
                             cov_ = torch.zeros(cov.shape, device=cov.device)
                             cov_cross = torch.zeros(cov.shape, device=cov.device)
+                    failure_stage = 'observation projection'
                     if torch.equal(self.x_basis, self.x_train[-1]):
                         project_mat = None
                     else:
                         project_mat = self.reduce_noise_matrix(self.x_basis, self.x_train[-1])
-                    new_obs_dist = self.observation_params.posterior(N_k, samples_C, samples_C_, cov, cov_, cov_cross,
-                                                                     sse_matrix=project_mat, annealing=self.annealing)
-                except torch.linalg.LinAlgError:
-                    print("Alg error matrix ill conditioned.")
+                    if h < 1.0 and not full_data:
+                        root_h = np.sqrt(h)
+                        samples_C, samples_C_ = samples_C * root_h, samples_C_ * root_h
+                        cov, cov_, cov_cross = cov * h, cov_ * h, cov_cross * h
+                    failure_stage = 'observation MNIW posterior'
+                    new_obs_dist = _lds_posterior(
+                        self, self.observation_params, N_k, samples_C, samples_C_,
+                        cov, cov_, cov_cross, sse_matrix=project_mat,
+                        annealing=self.annealing,
+                    )
+                except torch.linalg.LinAlgError as exc:
+                    failures = getattr(self, '_lds_update_failures', 0) + 1
+                    self._lds_update_failures = failures
+                    if failures == 1 or failures & (failures - 1) == 0:
+                        print(f"LDS update skipped at {failure_stage}: "
+                              f"responsibility={h:.3g}, included={self.N}, "
+                              f"failures={failures}; {exc}", flush=True)
                     new_int_dist = self.internal_params
                     new_obs_dist = self.observation_params
             else:
@@ -351,8 +397,8 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
             self.internal_params = new_int_dist
             self.observation_params = new_obs_dist
             if 1 < self.N:
-                Gamma_ = new_int_dist.get_scale(final=full_data)
-                Sigma_ = new_obs_dist.get_scale(final=full_data)
+                Gamma_ = _lds_scale(self, new_int_dist, final=full_data)
+                Sigma_ = _lds_scale(self, new_obs_dist, final=full_data)
             else:
                 Gamma_ = self.Gamma[-1]
                 Sigma_ = self.Sigma[-1]
@@ -378,8 +424,8 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
         else:
             new_int_dist = self.internal_params
             new_obs_dist = self.observation_params
-            Gamma_ = new_int_dist.get_scale(final=full_data)
-            Sigma_ = new_obs_dist.get_scale(final=full_data)
+            Gamma_ = _lds_scale(self, new_int_dist, final=full_data)
+            Sigma_ = _lds_scale(self, new_obs_dist, final=full_data)
             self.A.append(new_int_dist.get_mean())
             self.Gamma.append(Gamma_)
             if model_type == 'static':

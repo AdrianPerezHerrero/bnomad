@@ -31,7 +31,8 @@ class GaussianProcessEmission:
         """
 
     def __init__(self, kernel, x_basis, annealing=True, bayesian=False, cuda=False, inducing_points=False,
-                 estimation_limit=None, free_deg_MNIV=5, verbose=True):
+                 estimation_limit=None, free_deg_MNIV=5, verbose=True,
+                 lds_update='conjugate', lds_step_size=0.2):
         self.gp = GaussianProcessPrior(kernel, x_basis, cuda=cuda, verbose=verbose)
         self.x_basis = self.cond_to_torch(x_basis)
         self.x_train = []
@@ -71,6 +72,8 @@ class GaussianProcessEmission:
             self.device = 'cpu'
         self.sq_lat_last = torch.zeros(1, device=self.device)
         self.free_deg_MNIV = free_deg_MNIV
+        self.lds_update = lds_update
+        self.lds_step_size = lds_step_size
         self.verbose = verbose
         self.disable = not verbose
 
@@ -321,27 +324,42 @@ class GaussianProcessEmission:
             prior_cov = self.cov_f_sm[0] * h_ini
             residual = mean_cur - prior_mean
             residual_cov = cov_cur
-            conditional_cov = cov_cur
+            L_cur = self._chol_spd(cov_cur)
+            logdet_conditional = 2.0 * torch.log(torch.diag(L_cur)).sum()
             noise_cov = prior_cov
         else:
             mean_prev = self.f_star_sm[i].reshape(-1, 1)
-            cov_prev = self.cov_f_sm[i]
             filtered_prev = self.cov_f[i]
-            if i + 1 < len(self.Gamma):
-                noise_cov, A = self.Gamma[i + 1], self.A[i + 1]
+            # The update for observation i + 1 filters with the parameter
+            # posterior stored after observation i. Full backward smoothing
+            # uses the same A[i], Gamma[i] transition for this pair.
+            if i < len(self.Gamma):
+                noise_cov, A = self.Gamma[i], self.A[i]
             else:
                 noise_cov, A = self.Gamma[-1], self.A[-1]
 
             predicted_cov = A @ filtered_prev @ A.T + noise_cov
             gain = torch.cholesky_solve(A @ filtered_prev,
                                         self._chol_spd(predicted_cov)).T
-            cross_cov = gain @ cov_cur  # Cov_q(f_previous, f_current)
+            # Build the RTS pair posterior from positive covariance sums.
+            # This avoids a near-singular forward Schur complement subtraction.
+            eye = self._eye_cached(filtered_prev.shape[0], filtered_prev.device,
+                                   filtered_prev.dtype)
+            projection = eye - gain @ A
+            reverse_conditional = (projection @ filtered_prev @ projection.T
+                                   + gain @ noise_cov @ gain.T)
+            cov_prev_pair = reverse_conditional + gain @ cov_cur @ gain.T
             residual = mean_cur - A @ mean_prev
-            residual_cov = (cov_cur + A @ cov_prev @ A.T
-                            - A @ cross_cov - cross_cov.T @ A.T)
-            conditional_cov = (cov_cur - cross_cov.T @
-                               torch.cholesky_solve(cross_cov,
-                                                    self._chol_spd(cov_prev)))
+            residual_projection = eye - A @ gain
+            residual_cov = (residual_projection @ cov_cur @ residual_projection.T
+                            + A @ reverse_conditional @ A.T)
+            L_cur = self._chol_spd(cov_cur)
+            L_reverse = self._chol_spd(reverse_conditional)
+            L_prev = self._chol_spd(cov_prev_pair)
+            logdet_conditional = 2.0 * (
+                torch.log(torch.diag(L_cur)).sum()
+                + torch.log(torch.diag(L_reverse)).sum()
+                - torch.log(torch.diag(L_prev)).sum())
 
         L_noise = self._chol_spd(noise_cov)
         logdet_noise = 2.0 * torch.log(torch.diag(L_noise)).sum()
@@ -351,8 +369,6 @@ class GaussianProcessEmission:
         expected_log_transition = -0.5 * (quadratic + trace + logdet_noise
                                           + dimension * self._log2pi(residual))
         # H[q(f_1)] or H[q(f_t | f_{t-1})] completes the Gaussian latent term.
-        L_conditional = self._chol_spd(conditional_cov)
-        logdet_conditional = 2.0 * torch.log(torch.diag(L_conditional)).sum()
         entropy = 0.5 * (dimension * (1.0 + self._log2pi(residual))
                          + logdet_conditional)
         return expected_log_transition + entropy
@@ -366,8 +382,8 @@ class GaussianProcessEmission:
             self.x_train.append(x_train)
             self.y_train.append(self.cond_to_torch(y))
             f_star_, cov_f_ = self.gp.posterior(self.f_star_sm[-1], self.cov_f_sm[-1], self.y_train[-1], self.A[-1],
-                                                self.Gamma[-1], self.C[-1], self.Sigma[-1] / h, x_train=x_train,
-                                                x_warped=x_warped, embedding=embedding)
+                                                self.Gamma[-1], self.C[-1], self.Sigma[-1], x_train=x_train,
+                                                x_warped=x_warped, embedding=embedding, h=h)
             self.f_star.append(f_star_)
             self.f_star_sm.append(f_star_)
             self.cov_f.append(cov_f_)
@@ -391,8 +407,7 @@ class GaussianProcessEmission:
         y = self.cond_to_cuda(self.cond_to_torch(y))
         x_train = self.cond_to_cuda(self.cond_to_torch(x_train))
         new_x_basis = self.x_basis
-        #Responsability truncated to 0.9 for stability purposes.
-        if h == 1.0:
+        if h > 0.0:
             if self.N == 0 and not self.fitted:
                 if torch.allclose(torch.from_numpy(self.gp.kernel.theta), torch.from_numpy(self.ini_kernel_theta)):
                     new_x_basis, _ = self.fit_kernel_params(x_train, y, self.Sigma[-1], self.Gamma[-1], valid=True)
@@ -400,11 +415,11 @@ class GaussianProcessEmission:
                     new_x_basis, _ = self.fit_kernel_params(x_train, y, self.Sigma[-1], self.Gamma[-1], valid=False)
             if snr is not None:
                 if snr > 0.5:
-                    self.condition_observation(index, x_train, y, x_warped, h=1.0)
+                    self.condition_observation(index, x_train, y, x_warped, h=h)
                 else:
                     self.condition_observation(index, x_train, y, x_warped, posterior=False, include_index=True)
             else:
-                self.condition_observation(index, x_train, y, x_warped, h=1.0)
+                self.condition_observation(index, x_train, y, x_warped, h=h)
         else:
             self.condition_observation(index, x_train, y, x_warped, posterior=False)
         return new_x_basis
@@ -491,10 +506,31 @@ class GaussianProcessEmission:
         self.cov_f_sm.append(posterior_cov.detach())
         return new_basis
 
+    @staticmethod
+    def _active_weighted_indices(resp):
+        """Drop only a numerically negligible tail of fractional mass.
+
+        This bounds omitted responsibility by 1e-8 of the cluster total,
+        while retaining every one-hot assignment in the legacy path.
+        """
+        active = torch.nonzero(resp > 0, as_tuple=False).squeeze(1)
+        if active.numel() == 0:
+            return active
+        weights = resp[active]
+        if weights.sum() < 1e-8:
+            return active[:0]
+        if active.numel() == 1:
+            return active
+        order = torch.argsort(weights)
+        sorted_indices = active[order]
+        omitted = torch.cumsum(weights[order], dim=0)
+        retained = sorted_indices[omitted > weights.sum() * 1e-8]
+        return torch.sort(retained).values
+
     def full_pass_weighted_flow(self, x_trains, y_trains, resp, grid_samples,
                                 q=None, q_lat=None, snr=None):
         """Offline pass using one MC warp posterior per observation."""
-        active = torch.nonzero(resp > 0, as_tuple=False).squeeze(1)
+        active = self._active_weighted_indices(resp)
         if active.numel() == 0:
             return q, q_lat
         dynamic = bool(torch.count_nonzero(self.Gamma[-1]))
@@ -519,7 +555,7 @@ class GaussianProcessEmission:
         else:
             model_type = 'dynamic'
 
-        active = torch.nonzero(resp > 0.99, as_tuple=False).squeeze(1)
+        active = self._active_weighted_indices(resp)
         if active.numel() == 0:
             return q, q_lat
 
@@ -599,13 +635,13 @@ class GaussianProcessEmission:
 
         exact_mask = pos_of_sample >= 0
         closest_pos0 = torch.searchsorted(idx_t, sample_ids, right=True) - 1
-        closest_pos0 = torch.clamp(closest_pos0, min=0)
 
-        # Keep your current behavior
+        # State zero is the prior; state p + 1 has assimilated member p.
+        # A nonmember uses the most recent member, or the prior if none exists.
         i_vals = torch.where(
             exact_mask,
             pos_of_sample + 1,
-            torch.clamp(closest_pos0, min=1)
+            closest_pos0 + 1,
         )
         first_mask = exact_mask & (i_vals == 1) & (not no_first)
 

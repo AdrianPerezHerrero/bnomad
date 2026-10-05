@@ -50,6 +50,9 @@ class DynamicsConfig:
     # None selects a schedule-aware prior: 5 offline, 20 online.
     # An integer is always used exactly as supplied.
     free_deg_MNIV: int | None = None
+    lds_update: Literal['conjugate', 'natural_gradient', 'legacy'] = 'conjugate'
+    # Fraction of each new batch's sufficient statistics in natural_gradient mode.
+    lds_step_size: float = 0.2
     reest_conditions: list[int] = field(default_factory=lambda: [1, 20, 5])
 
 
@@ -90,6 +93,7 @@ class InferenceConfig:
     reestimate_initial_params: bool = False
     n_explore_steps: int = 10
     schedule: Literal['online', 'online_fast', 'offline'] | None = None
+    hard_assignments: bool = True
     warp: bool = False
     force_model: int | None = None
     minibatch: int = 0

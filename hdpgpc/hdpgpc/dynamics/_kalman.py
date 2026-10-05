@@ -70,11 +70,15 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
     # First step where initial covariance is needed as a prior, using initial Sigma computed by the GP optim.
     if torch.equal(cov_prior, K_X_X):
         P_t = x_basis_cov
-        f_star = torch.zeros(x_warped.shape, device=backend.device)
-        cov_f = (backend.cond_to_torch(backend.kernel(x_train)) - backend.cond_to_torch(backend.kernel(x_train, x_train))) / h
+        f_star, cov_f = backend.pred_dist(x_warped, backend.x_basis,
+                                          C @ x_basis_mean, Sigma)
     else:
         mean = C @ x_basis_mean
         f_star, cov_f = backend.pred_dist(x_warped, backend.x_basis, mean, Sigma)
+    if h < 1.0:
+        # A fractional assignment supplies h times the observation precision,
+        # including GP interpolation uncertainty.
+        cov_f = cov_f / h
     # Forward equations of Kalman.
     KC = K_cov @ C
     K_t = torch.linalg.solve((KC @ P_t @ KC.T + cov_f).T,
@@ -113,9 +117,13 @@ def smooth_sequence(backend, A_prior, Gamma_prior, means, covars):
         A_prior_ = A_prior[t] if t < len(A_prior) else A_prior[-1]
         Gamma_prior_ = Gamma_prior[t] if t < len(Gamma_prior) else Gamma_prior[-1]
         P_t = torch.linalg.multi_dot([A_prior_, covars[t], A_prior_.T]) + Gamma_prior_
-        J_t = torch.matmul(torch.matmul(covars[t], A_prior_.T), torch.linalg.inv(P_t))
+        J_t = torch.linalg.solve(P_t.T, A_prior_ @ covars[t].T).T
         means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior_, means[t])))
-        covars[t] = covars[t] + torch.linalg.multi_dot([J_t, (covars[t + 1] - P_t), J_t.T])
+        eye = torch.eye(covars[t].shape[0], dtype=covars[t].dtype, device=covars[t].device)
+        projection = eye - J_t @ A_prior_
+        reverse_conditional = (projection @ covars[t] @ projection.T
+                               + J_t @ Gamma_prior_ @ J_t.T)
+        covars[t] = reverse_conditional + J_t @ covars[t + 1] @ J_t.T
     return means, covars
 
 
@@ -146,5 +154,9 @@ def smooth_pair(backend, A_prior, Gamma_prior, means, covars):
         P_t = torch.linalg.multi_dot([A_prior, covars[t], A_prior.T]) + Gamma_prior
         J_t = torch.linalg.solve(P_t.T, torch.matmul(A_prior, covars[t].T)).T
         means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior, means[t])))
-        covars[t] = covars[t] + torch.linalg.multi_dot([J_t, (covars[t + 1] - P_t), J_t.T])
+        eye = torch.eye(covars[t].shape[0], dtype=covars[t].dtype, device=covars[t].device)
+        projection = eye - J_t @ A_prior
+        reverse_conditional = (projection @ covars[t] @ projection.T
+                               + J_t @ Gamma_prior @ J_t.T)
+        covars[t] = reverse_conditional + J_t @ covars[t + 1] @ J_t.T
     return means, covars

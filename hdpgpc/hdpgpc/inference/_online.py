@@ -40,6 +40,16 @@ def _include_with_alignment(self, gp, index, candidate, original, observation, h
     return gp.include_weighted_sample(index, grid, grid, observation, h)
 
 
+def _force_soft_step(resp, resp_pair, state):
+    """Condition the final state and pair marginal on an explicit assignment."""
+    previous = resp[-2].clone() if resp.shape[0] > 1 else None
+    resp[-1].zero_()
+    resp[-1, state] = 1.0
+    resp_pair[-1].zero_()
+    if previous is not None:
+        resp_pair[-1, :previous.shape[0], state] = previous
+
+
 def _report_assignment(self, sample_index, model, birth):
     if not self.verbose:
         return
@@ -68,7 +78,8 @@ def _report_online_objective(self, sample_index, label, q, elbo, components,
           f"emission={float(components['emission'].item()):.6g}, "
           f"latent={float(components['latent'].item()):.6g}, "
           f"HDP={float(components['hdp'].item()):.6g}, "
-          f"LDS={float(components['lds'].item()):.6g}{warp_term}", flush=True)
+          f"LDS={float(components['lds'].item()):.6g}, "
+          f"chain_entropy={float(components['chain_entropy'].item()):.6g}{warp_term}", flush=True)
 
 
 def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify=False):
@@ -122,8 +133,19 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
             q_lat[:, m, ld] = gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
             if getattr(self.alignment, 'uses_candidate_input_warp', False) and m in self._flow_online_scores:
                 q_aux[-1, m, ld] = self._flow_online_scores[m][ld]
+            elif t > 0 and not classify and not self.hard_assignments:
+                proposal_grid = _flow_grid(self, m, self.x_train[-1])
+                q_aux[-1, m, ld] = self.estimate_new(
+                    t, gp, proposal_grid, _flow_observation(self, y_mod[m][-1], ld), h=1.0) + liks[m]
             else:
                 q_aux[-1, m, ld] = gp.log_sq_error(torch.from_numpy(np.array(self.x_train[-1])), y_mod[m][-1], i=-1) + liks[m]
+            if t > 0 and not classify and not self.hard_assignments and self.model_type[m] == 'dynamic':
+                latent_gp = self.gpmodel_deepcopy(gp)
+                _include_with_alignment(self, latent_gp, t, m, self.x_train[-1],
+                                        y_mod[m][-1], 1.0, ld)
+                latent_gp.backwards_pair(1.0)
+                q_lat[:, m, ld] = self._update_q_lat_tail(
+                    latent_gp, q_lat[:, m, ld], [t], h_ini=1.0)
             #q_aux[[-1], m, ld] = self.estimate_new(t, gp, self.x_train[-1], y_mod[m][-1], h=1.0)
     if t > 0:
         resp, resp_log, respPair, respPair_log = self.variational_local_terms(q_aux, self.transTheta, self.startTheta)
@@ -183,7 +205,9 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
         for ld in range(self.n_outputs):
             self.gpmodels[ld].pop()
             self.M = M
-        birth_gate = bool(torch.argmax(q_prev[-1]) == self.M)
+        birth_gate = (bool(torch.argmax(resp_prev[-1]).item() == M)
+                      if not self.hard_assignments else
+                      bool(torch.argmax(q_prev[-1]) == self.M))
         if self.verbose:
             print(f"Sample {t + 1}: birth emission gate="
                   f"{'passed' if birth_gate else 'failed'}; "
@@ -211,7 +235,8 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
                                             self.x_train[-1], y_mod[m][-1], 1.0, ld)
                     self.gpmodels[ld][m] = post_gp
                     post_gp.backwards_pair(1.0)
-                    post_gp.bayesian_new_params(1.0)
+                    if self.hard_assignments:
+                        post_gp.bayesian_new_params(1.0)
                     q_lat_post[:, m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)),
                                                                      h_ini=1.0)
                     # q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0)
@@ -272,7 +297,7 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
         return q_chos[:-1], resp_mod[:-1], liks[:-1]
 
     # Normalize when responsability is equally shared
-    if sum(np.isclose(resp_mod, max(resp_mod), rtol=1e-2)) > 1:
+    if self.hard_assignments and sum(np.isclose(resp_mod, max(resp_mod), rtol=1e-2)) > 1:
         h_argmax = np.nanargmax(resp_mod)
         resp_mod[:] = 0.0
         resp_mod[h_argmax] = 1.0
@@ -290,6 +315,8 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
         resp_mod[:] = 0.0
         resp_mod[force_model] = 1.0
         model = np.argmax(resp_mod)
+        if not self.hard_assignments:
+            _force_soft_step(resp, respPair, model)
         # resp = self.normalize_log(resp_mod)
 
     # Birth of new model
@@ -301,14 +328,17 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
         M = self.M
         y_mod.append(self.y.copy())
         for ld in range(self.n_outputs):
-            self.gpmodels[ld].append(self.create_gp_default())
+            fitted_kernel = (self.gpmodels[ld][m].gp.kernel
+                             if not self.hard_assignments and self.gpmodels[ld][m].fitted
+                             else None)
+            self.gpmodels[ld].append(self.create_gp_default(fitted_kernel=fitted_kernel))
             self.wp_sys[ld].append(self.create_wp_sys_default())
         if getattr(self.alignment, 'uses_candidate_input_warp', False) and warp:
             self.alignment.bind_birth(self, M - 1)
         self.x_basis.append(self.x_basis_ini)
         resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
         startStateCount = resp[0]
-        transStateCount = torch.sum(respPair, axis=0)
+        transStateCount = self.hdp.transition_counts(respPair)
         if M > 2:
             self.reinit_global_params(M - 1, transStateCount, startStateCount)
         if M >= 2:
@@ -324,8 +354,10 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
     else:
         if force_model is None:
             resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
+        else:
+            reorder = torch.arange(M, device=resp.device)
         startStateCount = resp[0, :M]
-        transStateCount = torch.sum(respPair[:, :M, :M], axis=0)
+        transStateCount = self.hdp.transition_counts(respPair[:, :M, :M])
         if M > 2:
             self.reinit_global_params(M - 1, transStateCount, startStateCount)
         if M >= 2:
@@ -379,7 +411,7 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
             new_x_basis = _include_with_alignment(self, self.gpmodels[ld][m], t,
                 reorder[m], self.x_train[-1], y_mod[reorder[m]][-1], resp_mod[m], ld)
             self.x_basis[m] = self.cond_cuda(self.cond_to_torch(new_x_basis.detach()))
-            if resp_mod[m] > 0.9:
+            if resp_mod[m] > 0.9 or (not self.hard_assignments and m == model):
                 self.y_train = torch.concatenate([self.y_train, torch.atleast_2d(y_mod[reorder[m]][-1]).T[:, :, np.newaxis]])
             if self.bayesian_params:
                 self.gpmodels[ld][m].bayesian_new_params(resp_mod[m], model_type=self.model_type[m])
@@ -388,6 +420,16 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
                                                          max_samples=self.max_samples,
                                                          div_samples=self.div_samples, verbose=False,
                                                          model_type=self.model_type[m], check_var=self.check_var)
+            if not self.hard_assignments and resp_mod[m] > 0:
+                proposal_grid = _flow_grid(self, reorder[m], self.x_train[-1])
+                observation = y_mod[reorder[m]][-1]
+                point_score = self.gpmodels[ld][m].log_sq_error(
+                    proposal_grid, _flow_observation(self, observation, ld), i=-1) + liks[reorder[m]]
+                q_chos[-1, m, ld] = _flow_score(self, reorder[m], ld,
+                                                self.gpmodels[ld][m], observation, point_score)
+                if self.model_type[m] == 'dynamic':
+                    q_lat_chos[:, m, ld] = self._update_q_lat_tail(
+                        self.gpmodels[ld][m], q_lat_chos[:, m, ld], [t], h_ini=1.0)
     initial_q, initial_elbo, initial_parts = _online_objective(
         self, resp[:, :M], respPair[:, :M, :M],
         self.weight_mean(q_chos)[:, :M], self.weight_mean(q_lat_chos)[:, :M],
@@ -414,7 +456,7 @@ def _init_resp_cache_cold_start(self, init_state: int = 0):
     resp[0, init_state] = 1.0
 
     respPair = self.cond_cuda(torch.zeros((T, M, M), device=device, dtype=torch.float64))
-    respPair[0, init_state, init_state] = 1.0  # safe default for T=1
+    # The first state has no incoming transition.
 
     self.resp_last = resp
     self.respPair_last = respPair
@@ -498,9 +540,7 @@ def _append_hard_step(self, resp_prev, respPair_prev, new_state, K):
     if respPair_prev is not None and respPair_prev.numel() > 0:
         respPair[:T_prev, :respPair_prev.shape[1], :respPair_prev.shape[2]] = respPair_prev
 
-    if T_prev == 0:
-        respPair[T_prev, new_state, new_state] = 1.0
-    else:
+    if T_prev > 0:
         prev_state = int(torch.argmax(resp_prev[-1]).item())
         respPair[T_prev, prev_state, new_state] = 1.0
 
@@ -554,9 +594,10 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
     y_mod, liks = _alignment.configured(self).prepare_online(
         self, x_train, y, t, M, y_mod, liks, warp, force_model, fast=True)
 
-    # --- Build q_aux/q_lat using cached history; only compute last-row SSE ---
+    # --- Build q_aux/q_lat using cached history; only compute the new row ---
     q_aux = torch.zeros(self.T, M + 1, self.n_outputs, device=self.device) - np.inf
     q_lat = torch.zeros(self.T, M + 1, self.n_outputs, device=self.device, dtype=torch.float64)
+    prov_gps = None
 
     if t > 0:
         q_aux[:-1, :self.q_last.shape[1], :] = self.q_last
@@ -566,12 +607,24 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         for m, gp in enumerate(self.gpmodels[ld]):
             if getattr(self.alignment, 'uses_candidate_input_warp', False) and m in self._flow_online_scores:
                 q_aux[-1, m, ld] = self._flow_online_scores[m][ld]
+            elif t > 0 and not classify:
+                proposal_grid = _flow_grid(self, m, self.x_train[-1])
+                q_aux[-1, m, ld] = self.estimate_new(
+                    t, gp, proposal_grid,
+                    _flow_observation(self, y_mod[m][-1], ld), h=1.0)
             else:
                 q_aux[-1, m, ld] = gp.log_sq_error(
                     self.cond_cuda(self.cond_to_torch(torch.from_numpy(np.array(self.x_train[-1])))),
                     y_mod[m][-1],
                     i=-1
                 )
+            if t > 0 and not classify and not self.hard_assignments and self.model_type[m] == 'dynamic':
+                latent_gp = self.gpmodel_deepcopy(gp)
+                _include_with_alignment(self, latent_gp, t, m, self.x_train[-1],
+                                        y_mod[m][-1], 1.0, ld)
+                latent_gp.backwards_pair(1.0)
+                q_lat[:, m, ld] = self._update_q_lat_tail(
+                    latent_gp, q_lat[:, m, ld], [t], h_ini=1.0)
 
     # --- SPECIAL CASE: first sample (t == 0) ---
     if t == 0:
@@ -580,12 +633,12 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                   "comparisons need a previous sample.", flush=True)
         init_state = 0 if (force_model is None) else int(force_model)
 
-        # Hard resp for first time step
+        # The first step starts from its selected state.
         resp = torch.zeros((self.T, M + 1), device=self.device, dtype=torch.float64)
         resp[0, init_state] = 1.0
 
         respPair = torch.zeros((self.T, M + 1, M + 1), device=self.device, dtype=torch.float64)
-        respPair[0, init_state, init_state] = 1.0  # safe self-transition
+        # The first state has no incoming transition.
 
         q_chos, q_lat_chos = q_aux, q_lat
 
@@ -614,18 +667,24 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
             print(f"Sample {t + 1}: proposal comparisons skipped because "
                   f"cluster {int(force_model) + 1} was forced.", flush=True)
 
-        # Default choice: no birth, just keep q_aux/q_lat and pick best SSE model
+        # Default choice: no birth; rank clusters by the same hypothetical
+        # posterior emission score used in the birth/absorb comparisons.
         q_chos, q_lat_chos = q_aux, q_lat
-        m_best_sse = int(torch.argmax(self.weight_mean(q_aux)[-1, :-1]).item())
-        resp_h, respPair_h = self._append_hard_step(self.resp_last, self.respPair_last, new_state=m_best_sse, K=M)
-        resp = torch.zeros((self.T, M + 1), device=self.device, dtype=torch.float64)
-        resp[:, :M] = resp_h
-        respPair = torch.zeros((self.T, M + 1, M + 1), device=self.device, dtype=torch.float64)
-        respPair[:, :M, :M] = respPair_h
+        if self.hard_assignments:
+            m_best = int(torch.argmax(self.weight_mean(q_aux)[-1, :-1]).item())
+            resp_h, respPair_h = self._append_hard_step(self.resp_last, self.respPair_last,
+                                                        new_state=m_best, K=M)
+            resp = torch.zeros((self.T, M + 1), device=self.device, dtype=torch.float64)
+            resp[:, :M] = resp_h
+            respPair = torch.zeros((self.T, M + 1, M + 1), device=self.device, dtype=torch.float64)
+            respPair[:, :M, :M] = respPair_h
+        else:
+            resp, _, respPair, _ = self.variational_local_terms(
+                q_aux, self.transTheta, self.startTheta)
 
     # No comparison if first sample or classify
     if t > 0 and (not classify) and (force_model is None):
-        # Order candidates by current SSE (same as update)
+        # Order candidates by their hypothetical posterior emission scores.
         q_ord = torch.argsort(self.weight_mean(q_aux)[-1, :-1], descending=True)
         m_template = int(
             q_ord[-1].item())  # template for prov_gp (same as update) :contentReference[oaicite:5]{index=5}
@@ -653,21 +712,32 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                                     self.x_train[-1], y_birth, 1.0, ld)
             # q_lat for a new model is non-zero only at t (indexes contains only t) :contentReference[oaicite:7]{index=7}
             if self.model_type_def == 'dynamic':
-                q_lat_prev[:, -1, ld] = self._update_q_lat_tail(prov_gp, q_lat_prev[:, -1, ld], [t], h_ini=0.5) * 5.0
+                if self.hard_assignments:
+                    q_lat_prev[:, -1, ld] = self._update_q_lat_tail(
+                        prov_gp, q_lat_prev[:, -1, ld], [t], h_ini=0.5) * 5.0
+                else:
+                    q_lat_prev[:, -1, ld] = self._update_q_lat_tail(
+                        prov_gp, q_lat_prev[:, -1, ld], [t], h_ini=1.0)
 
             prov_gps.append(prov_gp)
 
         # Gate (same intent as original): only compare absorb if birth is best by emission :contentReference[oaicite:8]{index=8}
-        birth_gate = int(torch.argmax(self.weight_mean(q_prev)[-1]).item()) == M
+        birth_gate = (not self.hard_assignments or
+                      int(torch.argmax(self.weight_mean(q_prev)[-1]).item()) == M)
         if self.verbose:
-            print(f"Sample {t + 1}: birth emission gate="
-                  f"{'passed' if birth_gate else 'failed'}; "
+            gate_label = ('disabled for soft assignments' if not self.hard_assignments
+                          else 'passed' if birth_gate else 'failed')
+            print(f"Sample {t + 1}: birth emission gate={gate_label}; "
                   f"candidate comparisons={'active' if birth_gate else 'diagnostic only'}.",
                   flush=True)
         if birth_gate or self.verbose:
-            # Forced hard resp for birth
-            resp_birth, respPair_birth = self._append_hard_step(self.resp_last, self.respPair_last, new_state=M,
-                                                                K=M + 1)
+            # Birth marginal under the selected assignment policy.
+            if self.hard_assignments:
+                resp_birth, respPair_birth = self._append_hard_step(
+                    self.resp_last, self.respPair_last, new_state=M, K=M + 1)
+            else:
+                resp_birth, _, respPair_birth, _ = self.variational_local_terms(
+                    q_prev, self.transTheta, self.startTheta)
             gpmodels_birth = [[] for _ in range(self.n_outputs)]
             for ld in range(self.n_outputs):
                 gpmodels_birth[ld] = list(self.gpmodels[ld]) + [prov_gps[ld]]
@@ -680,7 +750,9 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
             )
             _report_online_objective(self, t, 'birth proposal', q_b, elbo_b,
                                      birth_parts, base_total, candidate=M)
-            best_total = (q_b + elbo_b).detach() - base_total
+            birth_map = self.hard_assignments or int(torch.argmax(resp_birth[-1]).item()) == M
+            best_total = ((q_b + elbo_b).detach() - base_total if birth_map
+                          else torch.full_like(base_total, -torch.inf))
             best_pack = (q_prev, q_lat_prev, resp_birth, respPair_birth)
             absorb_chosen = False
 
@@ -695,18 +767,21 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                     gpmodels_post[ld] = list(self.gpmodels[ld])
                     post_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_cand])
 
-                    # Use estimate_new so the sample is assumed INCLUDED (this is what you asked to restore) :contentReference[oaicite:9]{index=9}
-                    proposal_grid = _flow_grid(self, m_cand, self.x_train[-1])
-                    point_score = self.estimate_new(t, post_gp, proposal_grid,
-                                                    _flow_observation(self, y_mod[m_cand][-1], ld), h=1.0)
-                    q_post[-1, m_cand, ld] = _flow_score(self, m_cand, ld, post_gp,
-                                                         y_mod[m_cand][-1], point_score)
+                    # Preserve the legacy hard proposal score. Soft proposals
+                    # already have a hypothetical score for every candidate.
+                    if (self.hard_assignments or
+                            getattr(self.alignment, 'uses_candidate_input_warp', False)):
+                        proposal_grid = _flow_grid(self, m_cand, self.x_train[-1])
+                        point_score = self.estimate_new(t, post_gp, proposal_grid,
+                                                        _flow_observation(self, y_mod[m_cand][-1], ld), h=1.0)
+                        q_post[-1, m_cand, ld] = _flow_score(self, m_cand, ld, post_gp,
+                                                             y_mod[m_cand][-1], point_score)
                     _include_with_alignment(self, post_gp, t, m_cand,
                                             self.x_train[-1], y_mod[m_cand][-1], 1.0, ld)
                     post_gp.backwards_pair(1.0)  # tail-only smoothing :contentReference[oaicite:10]{index=10}
-                    if self.bayesian_params:
+                    if self.hard_assignments and self.bayesian_params:
                         post_gp.bayesian_new_params(1.0, model_type=self.model_type[m_cand])
-                    else:
+                    elif self.hard_assignments:
                         post_gp.new_params_weighted(
                             1.0, batch=None, min_samples=self.min_samples, max_samples=self.max_samples,
                             div_samples=self.div_samples, verbose=False, model_type=self.model_type[m_cand],
@@ -723,9 +798,15 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
 
                     gpmodels_post[ld][m_cand] = post_gp
 
-                # Forced hard resp for absorb (no birth column in scoring, like update does with [:,:-1]) :contentReference[oaicite:12]{index=12}
-                resp_abs, respPair_abs = self._append_hard_step(self.resp_last, self.respPair_last,
-                                                                new_state=m_cand, K=M)
+                # Absorb marginal has no active birth column.
+                if self.hard_assignments:
+                    resp_abs, respPair_abs = self._append_hard_step(
+                        self.resp_last, self.respPair_last, new_state=m_cand, K=M)
+                else:
+                    resp_abs_full, _, respPair_abs_full, _ = self.variational_local_terms(
+                        q_post, self.transTheta, self.startTheta)
+                    resp_abs = resp_abs_full[:, :M]
+                    respPair_abs = respPair_abs_full[:, :M, :M]
 
                 q_a, elbo_a, absorb_parts = _online_objective(
                     self, resp_abs, respPair_abs,
@@ -758,7 +839,7 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
     resp_mod = self.cond_to_numpy(self.cond_cpu(resp[-1]))
     resp_modlog = np.log(np.maximum(resp_mod, 1e-12))
 
-    if sum(np.isclose(resp_mod, max(resp_mod), rtol=1e-2)) > 1:
+    if self.hard_assignments and sum(np.isclose(resp_mod, max(resp_mod), rtol=1e-2)) > 1:
         h_argmax = np.nanargmax(resp_mod)
         resp_mod[:] = 0.0
         resp_mod[h_argmax] = 1.0
@@ -775,6 +856,8 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         resp_mod[:] = 0.0
         resp_mod[force_model] = 1.0
         model = int(np.argmax(resp_mod))
+        if not self.hard_assignments:
+            _force_soft_step(resp, respPair, model)
 
     birth = (model == self.M)
     if birth:
@@ -782,18 +865,28 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         M = self.M
         y_mod.append(self.y.copy())
         for ld in range(self.n_outputs):
-            self.gpmodels[ld].append(self.create_gp_default())
+            fitted_kernel = (self.gpmodels[ld][m_template].gp.kernel
+                             if prov_gps is not None and self.gpmodels[ld][m_template].fitted
+                             else None)
+            self.gpmodels[ld].append(self.create_gp_default(fitted_kernel=fitted_kernel))
             self.wp_sys[ld].append(self.create_wp_sys_default())
         if getattr(self.alignment, 'uses_candidate_input_warp', False) and warp:
             self.alignment.bind_birth(self, M - 1)
         self.x_basis.append(self.x_basis_ini)
     if force_model is None:
         resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
+        if not self.hard_assignments:
+            # The MAP label and fractional weights now refer to the reordered
+            # cluster list used by the emission update below.
+            resp_mod = self.cond_to_numpy(self.cond_cpu(resp[-1]))
+            model = int(np.argmax(resp_mod))
+    else:
+        reorder = torch.arange(self.M, device=resp.device)
 
     # Update HDP global params
     M_eff = self.M
     startStateCount = resp[0, :M_eff]
-    transStateCount = torch.sum(respPair[:, :M_eff, :M_eff], axis=0)
+    transStateCount = self.hdp.transition_counts(respPair[:, :M_eff, :M_eff])
     if M_eff > 2:
         self.reinit_global_params(M_eff - 1, transStateCount, startStateCount)
     if M_eff >= 2:
@@ -802,7 +895,7 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                                                                    self.cond_cuda(startStateCount), M_eff)
             self.rho, self.omega = self.find_optimum_rhoOmega()
 
-    # Update actual GP models with last hard assignment
+    # Update actual GP models with the selected marginal responsibilities.
     self.actual_state = model
 
     if minibatch == 0:
@@ -815,7 +908,7 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                 self, self.gpmodels[ld][m], t, reorder[m], self.x_train[-1],
                 y_mod[reorder[m]][-1] if m < len(y_mod) else y, h, ld)
             self.x_basis[m] = self.cond_cuda(self.cond_to_torch(new_x_basis.detach()))
-            if h == 1.0:
+            if h == 1.0 or (not self.hard_assignments and m == model):
                 self.y_train = torch.concatenate(
                     [self.y_train, torch.atleast_2d(y_mod[reorder[m]][-1]).T[:, :, np.newaxis]])
 
@@ -827,6 +920,16 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                                                          div_samples=self.div_samples,
                                                          verbose=False, model_type=self.model_type[m],
                                                          check_var=self.check_var)
+            if not self.hard_assignments and h > 0:
+                proposal_grid = _flow_grid(self, reorder[m], self.x_train[-1])
+                observation = y_mod[reorder[m]][-1] if m < len(y_mod) else y
+                point_score = self.gpmodels[ld][m].log_sq_error(
+                    proposal_grid, _flow_observation(self, observation, ld), i=-1)
+                q_chos[-1, m, ld] = _flow_score(self, reorder[m], ld,
+                                                self.gpmodels[ld][m], observation, point_score)
+                if self.model_type[m] == 'dynamic':
+                    q_lat_chos[:, m, ld] = self._update_q_lat_tail(
+                        self.gpmodels[ld][m], q_lat_chos[:, m, ld], [t], h_ini=1.0)
 
     # Store history + refresh caches for next call
     self.resp_assigned.append(torch.argmax(resp[:, :self.M], axis=1))

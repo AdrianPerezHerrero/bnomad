@@ -152,11 +152,9 @@ class HDPVariational:
 
 
     def compute_Pi(self):
-        """ Compute transition matrix
-        """
-        return torch.exp(digamma(self.cond_cpu(self.transTheta)) -
-                         torch.log(torch.sum(torch.exp(digamma(self.cond_cpu(self.transTheta))), axis=1))[:,
-                         np.newaxis])
+        """Return the posterior mean transition matrix E[Pi]."""
+        theta = self.cond_cpu(self.transTheta)
+        return theta / torch.sum(theta, dim=1, keepdim=True)
 
 
     def rho2beta(self, rho, returnSize='K+1'):
@@ -194,7 +192,7 @@ class HDPVariational:
         """ Compute ELBO for linear terms. HDP.
         """
         startStateCount = resp[0]
-        transStateCount = torch.sum(respPair, axis=0)
+        transStateCount = self.transition_counts(respPair)
         M = resp.shape[1]
 
         # Augment suff stats to be sure have 0 in final column,
@@ -216,14 +214,9 @@ class HDPVariational:
         if post:
             nIters = 1
             for giter in range(nIters):
-                if one_sample:
-                    transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
-                                                                   self.cond_cuda(torch.clone(startStateCount)), M + 1,
-                                                                   rho=rho_)
-                else:
-                    transTheta_, startTheta_ = self._calcThetaPost(self.cond_cuda(torch.clone(transStateCount)),
-                                                                   self.cond_cuda(torch.clone(startStateCount)), M + 1,
-                                                                   rho_)
+                transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
+                                                               self.cond_cuda(torch.clone(startStateCount)), M + 1,
+                                                               rho=rho_)
 
         else:
             transTheta_, startTheta_ = self._calcThetaFull(self.cond_cuda(torch.clone(transStateCount)),
@@ -242,12 +235,14 @@ class HDPVariational:
                                              torch.clone(self.cond_cpu(transStateCount))))
 
 
-    def refill_resp(self, resp, respPair=None):
+    def refill_resp(self, resp, respPair=None, occupied=None):
         """ Refill HDP parameters if a model is reasignated.
         """
-        resp_per_group = torch.sum(resp[np.where(resp == 1.0)[0]], axis=0)
-        if torch.any(resp_per_group[:-1] < 1.0):
-            empty_group_ind = torch.where(resp_per_group < torch.tensor(1.0, device=self.device))[0]
+        resp_per_group = torch.sum(resp, axis=0)
+        if occupied is None:
+            occupied = resp_per_group >= 1.0
+        if torch.any(~occupied[:-1]):
+            empty_group_ind = torch.where(~occupied)[0]
             if empty_group_ind.shape[0] > 1:
                 empty_group_ind = empty_group_ind[0]
             resp_last_group = torch.clone(resp[:, -1])
@@ -305,12 +300,15 @@ class HDPVariational:
 
 
     def calcELBO_NonlinearTerms(self, resp, respPair):
-        """ Method to compute H[q].
-        """
-        Htable = self.calc_Htable(respPair)
-        Hstart = self.calc_Hstart(resp)
+        """H[q(z_0)] + sum_{t>0} H[q(z_t | z_{t-1})]."""
+        Htable = self.calc_Htable(respPair[1:])
+        Hstart = self.calc_Hstart(resp[:1])
         Lentropy = Htable.sum() + Hstart.sum()
         return Lentropy
+
+    def transition_counts(self, respPair):
+        """Count actual transitions; row zero has no predecessor state."""
+        return torch.sum(respPair[1:], dim=0)
 
 
     def calc_Hstart(self, resp, eps=1e-30):
@@ -482,29 +480,17 @@ class HDPVariational:
         return startPi
 
     def batch_log_transitions(self, M, transTheta):
-        digammaSumTransTheta = torch.log(
-            torch.sum(torch.exp(digamma(self.cond_cpu(transTheta[:M, :M + 1]))), axis=1) + 1e-5)
-        transPi = digamma(self.cond_cpu(transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
-        return transPi
+        return self.expected_log_transitions(M, transTheta)
 
     def batch_log_start(self, M, startTheta):
-        startPi = digamma(self.cond_cpu(startTheta[:M])) - torch.log(
-            torch.sum(torch.exp(digamma(self.cond_cpu(startTheta[:M + 1])))) + 1e-5)
-        return startPi
+        return self.expected_log_start(M, startTheta)
 
     def stored_log_transitions(self, M, transTheta):
-        digammaSumTransTheta = torch.log(
-            torch.sum(torch.exp(digamma(self.cond_cpu(transTheta[:M, :M + 1]))), axis=1))
-        transPi = digamma(self.cond_cpu(transTheta[:M, :M])) - digammaSumTransTheta[:, np.newaxis]
-        return transPi
+        return self.expected_log_transitions(M, transTheta)
 
     def classification_log_transitions(self, M, transTheta):
-        digammaSumTransTheta = digamma(torch.sum(self.cond_cpu(transTheta[:M, :M + 1]), axis=1) + 1e-5)
-        transPi = digamma(self.cond_cpu(transTheta[:M, :M])) - digammaSumTransTheta[:, None]
-        return transPi
+        return self.expected_log_transitions(M, transTheta)
 
     def classification_log_start(self, M, startTheta):
-        startPi = digamma(self.cond_cpu(startTheta[:M])) - digamma(
-            torch.sum(self.cond_cpu(startTheta[:M + 1])) + 1e-5)
-        return startPi
+        return self.expected_log_start(M, startTheta)
 

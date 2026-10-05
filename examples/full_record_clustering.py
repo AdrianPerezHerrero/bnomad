@@ -29,7 +29,9 @@ from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 
 from tutorial_utils import plot_record_results
 from hdpgpc import HDPGPC
-from hdpgpc.diagnostics import model_warp_arrays, plot_warp_diagnostics
+from hdpgpc.diagnostics import (
+    model_lds_arrays, model_warp_arrays, plot_lds_diagnostics, plot_warp_diagnostics,
+)
 from hdpgpc.config import (
     AlignmentConfig,
     DynamicsConfig,
@@ -46,25 +48,27 @@ from hdpgpc.config import (
 # Experiment controls: edit these values for the desired whole-record run.
 # -----------------------------------------------------------------------------
 # Full run: uncomment this tuple and comment out the single-record choice below.
-RECORDS = (
-    "100", "101", "102", "103", "104", "105", "106", "107", "108", "109",
-    "111", "112", "113", "114", "115", "116", "117", "118", "119",
-    "121", "122", "123", "124",
-    "200", "201", "202", "203", "205", "207", "208", "209", "210",
-    "212", "213", "214", "215", "217", "219", "220", "221", "222", "223",
-    "228", "230", "231", "232", "233", "234",
-)
-#RECORDS = ("100",)            # Current record selection.
+# RECORDS = (
+#     "100", "101", "102", "103", "104", "105", "106", "107", "108", "109",
+#     "111", "112", "113", "114", "115", "116", "117", "118", "119",
+#     "121", "122", "123", "124",
+#     "200", "201", "202", "203", "205", "207", "208", "209", "210",
+#     "212", "213", "214", "215", "217", "219", "220", "221", "222", "223",
+#     "228", "230", "231", "232", "233", "234",
+# )
+RECORDS = ("104",)            # Current record selection.
 CHANNELS = (0,)                 # Choose channel 0, 1, or both: (0, 1).
 SCALE_WAVEFORMS = False          # First-beat mean/std scaling; False keeps stored amplitudes.
 UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 grid.
 INFERENCE_MODE = "offline"      # "offline", "online", or "online_fast".
+HARD_ASSIGNMENTS = False         # False uses soft responsibility weights during inference.
 ENABLE_WARP = False              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
 VERBOSE = True                 # False: progress/summary; True: per-sample/iteration detail.
 SHARE_GP_FOR_PROPOSALS = True   # Offline proposals/new clusters start from a fitted GP copy.
 SAVE_PLOTS = True               # Also save the final figures when True.
 PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
+PLOT_LDS = True                 # Plot fitted LDS matrices, spectra, and stability measures.
 PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_mo"
 PLOT_DPI = 160
 
@@ -73,11 +77,14 @@ PLOT_DPI = 160
 MAX_CLUSTERS = 30
 HDP_PRESET = "more"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
+LDS_DEGREES_OF_FREEDOM = 20  # None uses the package default: 5 offline, 20 online.
+LDS_UPDATE = "natural_gradient"  # "conjugate", "natural_gradient", or "legacy".
+LDS_STEP_SIZE = 0.1            # Fraction of new LDS evidence in natural_gradient mode.
 INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 4.0)
-INITIAL_OBSERVATION_NOISE = 1.0e+4
+INITIAL_OBSERVATION_NOISE = 1.0e+3
 OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+6)
-INITIAL_PROCESS_NOISE = 1.0e+4
+INITIAL_PROCESS_NOISE = 1.0e+3
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+6)
 OFFLINE_ITERATIONS = 50
 RANDOM_SEED = 42
@@ -85,7 +92,10 @@ RANDOM_SEED = 42
 DATA_DIRECTORY = Path(__file__).resolve().parents[1] / "hdpgpc" / "data" / "mitbih"
 
 
-def _configuration(grid: np.ndarray) -> HDPGPCConfig:
+def _configuration(
+    grid: np.ndarray, *, lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
+    lds_update: str = LDS_UPDATE, lds_step_size: float = LDS_STEP_SIZE,
+) -> HDPGPCConfig:
     """Build the full experiment recipe in one visible place."""
     if ENABLE_WARP and INFERENCE_MODE != "offline" and ALIGNMENT_POLICY not in ("gp_flow", "dtw_gp"):
         raise ValueError("Online warping in this example requires 'gp_flow' or 'dtw_gp'.")
@@ -109,6 +119,9 @@ def _configuration(grid: np.ndarray) -> HDPGPCConfig:
             bound_gamma=PROCESS_NOISE_BOUNDS,
             annealing=False,
             bayesian_params=True,
+            free_deg_MNIV=lds_degrees_of_freedom,
+            lds_update=lds_update,
+            lds_step_size=lds_step_size,
         ),
         alignment=AlignmentConfig(
             policy=ALIGNMENT_POLICY if ENABLE_WARP else "none",
@@ -117,6 +130,7 @@ def _configuration(grid: np.ndarray) -> HDPGPCConfig:
         ),
         inference=InferenceConfig(
             schedule=INFERENCE_MODE,
+            hard_assignments=HARD_ASSIGNMENTS,
             warp=ENABLE_WARP,
             it_limit=OFFLINE_ITERATIONS if INFERENCE_MODE == "offline" else None,
             n_explore_steps=2,
@@ -226,6 +240,10 @@ def _print_confusion_matrix(classes: np.ndarray, matrix: np.ndarray) -> None:
 
 def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                plot_warps: bool = PLOT_WARPS,
+               plot_lds: bool = PLOT_LDS,
+               lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
+               lds_update: str = LDS_UPDATE,
+               lds_step_size: float = LDS_STEP_SIZE,
                plot_directory: Path = PLOT_DIRECTORY,
                scale_waveforms: bool = SCALE_WAVEFORMS,
                unit_grid: bool = UNIT_GRID) -> None:
@@ -233,15 +251,24 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     values, grid = _prepare_record(
         signal, scale_waveforms=scale_waveforms, unit_grid=unit_grid,
     )
-    config = _configuration(grid)
+    config = _configuration(
+        grid, lds_degrees_of_freedom=lds_degrees_of_freedom,
+        lds_update=lds_update, lds_step_size=lds_step_size,
+    )
 
     print(f"\nRecord {record}: waveform shape={signal.shape}, annotations={len(annotations)}")
     print(f"Input shape={values.shape} (beats, points, outputs), channels={CHANNELS}")
     print(f"Waveform scaling={'first-beat mean/std' if scale_waveforms else 'off'}, "
           f"grid range=0..{grid[-1, 0]:g}")
-    print(f"Schedule={INFERENCE_MODE}, warp={ENABLE_WARP}, "
+    print(f"Schedule={INFERENCE_MODE}, hard assignments={HARD_ASSIGNMENTS}, warp={ENABLE_WARP}, "
           f"alignment={ALIGNMENT_POLICY if ENABLE_WARP else 'none'}, verbose={VERBOSE}")
     print(f"Model={MODEL_TYPE}, HDP preset={HDP_PRESET}, cluster cap={MAX_CLUSTERS}")
+    effective_dof = (lds_degrees_of_freedom if lds_degrees_of_freedom is not None
+                     else (5 if INFERENCE_MODE == "offline" else 20))
+    print(f"LDS MNIW degrees of freedom={effective_dof}"
+          + (" (schedule default)" if lds_degrees_of_freedom is None else ""))
+    print(f"LDS update={lds_update}"
+          + (f", step size={lds_step_size:g}" if lds_update == "natural_gradient" else ""))
 
     model = HDPGPC(config)
     start = time.perf_counter()
@@ -303,6 +330,21 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                 title=f"Record {record}, channel {CHANNELS[output]}: fitted input warps",
             )
             warp_figures.append((CHANNELS[output], figure))
+    lds_figures = []
+    if plot_lds:
+        for output, channel in enumerate(CHANNELS):
+            matrices = model_lds_arrays(model, output=output)
+            for page, figure in enumerate(plot_lds_diagnostics(
+                matrices, title=f'Record {record}, channel {channel}: fitted LDS parameters',
+            ), start=1):
+                if save_plots:
+                    plot_directory.mkdir(parents=True, exist_ok=True)
+                    path = plot_directory / f"record_{record}_channel_{channel}_lds_{page:02d}.png"
+                    figure.savefig(path, dpi=PLOT_DPI)
+                    print(f"Saved LDS plot: {path}")
+                    plt.close(figure)
+                else:
+                    lds_figures.append(figure)
     if save_plots:
         plot_directory.mkdir(parents=True, exist_ok=True)
         for channel, figure in zip(CHANNELS, figures):
@@ -364,6 +406,22 @@ def main() -> None:
         help="Include fitted warp diagnostics when alignment is enabled (default: PLOT_WARPS).",
     )
     parser.add_argument(
+        "--plot-lds", action=argparse.BooleanOptionalAction, default=PLOT_LDS,
+        help="Include fitted LDS matrix and stability diagnostics (default: PLOT_LDS).",
+    )
+    parser.add_argument(
+        "--lds-degrees-of-freedom", type=int, default=LDS_DEGREES_OF_FREEDOM,
+        help="MNIW prior degrees of freedom for LDS parameters; omit for the schedule default.",
+    )
+    parser.add_argument(
+        "--lds-update", choices=("conjugate", "natural_gradient", "legacy"),
+        default=LDS_UPDATE, help="LDS Bayesian parameter update (default: LDS_UPDATE).",
+    )
+    parser.add_argument(
+        "--lds-step-size", type=float, default=LDS_STEP_SIZE,
+        help="Fraction of new evidence used by the natural-gradient LDS update.",
+    )
+    parser.add_argument(
         "--plot-dir", type=Path, default=PLOT_DIRECTORY,
         help="Directory for saved PNGs and record logs (default: PLOT_DIRECTORY).",
     )
@@ -378,6 +436,9 @@ def main() -> None:
                 try:
                     run_record(
                         record, save_plots=args.save_plots, plot_warps=args.plot_warps,
+                        plot_lds=args.plot_lds,
+                        lds_degrees_of_freedom=args.lds_degrees_of_freedom,
+                        lds_update=args.lds_update, lds_step_size=args.lds_step_size,
                         plot_directory=args.plot_dir,
                         scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,
                     )

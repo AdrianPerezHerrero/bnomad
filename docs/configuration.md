@@ -35,6 +35,19 @@ the same scientific choice. Change that token explicitly in older recipes.
 `none` disables alignment even if requested by a call. `InferenceConfig.warp`
 defaults to `False` for both online and offline schedules; set it to `True` to
 request alignment with either schedule.
+`InferenceConfig.hard_assignments` defaults to `True`. Set it to `False` to
+retain normalized state and transition responsibilities in online or offline
+inference. GP filtering and Bayesian LDS sufficient statistics then use each
+observation's fractional responsibility. Cluster creation and reported labels
+still use a MAP choice. Soft assignments require `bayesian_params=True` and
+can cost substantially more because an observation may update several GPs.
+Offline emission fitting drops only fractional weights whose combined mass is
+at most `1e-8` of that cluster's responsibility total. A cluster with less
+than `1e-8` total mass is skipped during that fitting pass. This avoids
+numerical updates from negligible softmax tails.
+The offline HDP linear term counts transitions between beats once; it is not
+multiplied by the waveform point count. Birth and baseline scores each use a
+full transition-parameter update from their own expected counts.
 `gp_flow` enables an opt-in variational monotonic GP-flow warp posterior; see
 [GP-flow alignment](gp_flow_alignment.md) for its objective, controls and limits.
 `dtw_gp` estimates a cheaper monotone point warp with unrestricted DTW and a smooth
@@ -45,8 +58,9 @@ the birth and absorb proposals for each subsequent sample. Each proposal shows
 its emission, latent, HDP, and LDS terms, total ELBO, change from the baseline,
 and the signed warp objective contribution when available. The emission term
 already includes that negative contribution. Candidate cluster numbers refer to the order
-before the selected state is reordered. If the birth emission gate fails, the
-proposal comparisons are diagnostic and do not affect the assignment.
+before the selected state is reordered. With hard assignments, if the birth
+emission gate fails, the proposal comparisons are diagnostic and do not affect
+the assignment.
 
 `schedule=None` selects offline for public `fit` and standard online for `update`.
 When `DynamicsConfig.free_deg_MNIV` is omitted (`None`), model construction
@@ -54,13 +68,23 @@ uses `5` for offline inference and `20` for `online` or `online_fast`. An
 explicit integer, including `5`, overrides this choice in either schedule.
 Existing configuration files that contain `free_deg_MNIV: 5` therefore keep
 the prior strength they request.
-The one-observation MNIW mean update weights the new estimate by
-`1/(free_deg_MNIV - 1)`: `1/4` with `5`, versus `1/19` with `20`.
-The prior also slows process and observation covariance updates. This applies
-to Bayesian LDS parameter learning; latent-state filtering can still adapt
-to each observation. For advanced direct construction with no configured
-schedule, pass `config.build_model(schedule='online')` to select the online
-default; otherwise direct construction assumes offline.
+`free_deg_MNIV` controls the inverse-Wishart prior strength and does not by
+itself set a fixed learning rate for the MNIW matrix means.
+`DynamicsConfig.lds_update` selects `conjugate` (the package default),
+`natural_gradient`, or `legacy`. The conjugate policy uses the current exact
+MNIW sufficient-statistic update. The legacy policy retains the earlier
+nonconjugate mean and covariance rules for comparison. The natural-gradient
+policy uses `lds_step_size` in `(0, 1]` (default `0.2`) to temper each new
+batch's MNIW sufficient statistics and degrees-of-freedom increment:
+`eta_new = eta_old + lds_step_size * (eta_conjugate - eta_old)` in natural
+parameters. At step size `1`, it equals the conjugate update; below `1`, it
+adapts more slowly and is a tempered posterior rather than the exact posterior
+for all observations. Static inverse-Wishart observation noise uses the same
+tempering; its legacy policy is the existing static update. LDS parameter
+damping does not stop the latent Kalman filter from responding to each sample.
+For advanced direct construction with no configured schedule, pass
+`config.build_model(schedule='online')` to select the online default;
+otherwise direct construction assumes offline.
 
 Explicit choices are `online`, `online_fast`, `offline`. `InferenceConfig.run`
 dispatches one observation or batch to the native engine. `config.build_model()`

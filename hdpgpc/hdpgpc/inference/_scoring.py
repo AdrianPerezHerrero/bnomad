@@ -26,38 +26,43 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
     """
     if verb is None:
         verb = self.verbose
-    if one_sample:
-        n_points = 1
+    if self.hard_assignments:
+        q_bas = torch.sum(q[torch.where(resp == 1.0)]) * self.static_factor
+        elbo_latent = torch.sum(q_lat[torch.where(resp == 1.0)]) * self.dynamic_factor
     else:
-        n_points = self.x_basis[0].shape[0]
-    # TODO: here is so simple to implement the non-clipped resposability assignation just by multiplying q by the resp term.
-    q_bas = torch.sum(q[torch.where(resp == 1.0)]) * self.static_factor
-    elbo_latent = torch.sum(q_lat[torch.where(resp == 1.0)]) * self.dynamic_factor
+        weights = resp.to(q.dtype)
+        q_bas = torch.where(weights > 0, weights * q, torch.zeros_like(q)).sum() * self.static_factor
+        elbo_latent = torch.where(weights > 0, weights * q_lat,
+                                  torch.zeros_like(q_lat)).sum() * self.dynamic_factor
     if post:
         elbo_bas = self.elbo_Linears(resp, respPair, post=post,
-                                     one_sample=one_sample) * n_points  # / self.n_outputs
+                                     one_sample=one_sample)
     else:
-        elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample) * n_points  # / self.n_outputs
-    elbo_bas_LDS = 0
-    if snr is None:
-        frac = torch.ones(self.n_outputs, device=resp.device()) / self.n_outputs  # / self.M
-    elif snr == 'saved':
-        frac = torch.sum(self.snr_norm, dim=0)
-        frac = frac / torch.sum(frac) * n_points  # * self.n_outputs# / self.M#
-    else:
-        frac = torch.sum(torch.softmax(torch.max(snr, dim=1)[0], dim=1), dim=0)
-        frac = frac / torch.sum(frac) * n_points  # * self.n_outputs# * self.M#
-    for i in range(self.n_outputs):
-        elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(gpmodels[i], torch.sum(resp, dim=0),
-                                                         one_sample=one_sample) * frac[i]
+        elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample)
+    # Each cluster/output owns one parameter posterior. Its KL is global and
+    # must be counted once, independently of waveform length or SNR weights.
+    elbo_bas_LDS = torch.zeros((), dtype=q.dtype, device=q.device)
+    cluster_counts = torch.sum(resp, dim=0)
+    for output in range(self.n_outputs):
+        elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(
+            gpmodels[output], cluster_counts, one_sample=one_sample)
+
+    chain_entropy = torch.zeros_like(q_bas)
+    if one_sample and not self.hard_assignments:
+        chain_entropy = torch.as_tensor(
+            self.calcELBO_NonlinearTerms(
+                self.cond_to_numpy(self.cond_cpu(resp)),
+                self.cond_to_numpy(self.cond_cpu(respPair))),
+            dtype=q_bas.dtype, device=q_bas.device)
 
     components = None
     if return_components:
         components = {
             'emission': q_bas,
-            'latent': elbo_latent if self.hmm_switch else torch.zeros_like(elbo_latent),
+            'latent': elbo_latent,
             'hdp': torch.as_tensor(elbo_bas) if self.hmm_switch else torch.zeros_like(q_bas),
-            'lds': elbo_bas_LDS if self.hmm_switch else torch.zeros_like(elbo_bas_LDS),
+            'lds': elbo_bas_LDS,
+            'chain_entropy': chain_entropy,
         }
 
     # elbo_bas = elbo_bas + elbo_latent
@@ -70,39 +75,20 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
     if self.hmm_switch:
         elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
     else:
-        elbo_bas = elbo_latent
+        elbo_bas = elbo_bas_LDS + elbo_latent
+    elbo_bas = elbo_bas + chain_entropy
     if return_components:
         return q_bas, elbo_bas, components
     return q_bas, elbo_bas
 
 
 def full_LDS_elbo(self, gpmodels, sum_resp, one_sample=False):
-    """ Method to accumulate LDS ELBO terms..
-    """
-    elb = torch.zeros(1)
-    M_ = 0
-    if one_sample:
-        frac = sum_resp / torch.sum(sum_resp)
-    else:
-        frac = sum_resp / torch.sum(sum_resp)
-    for i in sum_resp:
-        if i > 0:
-            M_ = M_ + 1
-    gp_temp = gpmodels if one_sample else gpmodels
-    for i, gp in enumerate(gp_temp):
-        if sum_resp[i] > 0:
-            if sum_resp[i] < self.free_deg_MNIV:
-                # elb = elb + gp.return_LDS_param_likelihood(first=True)
-                if one_sample:
-                    elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
-                else:
-                    elb = elb + gp.return_LDS_param_likelihood(first=False) * frac[i] * 1.0
-            else:
-                elb = elb + gp.return_LDS_param_likelihood() * frac[i]
-    if one_sample:
-        return elb  # / M_
-    else:
-        return elb / M_  # * np.min([np.max([1, M_ - 1]), self.M])
+    """Sum one negative LDS-parameter KL per active cluster in an output."""
+    elb = sum_resp.new_zeros(())
+    for index, gp in enumerate(gpmodels):
+        if sum_resp[index] > 0:
+            elb = elb + gp.return_LDS_param_likelihood()
+    return elb
 
 
 def estimate_new(self, t, gpmodel, x_train, y, h=1.0):
