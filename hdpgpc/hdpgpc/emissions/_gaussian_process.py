@@ -32,7 +32,8 @@ class GaussianProcessEmission:
 
     def __init__(self, kernel, x_basis, annealing=True, bayesian=False, cuda=False, inducing_points=False,
                  estimation_limit=None, free_deg_MNIV=5, verbose=True,
-                 lds_update='conjugate', lds_step_size=0.2):
+                 lds_update='conjugate_sequential', lds_step_size=0.2,
+                 lds_scoring='final'):
         self.gp = GaussianProcessPrior(kernel, x_basis, cuda=cuda, verbose=verbose)
         self.x_basis = self.cond_to_torch(x_basis)
         self.x_train = []
@@ -73,6 +74,7 @@ class GaussianProcessEmission:
         self.sq_lat_last = torch.zeros(1, device=self.device)
         self.free_deg_MNIV = free_deg_MNIV
         self.lds_update = lds_update
+        self.lds_scoring = lds_scoring
         self.lds_step_size = lds_step_size
         self.verbose = verbose
         self.disable = not verbose
@@ -85,11 +87,37 @@ class GaussianProcessEmission:
             self._eye_cache[key] = torch.eye(n, device=device, dtype=dtype)
         return self._eye_cache[key]
 
-    def _chol_spd(self, M, jitter_scale=1e-8):
+    def _chol_spd(self, M, jitter_scale=1e-8, *, context='covariance'):
         M = 0.5 * (M + M.T)
         eye = self._eye_cached(M.shape[0], M.device, M.dtype)
         diag_mean = torch.mean(torch.diag(M).abs()).clamp_min(torch.finfo(M.dtype).eps)
-        return torch.linalg.cholesky(M + jitter_scale * diag_mean * eye)
+        try:
+            # Preserve the usual numerical path unless factorization fails.
+            return torch.linalg.cholesky(M + jitter_scale * diag_mean * eye)
+        except torch.linalg.LinAlgError as error:
+            last_error = error
+
+        # A nearly singular covariance may need more than the usual jitter.
+        # Use the matrix scale when the diagonal alone is unusually small.
+        scale = torch.maximum(diag_mean, M.abs().amax())
+        for multiplier in (10.0, 1e2, 1e3, 1e4, 1e5, 1e6):
+            relative_jitter = jitter_scale * multiplier
+            try:
+                factor = torch.linalg.cholesky(M + relative_jitter * scale * eye)
+            except torch.linalg.LinAlgError as error:
+                last_error = error
+                continue
+            recoveries = getattr(self, '_chol_jitter_recoveries', 0) + 1
+            self._chol_jitter_recoveries = recoveries
+            if self.verbose and (recoveries & (recoveries - 1)) == 0:
+                print(f'Cholesky recovered for {context} with relative jitter '
+                      f'{relative_jitter:.0e} (recoveries={recoveries})', flush=True)
+            return factor
+
+        raise torch.linalg.LinAlgError(
+            f'Cholesky failed for {context} after relative jitter up to '
+            f'{jitter_scale * 1e6:.0e}; covariance may be indefinite or non-finite'
+        ) from last_error
 
     def _log2pi(self, ref):
         return torch.tensor(math.log(2.0 * math.pi), device=ref.device, dtype=ref.dtype)
@@ -112,18 +140,19 @@ class GaussianProcessEmission:
         return projection @ projected @ projection.T
 
     def _observation_params(self, i=None, params=None):
-        """Return the latent covariance and C used by observe/step_forward_last."""
+        """Return the scoring state covariance and selected observation map."""
         if params is not None:
             return params[1], params[2]
         if i is None:
             return self.cov_f_sm[-1], self.C[-1]
         if not self.indexes:
-            return self.cov_f[0], self.C[0]
-        if len(self.indexes) <= i:
+            C = self.C[-1] if self.lds_scoring == 'final' else self.C[0]
+            return self.cov_f[0], C
+        if i < 0 or len(self.indexes) <= i:
             return self.cov_f[-1], self.C[-1]
-        if self.estimation_limit <= i:
-            return self.cov_f[i], self.C[-1]
-        return self.cov_f[i], self.get_params(i)[2]
+        if self.lds_scoring == 'historical' and self.estimation_limit > i:
+            return self.cov_f[i], self.get_params(i)[2]
+        return self.cov_f[i], self.C[-1]
 
     def _gaussian_score_shared_cov(self, Y, mean, cov, latent_cov=None):
         """
@@ -289,12 +318,15 @@ class GaussianProcessEmission:
             params = [mean, cov, C, Sigma]
 
         if i is not None:
-            f_star, cov_f = self.observe(x_train, i, params, proj=proj)
+            f_star, cov_f = self.observe(x_train, i, params, proj=proj,
+                                         final_lds=params is None and self.lds_scoring == 'final')
         else:
             f_star, cov_f = self.step_forward_last(x_train, params)
 
         if first:
-            ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-2
+            score_sigma = (params[3] if params is not None else
+                           self.Sigma[-1] if self.lds_scoring == 'final' else self.Sigma[0])
+            ini_noise = torch.mean(torch.diag(score_sigma)) * 1e-2
             cov_f = cov_f + ini_noise * self._eye_cached(len(x_train), cov_f.device, cov_f.dtype)
 
         if y.ndim == 1:
@@ -330,31 +362,32 @@ class GaussianProcessEmission:
         else:
             mean_prev = self.f_star_sm[i].reshape(-1, 1)
             filtered_prev = self.cov_f[i]
-            # The update for observation i + 1 filters with the parameter
-            # posterior stored after observation i. Full backward smoothing
-            # uses the same A[i], Gamma[i] transition for this pair.
-            if i < len(self.Gamma):
-                noise_cov, A = self.Gamma[i], self.A[i]
-            else:
+            # The pair covariance and entropy describe the saved q trajectory
+            # under its historical transition in either scoring mode.
+            A_q = self.A[i] if i < len(self.A) else self.A[-1]
+            Gamma_q = self.Gamma[i] if i < len(self.Gamma) else self.Gamma[-1]
+            if self.lds_scoring == 'final':
                 noise_cov, A = self.Gamma[-1], self.A[-1]
-
-            predicted_cov = A @ filtered_prev @ A.T + noise_cov
-            gain = torch.cholesky_solve(A @ filtered_prev,
+            else:
+                noise_cov, A = Gamma_q, A_q
+            predicted_cov = A_q @ filtered_prev @ A_q.T + Gamma_q
+            gain = torch.cholesky_solve(A_q @ filtered_prev,
                                         self._chol_spd(predicted_cov)).T
             # Build the RTS pair posterior from positive covariance sums.
             # This avoids a near-singular forward Schur complement subtraction.
             eye = self._eye_cached(filtered_prev.shape[0], filtered_prev.device,
                                    filtered_prev.dtype)
-            projection = eye - gain @ A
+            projection = eye - gain @ A_q
             reverse_conditional = (projection @ filtered_prev @ projection.T
-                                   + gain @ noise_cov @ gain.T)
+                                   + gain @ Gamma_q @ gain.T)
             cov_prev_pair = reverse_conditional + gain @ cov_cur @ gain.T
             residual = mean_cur - A @ mean_prev
             residual_projection = eye - A @ gain
             residual_cov = (residual_projection @ cov_cur @ residual_projection.T
                             + A @ reverse_conditional @ A.T)
             L_cur = self._chol_spd(cov_cur)
-            L_reverse = self._chol_spd(reverse_conditional)
+            L_reverse = self._chol_spd(reverse_conditional,
+                                       context='latent reverse conditional')
             L_prev = self._chol_spd(cov_prev_pair)
             logdet_conditional = 2.0 * (
                 torch.log(torch.diag(L_cur)).sum()
@@ -530,20 +563,27 @@ class GaussianProcessEmission:
     def full_pass_weighted_flow(self, x_trains, y_trains, resp, grid_samples,
                                 q=None, q_lat=None, snr=None):
         """Offline pass using one MC warp posterior per observation."""
+        if self.lds_update == 'conjugate_batch':
+            raise NotImplementedError('conjugate_batch does not support GP-flow input warps')
         active = self._active_weighted_indices(resp)
         if active.numel() == 0:
             return q, q_lat
         dynamic = bool(torch.count_nonzero(self.Gamma[-1]))
+        batch_lds = self.lds_update == 'conjugate_batch'
         for index in active.tolist():
             h = float(resp[index].item())
             self.include_weighted_sample_flow(index, x_trains[index],
                                                grid_samples[index],
                                                y_trains[index], h)
-            if dynamic:
+            if batch_lds:
+                _trajectory.hold_lds_params(self)
+            elif dynamic:
                 self.backwards_pair(h)
                 self.bayesian_new_params(h)
         if dynamic:
             self.backwards()
+        if batch_lds:
+            self.bayesian_batch_params(resp, grid_samples=grid_samples)
         mean_grids = torch.stack([samples.mean(0) for samples in grid_samples])
         return (self.compute_sq_err_all(mean_grids, y_trains),
                 self.compute_q_lat_all(mean_grids))
@@ -559,6 +599,10 @@ class GaussianProcessEmission:
         if active.numel() == 0:
             return q, q_lat
 
+        batch_lds = self.lds_update == 'conjugate_batch'
+        if batch_lds and any(not torch.equal(x_trains[index], self.x_basis)
+                             for index in active.tolist()):
+            raise NotImplementedError('conjugate_batch requires a common observation grid')
         for index in active.tolist():
             h = float(resp[index].item())
             self.include_weighted_sample(
@@ -568,12 +612,16 @@ class GaussianProcessEmission:
                 y_trains[index],
                 h
             )
-            if model_type == 'dynamic':
+            if batch_lds:
+                _trajectory.hold_lds_params(self)
+            elif model_type == 'dynamic':
                 self.backwards_pair(h)
                 self.bayesian_new_params(h)
 
         if model_type == 'dynamic':
             self.backwards()
+        if batch_lds:
+            self.bayesian_batch_params(resp)
 
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
@@ -608,10 +656,24 @@ class GaussianProcessEmission:
         self.N = 0
 
 
-    def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=False):
+    def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=False,
+                   *, warm_start=True):
         """ Method to reinitiate LDS parameters. Can save some of them.
         """
+        if self.lds_update == 'conjugate_batch' and self.N > 0 and warm_start:
+            # Carry the last fit into the next offline E-step, while resetting
+            # the MNIW posterior to the original prior for its next batch step.
+            filter_start = (self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1])
+            result = _trajectory.reinit_LDS(self, False, save_last_diag, return_likelihood)
+            self.A[0], self.Gamma[0], self.C[0], self.Sigma[0] = filter_start
+            return result
+        if self.lds_update == 'conjugate_batch':
+            return _trajectory.reinit_LDS(self, False, save_last_diag, return_likelihood)
         return _trajectory.reinit_LDS(self, save_last, save_last_diag, return_likelihood)
+
+    def bayesian_batch_params(self, resp, grid_samples=None):
+        """Update the cluster LDS once from its offline smoothed trajectory."""
+        return _trajectory.bayesian_batch_params(self, resp, grid_samples)
 
     def return_LDS_param_likelihood(self, first=False):
         """ Method to compute the likelihood of LDS parameters over the prior.
@@ -656,9 +718,11 @@ class GaussianProcessEmission:
                 i_cur = int((code // 2).item())
                 first_cur = bool((code % 2).item())
 
-                f_star, cov_f = self.observe(x0, i_cur, params=None, proj=False)
+                f_star, cov_f = self.observe(x0, i_cur, params=None, proj=False,
+                                             final_lds=self.lds_scoring == 'final')
                 if first_cur:
-                    ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-2
+                    score_sigma = self.Sigma[-1] if self.lds_scoring == 'final' else self.Sigma[0]
+                    ini_noise = torch.mean(torch.diag(score_sigma)) * 1e-2
                     cov_f = cov_f + ini_noise * self._eye_cached(len(x0), cov_f.device, cov_f.dtype)
 
                 latent_cov, C_mat = self._observation_params(i_cur)
@@ -759,13 +823,23 @@ class GaussianProcessEmission:
         x_basis = self.x_basis
         return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
 
-    def observe(self, x_post, t, params=None, proj=False):
+    def observe(self, x_post, t, params=None, proj=False, *, final_lds=False):
         """
         Method to resample the emission GP distribution at time t or using the parameters given.
         :param x_post: time set to resample
         :param t: step n where to resample the model
-        :param params: tuple (mean, cov, Gamma, Sigma)
+        :param params: tuple (mean, cov, C, Sigma)
+        :param final_lds: use final C and Sigma with the state at t
         """
+        if final_lds and params is None:
+            # Preserve the state associated with t while evaluating every
+            # observation under the cluster's final C and Sigma.
+            state_index = t if 0 <= t < len(self.f_star) else -1
+            mean = self.C[-1] @ self.f_star[state_index]
+            Sigma = self.Sigma[-1]
+            if proj:
+                Sigma = Sigma + self.Gamma[-1]
+            return self.gp.pred_dist(x_post, self.x_basis, mean, Sigma)
         if params is None:
             #Case when model is not initialited
             if len(self.indexes) == 0:
@@ -954,6 +1028,8 @@ class GaussianProcessEmission:
         """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
             Can use full data batch n-step estimation or 1-step estimation.
         """
+        if self.lds_update == 'conjugate_batch':
+            raise ValueError('conjugate_batch updates require an offline full pass')
         return _trajectory.bayesian_new_params(self, h, model_type, full_data, q, force, snr)
 
 

@@ -95,8 +95,19 @@ def validate(c, *, for_build=False):
     # NoAlignment deliberately overrides True request flags: that is valid.
     validate_numerics(n)
     integer(d.free_deg_MNIV, 'free_deg_MNIV', 1, optional=True)
-    if d.lds_update not in ('conjugate', 'natural_gradient', 'legacy'):
-        raise ValueError('lds_update must be conjugate, natural_gradient, or legacy')
+    if d.lds_update not in ('conjugate_sequential', 'conjugate_batch',
+                            'natural_gradient', 'legacy'):
+        raise ValueError('lds_update must be conjugate_sequential, conjugate_batch, natural_gradient, or legacy')
+    if d.lds_scoring not in ('final', 'historical'):
+        raise ValueError('lds_scoring must be final or historical')
+    if d.lds_update == 'conjugate_batch' and not d.bayesian_params:
+        raise ValueError('conjugate_batch requires Bayesian LDS parameters')
+    if (d.lds_update == 'conjugate_batch'
+            and c.inference.schedule in ('online', 'online_fast')):
+        raise ValueError('conjugate_batch LDS updates require offline inference')
+    if (d.lds_update == 'conjugate_batch' and c.inference.warp
+            and a.policy == 'gp_flow'):
+        raise ValueError('conjugate_batch does not support GP-flow input warps')
     if (isinstance(d.lds_step_size, bool) or not isinstance(d.lds_step_size, Real)
             or not math.isfinite(d.lds_step_size) or not 0 < d.lds_step_size <= 1):
         raise ValueError('lds_step_size must be finite and in (0, 1]')

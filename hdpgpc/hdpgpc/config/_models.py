@@ -50,7 +50,9 @@ class DynamicsConfig:
     # None selects a schedule-aware prior: 5 offline, 20 online.
     # An integer is always used exactly as supplied.
     free_deg_MNIV: int | None = None
-    lds_update: Literal['conjugate', 'natural_gradient', 'legacy'] = 'conjugate'
+    lds_update: Literal['conjugate_sequential', 'conjugate_batch',
+                        'natural_gradient', 'legacy'] = 'conjugate_sequential'
+    lds_scoring: Literal['final', 'historical'] = 'final'
     # Fraction of each new batch's sufficient statistics in natural_gradient mode.
     lds_step_size: float = 0.2
     reest_conditions: list[int] = field(default_factory=lambda: [1, 20, 5])
@@ -264,6 +266,8 @@ def _initialization_options(config, *, schedule=None):
         schedule = config.inference.schedule or 'offline'
     if schedule not in ('offline', 'online', 'online_fast'):
         raise ValueError('Unknown inference schedule')
+    if config.dynamics.lds_update == 'conjugate_batch' and schedule != 'offline':
+        raise ValueError('conjugate_batch LDS updates require offline inference')
     result = {'x_basis': config.x_basis, 'verbose': config.verbose}
     for name in SECTIONS:
         section = getattr(config, name)

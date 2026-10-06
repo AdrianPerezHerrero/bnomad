@@ -56,12 +56,12 @@ from hdpgpc.config import (
 #     "212", "213", "214", "215", "217", "219", "220", "221", "222", "223",
 #     "228", "230", "231", "232", "233", "234",
 # )
-RECORDS = ("104",)            # Current record selection.
+RECORDS = ("102",)            # Current record selection.
 CHANNELS = (0,)                 # Choose channel 0, 1, or both: (0, 1).
 SCALE_WAVEFORMS = False          # First-beat mean/std scaling; False keeps stored amplitudes.
 UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 grid.
 INFERENCE_MODE = "offline"      # "offline", "online", or "online_fast".
-HARD_ASSIGNMENTS = False         # False uses soft responsibility weights during inference.
+HARD_ASSIGNMENTS = True         # False uses soft responsibility weights during inference.
 ENABLE_WARP = False              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
 VERBOSE = True                 # False: progress/summary; True: per-sample/iteration detail.
@@ -69,7 +69,7 @@ SHARE_GP_FOR_PROPOSALS = True   # Offline proposals/new clusters start from a fi
 SAVE_PLOTS = True               # Also save the final figures when True.
 PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
 PLOT_LDS = True                 # Plot fitted LDS matrices, spectra, and stability measures.
-PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_mo"
+PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_dev"
 PLOT_DPI = 160
 
 # Typed configuration values; these are experiment settings, not package defaults.
@@ -77,15 +77,16 @@ PLOT_DPI = 160
 MAX_CLUSTERS = 30
 HDP_PRESET = "more"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
-LDS_DEGREES_OF_FREEDOM = 20  # None uses the package default: 5 offline, 20 online.
-LDS_UPDATE = "natural_gradient"  # "conjugate", "natural_gradient", or "legacy".
-LDS_STEP_SIZE = 0.1            # Fraction of new LDS evidence in natural_gradient mode.
+LDS_DEGREES_OF_FREEDOM = 5  # None uses the package default: 5 offline, 20 online.
+LDS_UPDATE = "natural_gradient"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
+LDS_SCORING = "historical"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
+LDS_STEP_SIZE = 0.05            # Fraction of new LDS evidence in natural_gradient mode.
 INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 4.0)
-INITIAL_OBSERVATION_NOISE = 1.0e+3
-OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+6)
-INITIAL_PROCESS_NOISE = 1.0e+3
-PROCESS_NOISE_BOUNDS = (0.001, 1.0e+6)
+INITIAL_OBSERVATION_NOISE = 5.0e+1
+OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)
+INITIAL_PROCESS_NOISE = 1.0e+1
+PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)
 OFFLINE_ITERATIONS = 50
 RANDOM_SEED = 42
 
@@ -94,7 +95,8 @@ DATA_DIRECTORY = Path(__file__).resolve().parents[1] / "hdpgpc" / "data" / "mitb
 
 def _configuration(
     grid: np.ndarray, *, lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
-    lds_update: str = LDS_UPDATE, lds_step_size: float = LDS_STEP_SIZE,
+    lds_update: str = LDS_UPDATE, lds_scoring: str = LDS_SCORING,
+    lds_step_size: float = LDS_STEP_SIZE,
 ) -> HDPGPCConfig:
     """Build the full experiment recipe in one visible place."""
     if ENABLE_WARP and INFERENCE_MODE != "offline" and ALIGNMENT_POLICY not in ("gp_flow", "dtw_gp"):
@@ -121,6 +123,7 @@ def _configuration(
             bayesian_params=True,
             free_deg_MNIV=lds_degrees_of_freedom,
             lds_update=lds_update,
+            lds_scoring=lds_scoring,
             lds_step_size=lds_step_size,
         ),
         alignment=AlignmentConfig(
@@ -133,7 +136,7 @@ def _configuration(
             hard_assignments=HARD_ASSIGNMENTS,
             warp=ENABLE_WARP,
             it_limit=OFFLINE_ITERATIONS if INFERENCE_MODE == "offline" else None,
-            n_explore_steps=2,
+            n_explore_steps=5,
         ),
         multi_output=MultiOutputConfig(
             n_outputs=len(CHANNELS),
@@ -243,6 +246,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                plot_lds: bool = PLOT_LDS,
                lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
                lds_update: str = LDS_UPDATE,
+               lds_scoring: str = LDS_SCORING,
                lds_step_size: float = LDS_STEP_SIZE,
                plot_directory: Path = PLOT_DIRECTORY,
                scale_waveforms: bool = SCALE_WAVEFORMS,
@@ -253,7 +257,8 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     )
     config = _configuration(
         grid, lds_degrees_of_freedom=lds_degrees_of_freedom,
-        lds_update=lds_update, lds_step_size=lds_step_size,
+        lds_update=lds_update, lds_scoring=lds_scoring,
+        lds_step_size=lds_step_size,
     )
 
     print(f"\nRecord {record}: waveform shape={signal.shape}, annotations={len(annotations)}")
@@ -269,6 +274,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
           + (" (schedule default)" if lds_degrees_of_freedom is None else ""))
     print(f"LDS update={lds_update}"
           + (f", step size={lds_step_size:g}" if lds_update == "natural_gradient" else ""))
+    print(f"LDS scoring={lds_scoring}")
 
     model = HDPGPC(config)
     start = time.perf_counter()
@@ -414,8 +420,12 @@ def main() -> None:
         help="MNIW prior degrees of freedom for LDS parameters; omit for the schedule default.",
     )
     parser.add_argument(
-        "--lds-update", choices=("conjugate", "natural_gradient", "legacy"),
+        "--lds-update", choices=("conjugate_sequential", "conjugate_batch", "natural_gradient", "legacy"),
         default=LDS_UPDATE, help="LDS Bayesian parameter update (default: LDS_UPDATE).",
+    )
+    parser.add_argument(
+        "--lds-scoring", choices=("final", "historical"), default=LDS_SCORING,
+        help="LDS matrices used in observation and latent ELBO scores (default: LDS_SCORING).",
     )
     parser.add_argument(
         "--lds-step-size", type=float, default=LDS_STEP_SIZE,
@@ -438,7 +448,8 @@ def main() -> None:
                         record, save_plots=args.save_plots, plot_warps=args.plot_warps,
                         plot_lds=args.plot_lds,
                         lds_degrees_of_freedom=args.lds_degrees_of_freedom,
-                        lds_update=args.lds_update, lds_step_size=args.lds_step_size,
+                        lds_update=args.lds_update, lds_scoring=args.lds_scoring,
+                        lds_step_size=args.lds_step_size,
                         plot_directory=args.plot_dir,
                         scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,
                     )

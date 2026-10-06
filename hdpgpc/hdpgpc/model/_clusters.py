@@ -73,7 +73,8 @@ def create_gp_default(self, i=None, fitted_kernel=None):
                            cuda=self.cuda,
                            inducing_points=inducing_points, estimation_limit=estimation_limit,
                            free_deg_MNIV=free_deg_MNIV, verbose=self.verbose,
-                           lds_update=getattr(self, 'lds_update', 'conjugate'),
+                           lds_update=getattr(self, 'lds_update', 'conjugate_sequential'),
+                           lds_scoring=getattr(self, 'lds_scoring', 'final'),
                            lds_step_size=getattr(self, 'lds_step_size', 0.2))
         if model_type == 'static':
             cond = gp_.GPR_static(ini_sigma)
@@ -114,7 +115,8 @@ def create_gp_default(self, i=None, fitted_kernel=None):
         gp_ = gp.GaussianProcessEmission(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params,
                            cuda=self.cuda, inducing_points=inducing_points, estimation_limit=estimation_limit,
                            free_deg_MNIV=free_deg_MNIV, verbose=self.verbose,
-                           lds_update=getattr(self, 'lds_update', 'conjugate'),
+                           lds_update=getattr(self, 'lds_update', 'conjugate_sequential'),
+                           lds_scoring=getattr(self, 'lds_scoring', 'final'),
                            lds_step_size=getattr(self, 'lds_step_size', 0.2))
         if model_type == 'static':
             cond = gp_.GPR_static(ini_sigma)
@@ -314,7 +316,8 @@ def gpmodel_deepcopy(self, gpmodel):
                        cuda=gpmodel.cuda, inducing_points=gpmodel.inducing_points,
                        estimation_limit=gpmodel.estimation_limit,
                        free_deg_MNIV=gpmodel.free_deg_MNIV, verbose=self.verbose,
-                       lds_update=getattr(gpmodel, 'lds_update', 'conjugate'),
+                       lds_update=getattr(gpmodel, 'lds_update', 'conjugate_sequential'),
+                       lds_scoring=getattr(gpmodel, 'lds_scoring', 'final'),
                        lds_step_size=getattr(gpmodel, 'lds_step_size', 0.2))
     gp_.y_train = gpmodel.y_train.copy()
     gp_.x_train = gpmodel.x_train.copy()

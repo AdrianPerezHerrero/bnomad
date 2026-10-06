@@ -308,7 +308,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 else:
                     gp = self.gpmodel_deepcopy(self.gpmodels[ld - 1][0])
                     if gp.fitted:
-                        gp.reinit_LDS(save_last=False)
+                        gp.reinit_LDS(save_last=False, warm_start=False)
                         gp.reinit_GP(save_last=False)
             q_[:, 0, ld], q_lat_[:, 0, ld]= _fit_emission(self, gp, x_trains, y_trains_w[:, :, [ld], 0], resp[:, 0],
                                                           x_w, ld, 0, snr=self.snr_norm[:, ld])
@@ -631,7 +631,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     for ld in range(self.n_outputs):
                         gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
                         if gp.fitted:
-                            gp.reinit_LDS(save_last=False)
+                            gp.reinit_LDS(save_last=False, warm_start=False)
                             gp.reinit_GP(save_last=False)
                         gp.include_weighted_sample(0, x_trains[f_ind_new], x_trains[f_ind_new],
                                                    y_trains[f_ind_new, :, [ld]], h=1.0)
@@ -690,7 +690,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                                 # If not share_gp then new GP is used for a new model, more expensive but official model.
                                 gp = self.create_gp_default()
                             if gp.fitted:
-                                gp.reinit_LDS(save_last=False)
+                                gp.reinit_LDS(save_last=False, warm_start=False)
                                 gp.reinit_GP(save_last=False)
                             q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains,
                                                                                  y_trains_w[:, :, [ld], reorder[m]],
@@ -1199,7 +1199,7 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
         for m in range(M):
             gp = self.gpmodel_deepcopy(self.gpmodels[0][0])
             if gp.fitted:
-                gp.reinit_LDS(save_last=False)
+                gp.reinit_LDS(save_last=False, warm_start=False)
                 gp.reinit_GP(save_last=False)
             q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]],
                                                                  resp[:, m])
@@ -1212,7 +1212,7 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
             for m in range(M):
                 gp = self.gpmodel_deepcopy(self.gpmodels[0][0])
                 if gp.fitted:
-                    gp.reinit_LDS(save_last=False)
+                    gp.reinit_LDS(save_last=False, warm_start=False)
                     gp.reinit_GP(save_last=False)
                 q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]],
                                                                      resp[:, m])

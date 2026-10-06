@@ -239,7 +239,7 @@ def _lds_posterior(self, distribution, n_k, y1, y2, cov, cov_, cov_cross,
                    *, sse_matrix=None, annealing=False):
     """Select the configured update without changing sufficient-statistic routing."""
     kwargs = {'sse_matrix': sse_matrix, 'annealing': annealing}
-    policy = getattr(self, 'lds_update', 'conjugate')
+    policy = getattr(self, 'lds_update', 'conjugate_sequential')
     if policy == 'natural_gradient':
         return distribution.posterior_natural_gradient(
             n_k, y1, y2, cov, cov_, cov_cross,
@@ -247,7 +247,7 @@ def _lds_posterior(self, distribution, n_k, y1, y2, cov, cov_, cov_cross,
         )
     if policy == 'legacy' and isinstance(distribution, matrix_normal_inv_wishart):
         return distribution.posterior_legacy(n_k, y1, y2, cov, cov_, cov_cross, **kwargs)
-    if policy not in ('conjugate', 'legacy'):
+    if policy not in ('conjugate_sequential', 'legacy'):
         raise ValueError(f'Unknown LDS update policy: {policy}')
     return distribution.posterior(n_k, y1, y2, cov, cov_, cov_cross, **kwargs)
 
@@ -256,10 +256,122 @@ def _lds_scale(self, distribution, *, final):
     scale = distribution.get_scale(final=final)
     # The historical MNIW getter inflated the online scale but returned the
     # stored scale for a full-data update. Keep that behavior with legacy.
-    if (getattr(self, 'lds_update', 'conjugate') == 'legacy'
+    if (getattr(self, 'lds_update', 'conjugate_sequential') == 'legacy'
             and isinstance(distribution, matrix_normal_inv_wishart) and not final):
         return scale * distribution.n0 / (distribution.n0 - 2)
     return scale
+
+
+def hold_lds_params(self):
+    """Keep one parameter slot per filtered beat without a sequential update."""
+    for name in ('A', 'Gamma', 'C', 'Sigma', 'var', 'y_var'):
+        history = getattr(self, name)
+        history.append(history[-1])
+
+
+def bayesian_batch_params(self, resp, grid_samples=None):
+    """One responsibility-weighted MNIW update from the smoothed cluster path.
+
+    The first included state has an observation but no LDS transition. A
+    transition receives the responsibility of its destination observation.
+    The distributions on entry are the original cluster priors, even when
+    filtering was warm-started from a previous offline iteration.
+    """
+    if not self.indexes:
+        return
+    if not self.bayesian:
+        raise ValueError('conjugate_batch requires Bayesian LDS parameters')
+    if grid_samples is not None:
+        raise NotImplementedError('conjugate_batch requires a common observation grid')
+
+    count = len(self.indexes)
+    limit = count if np.isinf(self.estimation_limit) else min(count, int(self.estimation_limit))
+    if limit == 0:
+        return
+    prior_obs = self.observation_params
+    prior_int = self.internal_params
+    device, dtype = self.f_star_sm[0].device, self.f_star_sm[0].dtype
+    dim = self.f_star_sm[0].numel()
+    obs_cov = torch.zeros((dim, dim), device=device, dtype=dtype)
+    obs_y, obs_f = [], []
+    transition_y, transition_f = [], []
+    transition_cov_y = torch.zeros_like(obs_cov)
+    transition_cov_f = torch.zeros_like(obs_cov)
+    transition_cov_cross = torch.zeros_like(obs_cov)
+    observation_mass = 0.0
+    transition_mass = 0.0
+
+    for position, index in enumerate(self.indexes[:limit]):
+        weight = float(resp[index].item())
+        if weight <= 0:
+            continue
+        root = weight ** 0.5
+        mean = self.f_star_sm[position + 1].reshape(-1, 1)
+        covariance = self.cov_f_sm[position + 1]
+        observation = self.y_train[position].reshape(-1, 1).to(device=device, dtype=dtype)
+        if not torch.equal(self.x_train[position], self.x_basis):
+            raise NotImplementedError('conjugate_batch requires a common observation grid')
+        if observation.shape[0] != prior_obs.get_mean().shape[0]:
+            raise ValueError('conjugate_batch observation dimension differs from the LDS grid')
+        obs_y.append(root * observation)
+        obs_f.append(root * mean)
+        obs_cov = obs_cov + weight * covariance
+        observation_mass += weight
+
+        if position == 0 or torch.count_nonzero(self.Gamma[0]) == 0:
+            continue
+        previous_mean = self.f_star_sm[position].reshape(-1, 1)
+        previous_cov = self.cov_f_sm[position]
+        filtered_previous_cov = self.cov_f[position]
+        A_q, Gamma_q = self.A[position], self.Gamma[position]
+        predicted_cov = A_q @ filtered_previous_cov @ A_q.T + Gamma_q
+        gain = torch.cholesky_solve(A_q @ filtered_previous_cov.T,
+                                    self._chol_spd(predicted_cov)).T
+        transition_y.append(root * mean)
+        transition_f.append(root * previous_mean)
+        transition_cov_y = transition_cov_y + weight * covariance
+        transition_cov_f = transition_cov_f + weight * previous_cov
+        transition_cov_cross = transition_cov_cross + weight * covariance @ gain.T
+        transition_mass += weight
+
+    if not obs_y:
+        return
+    zeros = torch.zeros_like(obs_cov)
+    observations = torch.cat(obs_y, dim=1)
+    latent_observations = torch.cat(obs_f, dim=1)
+    if isinstance(prior_obs, inv_wishart):
+        C_fixed = prior_obs.get_C()
+        residual = observations - C_fixed @ latent_observations
+        scatter = residual @ residual.T + C_fixed @ obs_cov @ C_fixed.T
+        new_n0 = prior_obs.n0 + observation_mass
+        new_scale = ((prior_obs.n0 - 2) * prior_obs.scale + scatter) / (new_n0 - 2)
+        new_obs = inv_wishart(new_n0, 0.5 * (new_scale + new_scale.T), C_fixed)
+    else:
+        new_obs = prior_obs.posterior(
+            observation_mass, observations, latent_observations,
+            zeros, obs_cov, zeros)
+    new_int = prior_int
+    if transition_y:
+        new_int = prior_int.posterior(
+            transition_mass, torch.cat(transition_y, dim=1),
+            torch.cat(transition_f, dim=1), transition_cov_y,
+            transition_cov_f, transition_cov_cross)
+
+    self.observation_params = new_obs
+    self.internal_params = new_int
+    A_new = new_int.get_mean()
+    Gamma_new = _lds_scale(self, new_int, final=True) if transition_y else self.Gamma[-1]
+    C_new = new_obs.get_mean()
+    Sigma_new = _lds_scale(self, new_obs, final=True)
+    if self.annealing:
+        mass = max(observation_mass, 1.0)
+        if transition_y:
+            Gamma_new = Gamma_new + self.Gamma_def / (mass ** 2)
+        Sigma_new = Sigma_new + self.Sigma_def / (mass ** 2)
+    self.A[-1], self.Gamma[-1] = A_new, Gamma_new
+    self.C[-1], self.Sigma[-1] = C_new, Sigma_new
+    self.var[-1] = torch.atleast_2d(torch.sqrt(torch.diag(Gamma_new).clamp_min(0))).T
+    self.y_var[-1] = torch.atleast_2d(torch.sqrt(torch.diag(Sigma_new).clamp_min(0))).T
 
 
 def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False, snr=1.0):

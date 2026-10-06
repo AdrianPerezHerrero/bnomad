@@ -75,6 +75,7 @@ class ModelState:
         n_explore_steps = options['n_explore_steps']
         free_deg_MNIV = options['free_deg_MNIV']
         self.lds_update = options['lds_update']
+        self.lds_scoring = options['lds_scoring']
         self.lds_step_size = options['lds_step_size']
         share_gp = options['share_gp']
         use_snr = options['use_snr']
@@ -249,12 +250,14 @@ class ModelState:
                                        inducing_points=inducing_points[m],
                                        estimation_limit=estimation_limit[m], free_deg_MNIV=self.free_deg_MNIV,
                                        verbose=self.verbose, lds_update=self.lds_update,
+                                       lds_scoring=self.lds_scoring,
                                        lds_step_size=self.lds_step_size)
                 else:
                     gp_ = gp.GaussianProcessEmission(kernels[m], x_basis[m], annealing=self.annealing[m], cuda=self.cuda,
                                        inducing_points=inducing_points[m], estimation_limit=estimation_limit[m],
                                        free_deg_MNIV=self.free_deg_MNIV, verbose=self.verbose,
-                                       lds_update=self.lds_update, lds_step_size=self.lds_step_size)
+                                       lds_update=self.lds_update, lds_scoring=self.lds_scoring,
+                                       lds_step_size=self.lds_step_size)
                 # Initiate GP
                 if model_type[m] == 'static':
                     cond = gp_.GPR_static(ini_sigma[m])

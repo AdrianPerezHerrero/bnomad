@@ -70,14 +70,39 @@ Existing configuration files that contain `free_deg_MNIV: 5` therefore keep
 the prior strength they request.
 `free_deg_MNIV` controls the inverse-Wishart prior strength and does not by
 itself set a fixed learning rate for the MNIW matrix means.
-`DynamicsConfig.lds_update` selects `conjugate` (the package default),
-`natural_gradient`, or `legacy`. The conjugate policy uses the current exact
-MNIW sufficient-statistic update. The legacy policy retains the earlier
-nonconjugate mean and covariance rules for comparison. The natural-gradient
+`DynamicsConfig.lds_update` selects `conjugate_sequential` (the package default),
+`conjugate_batch`, `natural_gradient`, or `legacy`. The former `conjugate` name
+is now `conjugate_sequential`. The sequential policy updates the MNIW posterior
+after each assigned observation. `conjugate_batch` is available only offline:
+it filters and smooths the whole cluster, sums responsibility-weighted state
+and observation moments, and updates the LDS posterior once from its original
+prior per cluster fit. The next offline refit uses the last LDS estimate to
+filter but starts the MNIW posterior from the original prior again, so it does
+not count the same record twice. The batch posterior can differ from the
+sequential result because latent states are inferred under different evolving
+parameters. `conjugate_batch` requires Bayesian LDS parameters.
+It requires observations on the LDS basis grid; GP-flow input warps are not
+supported by this conjugate update. Output-aligned waveform warps retain the
+common grid and can use it.
+
+`DynamicsConfig.lds_scoring` independently selects `final` (the default) or
+`historical`. In `final` mode, the observation ELBO uses the cluster's last
+`C` and `Sigma` for every beat, and the latent transition density uses its
+last `A` and `Gamma`. In `historical` mode, each score uses the LDS parameter
+history associated with that beat, subject to the existing estimation limit.
+Both modes score the saved beat-specific latent states; the chain entropy in
+both modes uses the historical transitions that produced the smoothed path.
+This setting does not change filtering, parameter updates, or the LDS
+posterior KL. Historical scoring is still an in-sample score, not a
+pre-observation predictive score. The full-record example exposes the choice
+through `LDS_SCORING` and `--lds-scoring`.
+
+The legacy policy retains the earlier nonconjugate mean and covariance rules
+for comparison. The natural-gradient
 policy uses `lds_step_size` in `(0, 1]` (default `0.2`) to temper each new
-batch's MNIW sufficient statistics and degrees-of-freedom increment:
+observation's MNIW sufficient statistics and degrees-of-freedom increment:
 `eta_new = eta_old + lds_step_size * (eta_conjugate - eta_old)` in natural
-parameters. At step size `1`, it equals the conjugate update; below `1`, it
+parameters. At step size `1`, it equals the sequential conjugate update; below `1`, it
 adapts more slowly and is a tempered posterior rather than the exact posterior
 for all observations. Static inverse-Wishart observation noise uses the same
 tempering; its legacy policy is the existing static update. LDS parameter
