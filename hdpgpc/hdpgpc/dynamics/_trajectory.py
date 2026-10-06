@@ -390,24 +390,25 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                     if model_type == 'dynamic':
                         if not full_data:
                             A, Gamma = self.A[-1], self.Gamma[-1]
-                            # samples_A = self.f_star_sm[-1]
-                            # samples_A_ = self.f_star_sm[-2]
                             samples_A = self.f_star_sm[-1]
                             samples_A_ = self.f_star_sm[-2]
-                            #samples_A_ = torch.matmul(A, self.f_star_sm[-2])
                             cov = self.cov_f_sm[-1]
                             cov_ = self.cov_f_sm[-2]
-                            cov_f_ = self.cov_f[-1]
-                            cov_f__ = self.cov_f[-2]
-                            P = A @ cov_ @ A.T + Gamma
-                            L_P = self._chol_spd(P)
-                            J = torch.cholesky_solve(A @ cov_.T, L_P).T
-                            cov_cross = J @ cov
-                            cov_cross = 0.5 * (cov_cross + cov_cross.T)
-                            if True:
-                                cov = torch.zeros(cov.shape, device=cov.device)
-                                cov_ = torch.zeros(cov.shape, device=cov.device)
-                                cov_cross = torch.zeros(cov.shape, device=cov.device)
+                            if self.lds_update == 'legacy':
+                                # Preserve the historical mean-only update.
+                                cov = torch.zeros_like(cov)
+                                cov_ = torch.zeros_like(cov_)
+                                cov_cross = torch.zeros_like(cov)
+                            else:
+                                # E[f_t f_t^T], E[f_{t-1} f_{t-1}^T], and
+                                # E[f_t f_{t-1}^T] use the current smoothed pair.
+                                # The RTS gain uses the filtered previous
+                                # covariance, before the current beat was seen.
+                                filtered_prev = self.cov_f[-2]
+                                predicted = A @ filtered_prev @ A.T + Gamma
+                                gain = torch.cholesky_solve(
+                                    A @ filtered_prev.T, self._chol_spd(predicted)).T
+                                cov_cross = cov @ gain.T
                         else:
                             n_f = min(self.estimation_limit,len(self.f_star_sm)-2) if (
                                     self.estimation_limit != np.PINF) else len(self.f_star_sm)-2
@@ -446,21 +447,20 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                         new_int_dist = self.internal_params
                     if not full_data:
                         samples_C = self.y_train[-1]
-                        #samples_C_, _ = self.observe_last(self.x_train[-1])
                         if torch.equal(self.x_basis, self.x_train[-1]):
                             samples_C_ = self.f_star_sm[-1]
-                            C, Sigma = self.C[-1], self.Sigma[-1]
-                            cov = torch.zeros(Sigma.shape, device=Sigma.device)
-                            cov_ = torch.zeros(cov.shape, device=cov.device)
-                            cov_cross = torch.zeros(cov.shape, device=cov.device)
+                            cov_ = self.cov_f_sm[-1]
                         else:
-                            samples_C_, cov = self.resample_latent_mean(self.x_train[-1])
-                            cov = torch.zeros(cov.shape, device=cov.device)
-                            cov_ = torch.zeros(cov.shape, device=cov.device)
-                            cov_cross = torch.zeros(cov.shape, device=cov.device)
+                            samples_C_, cov_ = self.resample_latent_mean(self.x_train[-1])
                         if model_type == 'static':
-                            samples_C_, _ = self.resample_latent_mean(self.x_train[-1])
+                            samples_C_, cov_ = self.resample_latent_mean(self.x_train[-1])
                         samples_C_ = self.cond_to_cuda(samples_C_)
+                        if self.lds_update == 'legacy':
+                            cov_ = torch.zeros_like(cov_)
+                        # The observation is known, so only its latent input
+                        # contributes posterior covariance to the MNIW update.
+                        cov = torch.zeros_like(cov_)
+                        cov_cross = torch.zeros_like(cov_)
                     else:
                         samples_C  = torch.stack(self.y_train[:n_f])[:, :, 0].T
                         samples_C_ = torch.stack(self.f_star_sm[1:n_f+1])[:, :, 0].T

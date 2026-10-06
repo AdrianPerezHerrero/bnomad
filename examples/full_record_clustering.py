@@ -6,6 +6,7 @@ Run from the repository root after installing the package::
     python examples/full_record_clustering.py --records 101 102
     python examples/full_record_clustering.py --records 100 --save-plots
     python examples/full_record_clustering.py --records 100 --no-scale-waveforms --unit-grid
+    python examples/full_record_clustering.py --records 102 --calibrate-lds-noise-priors
 
 Edit the experiment controls below to choose records, channels, inference schedule,
 alignment policy, warping, and model hyperparameters. If there is one extra trailing annotation,
@@ -29,6 +30,7 @@ from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 
 from tutorial_utils import plot_record_results
 from hdpgpc import HDPGPC
+from hdpgpc.dynamics import estimate_lds_noise_priors
 from hdpgpc.diagnostics import (
     model_lds_arrays, model_warp_arrays, plot_lds_diagnostics, plot_warp_diagnostics,
 )
@@ -78,15 +80,22 @@ MAX_CLUSTERS = 30
 HDP_PRESET = "more"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
 LDS_DEGREES_OF_FREEDOM = 5  # None uses the package default: 5 offline, 20 online.
-LDS_UPDATE = "natural_gradient"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
-LDS_SCORING = "historical"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
+LDS_UPDATE = "conjugate_batch"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
+LDS_SCORING = "final"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
 LDS_STEP_SIZE = 0.05            # Fraction of new LDS evidence in natural_gradient mode.
 INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 4.0)
-INITIAL_OBSERVATION_NOISE = 5.0e+1
+INITIAL_OBSERVATION_NOISE = 1.0e+2
 OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)
-INITIAL_PROCESS_NOISE = 1.0e+1
+INITIAL_PROCESS_NOISE = 1.0e+2
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)
+# Optional, independent identity-LDS pilot calibration before model.fit.
+# It uses random contiguous blocks from this record, so enable it only offline.
+CALIBRATE_LDS_NOISE_PRIORS = True
+LDS_CALIBRATION_MAX_BEATS = 50
+LDS_CALIBRATION_SEGMENT_LENGTH = 50
+
+# Inference hyperparameters
 OFFLINE_ITERATIONS = 50
 RANDOM_SEED = 42
 
@@ -97,6 +106,8 @@ def _configuration(
     grid: np.ndarray, *, lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
     lds_update: str = LDS_UPDATE, lds_scoring: str = LDS_SCORING,
     lds_step_size: float = LDS_STEP_SIZE,
+    initial_observation_noise: float = INITIAL_OBSERVATION_NOISE,
+    initial_process_noise: float = INITIAL_PROCESS_NOISE,
 ) -> HDPGPCConfig:
     """Build the full experiment recipe in one visible place."""
     if ENABLE_WARP and INFERENCE_MODE != "offline" and ALIGNMENT_POLICY not in ("gp_flow", "dtw_gp"):
@@ -111,13 +122,13 @@ def _configuration(
         emission=GPEmissionConfig(
             ini_lengthscale=INITIAL_LENGTHSCALE,
             bound_lengthscale=LENGTHSCALE_BOUNDS,
-            ini_sigma=INITIAL_OBSERVATION_NOISE,
+            ini_sigma=initial_observation_noise,
             bound_sigma=OBSERVATION_NOISE_BOUNDS,
             ini_outputscale=1.0,
         ),
         dynamics=DynamicsConfig(
             model_type=MODEL_TYPE,
-            ini_gamma=INITIAL_PROCESS_NOISE,
+            ini_gamma=initial_process_noise,
             bound_gamma=PROCESS_NOISE_BOUNDS,
             annealing=False,
             bayesian_params=True,
@@ -241,6 +252,37 @@ def _print_confusion_matrix(classes: np.ndarray, matrix: np.ndarray) -> None:
           + f" | {int(matrix.sum()):>{cell_width}}")
 
 
+def _print_lds_priors(*, dimension: int, model_type: str,
+                      observation_noise: float, process_noise: float,
+                      degrees_of_freedom: int, source: str) -> None:
+    """Log the exact identity/scalar LDS priors constructed by this recipe."""
+    print("------ Initial LDS parameter priors ------")
+    print(f"Source={source}; waveform dimension={dimension}")
+    if model_type == "dynamic":
+        print(f"A prior mean: I_{dimension}")
+        print(f"C prior mean: I_{dimension}")
+        print(f"Gamma prior covariance: {process_noise:.6g} * I_{dimension} "
+              f"(diagonal SD={np.sqrt(process_noise):.6g})")
+        print(f"Sigma prior covariance: {observation_noise:.6g} * I_{dimension} "
+              f"(diagonal SD={np.sqrt(observation_noise):.6g})")
+        print(f"MNIW excess degrees of freedom n0={degrees_of_freedom}; "
+              f"inverse-Wishart degrees nu={degrees_of_freedom + dimension + 1}")
+        print(f"Gamma inverse-Wishart scale Psi: "
+              f"{degrees_of_freedom * process_noise:.6g} * I_{dimension}")
+        print(f"Sigma inverse-Wishart scale Psi: "
+              f"{degrees_of_freedom * observation_noise:.6g} * I_{dimension}")
+        print(f"MNIW prior column precision for A and C: I_{dimension}")
+    else:
+        print(f"A: fixed I_{dimension}")
+        print(f"C: fixed I_{dimension}")
+        print(f"Gamma: 0_{dimension} (static model; no A/Gamma posterior KL)")
+        print(f"Sigma prior covariance: {observation_noise:.6g} * I_{dimension} "
+              f"(diagonal SD={np.sqrt(observation_noise):.6g})")
+        print(f"Sigma inverse-Wishart degrees nu={degrees_of_freedom + dimension - 1}; "
+              f"scale Psi={(degrees_of_freedom - 2) * observation_noise:.6g} * I_{dimension}")
+    print("------------------------------------------")
+
+
 def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                plot_warps: bool = PLOT_WARPS,
                plot_lds: bool = PLOT_LDS,
@@ -250,15 +292,39 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                lds_step_size: float = LDS_STEP_SIZE,
                plot_directory: Path = PLOT_DIRECTORY,
                scale_waveforms: bool = SCALE_WAVEFORMS,
-               unit_grid: bool = UNIT_GRID) -> None:
+               unit_grid: bool = UNIT_GRID,
+               calibrate_lds_noise_priors: bool = CALIBRATE_LDS_NOISE_PRIORS) -> None:
     signal, annotations = _load_record(record)
     values, grid = _prepare_record(
         signal, scale_waveforms=scale_waveforms, unit_grid=unit_grid,
     )
+    initial_observation_noise = INITIAL_OBSERVATION_NOISE
+    initial_process_noise = INITIAL_PROCESS_NOISE
+    if calibrate_lds_noise_priors:
+        if INFERENCE_MODE != "offline" or MODEL_TYPE != "dynamic":
+            raise ValueError(
+                "Record-based LDS noise calibration requires offline dynamic inference; "
+                "for online inference calibrate on a separate record before fitting"
+            )
+        estimate = estimate_lds_noise_priors(
+            values, max_beats=LDS_CALIBRATION_MAX_BEATS,
+            segment_length=LDS_CALIBRATION_SEGMENT_LENGTH,
+            random_state=RANDOM_SEED,
+        )
+        initial_observation_noise = estimate.observation
+        initial_process_noise = estimate.process
+        print(
+            "Identity-LDS pilot noise scales: "
+            f"Sigma={estimate.observation:.6g}, Gamma={estimate.process:.6g}; "
+            f"{len(estimate.segment_starts)} blocks of {estimate.segment_length} beats, "
+            f"negative lag fraction={estimate.negative_lag_fraction:.2f}"
+        )
     config = _configuration(
         grid, lds_degrees_of_freedom=lds_degrees_of_freedom,
         lds_update=lds_update, lds_scoring=lds_scoring,
         lds_step_size=lds_step_size,
+        initial_observation_noise=initial_observation_noise,
+        initial_process_noise=initial_process_noise,
     )
 
     print(f"\nRecord {record}: waveform shape={signal.shape}, annotations={len(annotations)}")
@@ -275,6 +341,13 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     print(f"LDS update={lds_update}"
           + (f", step size={lds_step_size:g}" if lds_update == "natural_gradient" else ""))
     print(f"LDS scoring={lds_scoring}")
+    _print_lds_priors(
+        dimension=values.shape[1], model_type=MODEL_TYPE,
+        observation_noise=initial_observation_noise,
+        process_noise=initial_process_noise,
+        degrees_of_freedom=effective_dof,
+        source="identity-LDS pilot" if calibrate_lds_noise_priors else "configured values",
+    )
 
     model = HDPGPC(config)
     start = time.perf_counter()
@@ -432,6 +505,11 @@ def main() -> None:
         help="Fraction of new evidence used by the natural-gradient LDS update.",
     )
     parser.add_argument(
+        "--calibrate-lds-noise-priors", action=argparse.BooleanOptionalAction,
+        default=CALIBRATE_LDS_NOISE_PRIORS,
+        help="Estimate initial Sigma/Gamma scales from contiguous record blocks before offline fitting.",
+    )
+    parser.add_argument(
         "--plot-dir", type=Path, default=PLOT_DIRECTORY,
         help="Directory for saved PNGs and record logs (default: PLOT_DIRECTORY).",
     )
@@ -452,6 +530,7 @@ def main() -> None:
                         lds_step_size=args.lds_step_size,
                         plot_directory=args.plot_dir,
                         scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,
+                        calibrate_lds_noise_priors=args.calibrate_lds_noise_priors,
                     )
                 except BaseException:
                     traceback.print_exc(file=log_file)

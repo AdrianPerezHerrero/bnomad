@@ -70,10 +70,26 @@ Existing configuration files that contain `free_deg_MNIV: 5` therefore keep
 the prior strength they request.
 `free_deg_MNIV` controls the inverse-Wishart prior strength and does not by
 itself set a fixed learning rate for the MNIW matrix means.
+For optional prior-scale calibration before construction,
+`hdpgpc.dynamics.estimate_lds_noise_priors(observations)` estimates scalar
+`ini_sigma` and `ini_gamma` from random contiguous observation blocks. Its
+outputs are covariance diagonal variances, not standard deviations. Its
+identity random-walk pilot assumes `A=C=I` and independent temporal process
+and observation noise. It uses the variance and lag-one covariance of beat
+differences, and raises an error if these moments cannot identify positive
+noise scales. Pass `estimate.observation` to `GPEmissionConfig.ini_sigma` and
+`estimate.process` to `DynamicsConfig.ini_gamma`; the function never changes
+an existing model or its prior during inference. The full-record example
+provides `--calibrate-lds-noise-priors` for offline experiments. The estimate
+can be biased by regime changes, nonidentity `A`/`C`, or atypical blocks, and
+does not guarantee a smaller LDS KL.
 `DynamicsConfig.lds_update` selects `conjugate_sequential` (the package default),
 `conjugate_batch`, `natural_gradient`, or `legacy`. The former `conjugate` name
 is now `conjugate_sequential`. The sequential policy updates the MNIW posterior
-after each assigned observation. `conjugate_batch` is available only offline:
+after each assigned observation using the current smoothed state covariance
+and adjacent-state cross-covariance as well as the state means. Previously
+those covariance statistics were discarded. `conjugate_batch` is available
+only offline:
 it filters and smooths the whole cluster, sums responsibility-weighted state
 and observation moments, and updates the LDS posterior once from its original
 prior per cluster fit. The next offline refit uses the last LDS estimate to
@@ -90,10 +106,10 @@ common grid and can use it.
 `C` and `Sigma` for every beat, and the latent transition density uses its
 last `A` and `Gamma`. In `historical` mode, each score uses the LDS parameter
 history associated with that beat, subject to the existing estimation limit.
-Both modes score the saved beat-specific latent states; the chain entropy in
-both modes uses the historical transitions that produced the smoothed path.
-This setting does not change filtering, parameter updates, or the LDS
-posterior KL. Historical scoring is still an in-sample score, not a
+Both modes score the saved beat-specific smoothed state mean and covariance;
+the chain entropy in both modes uses the historical transitions that produced
+that smoothed path. This setting does not change filtering, parameter updates,
+or the LDS posterior KL. Historical scoring is still an in-sample score, not a
 pre-observation predictive score. The full-record example exposes the choice
 through `LDS_SCORING` and `--lds-scoring`.
 

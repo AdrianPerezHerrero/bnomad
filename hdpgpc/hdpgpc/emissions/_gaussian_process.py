@@ -147,12 +147,12 @@ class GaussianProcessEmission:
             return self.cov_f_sm[-1], self.C[-1]
         if not self.indexes:
             C = self.C[-1] if self.lds_scoring == 'final' else self.C[0]
-            return self.cov_f[0], C
+            return self.cov_f_sm[0], C
         if i < 0 or len(self.indexes) <= i:
-            return self.cov_f[-1], self.C[-1]
+            return self.cov_f_sm[-1], self.C[-1]
         if self.lds_scoring == 'historical' and self.estimation_limit > i:
-            return self.cov_f[i], self.get_params(i)[2]
-        return self.cov_f[i], self.C[-1]
+            return self.cov_f_sm[i], self.get_params(i)[2]
+        return self.cov_f_sm[i], self.C[-1]
 
     def _gaussian_score_shared_cov(self, Y, mean, cov, latent_cov=None):
         """
@@ -319,7 +319,8 @@ class GaussianProcessEmission:
 
         if i is not None:
             f_star, cov_f = self.observe(x_train, i, params, proj=proj,
-                                         final_lds=params is None and self.lds_scoring == 'final')
+                                         final_lds=params is None and self.lds_scoring == 'final',
+                                         smoothed=params is None)
         else:
             f_star, cov_f = self.step_forward_last(x_train, params)
 
@@ -719,7 +720,8 @@ class GaussianProcessEmission:
                 first_cur = bool((code % 2).item())
 
                 f_star, cov_f = self.observe(x0, i_cur, params=None, proj=False,
-                                             final_lds=self.lds_scoring == 'final')
+                                             final_lds=self.lds_scoring == 'final',
+                                             smoothed=True)
                 if first_cur:
                     score_sigma = self.Sigma[-1] if self.lds_scoring == 'final' else self.Sigma[0]
                     ini_noise = torch.mean(torch.diag(score_sigma)) * 1e-2
@@ -823,19 +825,22 @@ class GaussianProcessEmission:
         x_basis = self.x_basis
         return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
 
-    def observe(self, x_post, t, params=None, proj=False, *, final_lds=False):
+    def observe(self, x_post, t, params=None, proj=False, *, final_lds=False,
+                smoothed=False):
         """
         Method to resample the emission GP distribution at time t or using the parameters given.
         :param x_post: time set to resample
         :param t: step n where to resample the model
         :param params: tuple (mean, cov, C, Sigma)
         :param final_lds: use final C and Sigma with the state at t
+        :param smoothed: use the saved smoothed state mean for ELBO scoring
         """
+        states = self.f_star_sm if smoothed else self.f_star
         if final_lds and params is None:
             # Preserve the state associated with t while evaluating every
             # observation under the cluster's final C and Sigma.
-            state_index = t if 0 <= t < len(self.f_star) else -1
-            mean = self.C[-1] @ self.f_star[state_index]
+            state_index = t if 0 <= t < len(states) else -1
+            mean = self.C[-1] @ states[state_index]
             Sigma = self.Sigma[-1]
             if proj:
                 Sigma = Sigma + self.Gamma[-1]
@@ -845,25 +850,25 @@ class GaussianProcessEmission:
             if len(self.indexes) == 0:
                 C = self.C[0]
                 Sigma = self.Sigma[0]
-                mean = torch.matmul(C, self.f_star[0])
+                mean = torch.matmul(C, states[0])
             #Case when computing error with last (predict)
             elif len(self.indexes) <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 A = self.A[-1]
                 Gamma = self.Gamma[-1]
-                mean = torch.linalg.multi_dot([C, self.f_star[-1]])
+                mean = torch.linalg.multi_dot([C, states[-1]])
             elif self.estimation_limit <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 if proj:
                     Sigma = Sigma + self.Gamma[-1]
-                mean = torch.matmul(C, self.f_star[t])
+                mean = torch.matmul(C, states[t])
             else:
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
                     Sigma = Sigma + Gamma
-                mean = torch.matmul(C, self.f_star[t])
+                mean = torch.matmul(C, states[t])
         else:
             mean = params[0]
             Sigma = params[3]
