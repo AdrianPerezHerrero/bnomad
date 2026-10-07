@@ -188,6 +188,19 @@ class HDPGPC:
         """Number of represented clusters, excluding unassigned reserve slots."""
         return len(self.cluster_ids_)
 
+    @property
+    def observation_parameters_(self):
+        """Copy fitted C/Sigma with one representation for the selected scope."""
+        self._require_fitted()
+        backend = self._backend
+        if backend.observation_scope == 'cluster':
+            return {'scope': 'cluster', 'outputs': tuple(
+                tuple({'C': _snapshot(gp.C[-1]), 'Sigma': _snapshot(gp.Sigma[-1])}
+                      for gp in output) for output in backend.gpmodels)}
+        owner = backend.observation_policies[0]
+        return {'scope': owner.scope, 'C': _snapshot(owner.C),
+                'Sigma': _snapshot(owner.Sigma)}
+
     def _cluster(self, cluster):
         self._require_fitted()
         if isinstance(cluster, bool) or not isinstance(cluster, Integral) or cluster < 0:

@@ -17,6 +17,7 @@ model = HDPGPC(restored).fit(waveforms())
 | --- | --- | --- |
 | `hdp` | `HDPConfig` | `M`, concentration preset, HMM dependence, maximum models |
 | `emission` | `GPEmissionConfig` | kernels, first-beat fitting policy, lengthscale/output/noise initialization and bounds, inducing points |
+| `observation` | `ObservationConfig` | cluster-specific, shared learned, or fixed LDS observation map and covariance |
 | `dynamics` | `DynamicsConfig` | static/dynamic mode, process noise, ML/Bayesian updates, annealing, estimation limits |
 | `alignment` | `AlignmentConfig` | `gp`/`dtw_gp`/`gp_flow`/`none`, basis, noise/bounds, recursion, warp mode |
 | `inference` | `InferenceConfig` | online/fast/offline schedule and separate call controls |
@@ -40,6 +41,43 @@ observation noise `ini_sigma` and the GP kernel's white noise are separate
 settings. The full-record script exposes the GP white-noise value and bounds
 independently of the LDS observation-noise prior.
 
+For a reduced LDS latent grid, set `HDPGPCConfig.x_basis` to fewer coordinates
+than the observation grid supplied to `fit(..., grid=...)` and set
+`GPEmissionConfig.inducing_points=True`. The LDS state, A/Gamma, and C/Sigma
+then use the shorter basis; filtering and emission scoring still use every
+observed waveform point. The full-record example exposes
+`LDS_INDUCING_POINTS` / `--lds-inducing-points` to choose evenly spaced basis
+points (`None` or `0` retains the full grid). With GP fitting enabled, its
+legacy inducing-point kernel optimizes those basis locations and retains the
+learned locations. LDS observation MNIW updates use the GP projection of each
+waveform onto the basis. This projection is an approximation: it does not
+carry the full conditional projection uncertainty into the conjugate update.
+It is not a sparse variational GP ELBO.
+
+`ObservationConfig(scope='cluster')` preserves the per-cluster C/Sigma MNIW
+updates. `scope='shared'` owns one C/Sigma posterior at model level and pools
+responsibility-weighted smoothed latent moments from all clusters. Offline
+iterations recompute it from the prior; online updates add the newly observed
+beat once. Its KL is counted once. `scope='fixed'` holds C and Sigma at their
+initial values and contributes no observation-parameter KL. Supply `C=` and
+`Sigma=` NumPy matrices for a custom fixed map/covariance; omitted C is
+identity and omitted Sigma is the configured initial LDS observation noise.
+Both matrices currently have the LDS grid's square dimension. These policies
+require one output, Bayesian LDS updates, and `lds_scoring='final'`.
+After fitting, `model.observation_parameters_` returns one C/Sigma pair for
+shared or fixed scope, or per-cluster pairs for cluster scope.
+
+```python
+from dataclasses import replace
+from hdpgpc.config import ObservationConfig
+
+shared = replace(config, observation=ObservationConfig(scope='shared'),
+                 dynamics=replace(config.dynamics, lds_scoring='final'))
+fixed = replace(config, observation=ObservationConfig(
+    scope='fixed', C=my_C, Sigma=my_Sigma),
+    dynamics=replace(config.dynamics, lds_scoring='final'))
+```
+
 Alignment policy defaults to `gp`, replacing the serialized token `legacy` with
 the same scientific choice. Change that token explicitly in older recipes.
 `none` disables alignment even if requested by a call. `InferenceConfig.warp`
@@ -53,9 +91,11 @@ still use a MAP choice. Soft assignments require `bayesian_params=True` and
 can cost substantially more because an observation may update several GPs.
 `InferenceConfig.birth_lds_kl_per_sqrt_point` defaults to `False`. When enabled,
 the local birth and absorb proposal score divides the summed LDS parameter
-KL by the waveform point count in `online` and `online_fast`, or by its square
-root in `offline`. The existing field name is retained for compatibility. The
-same schedule-specific divisor applies to the baseline and every proposal.
+KL by the latent LDS state dimension in every inference schedule. With an
+inducing basis, this is the inducing-point count rather than the observed
+waveform point count. The existing
+field name is retained for compatibility. The same divisor applies to the
+baseline and every proposal.
 This is an experimental score, not an ELBO;
 the MNIW posterior updates remain unchanged. Offline iteration summaries
 still report the raw ELBO, while proposal logs report the adjusted LDS score
@@ -134,9 +174,15 @@ last `A` and `Gamma`. In `historical` mode, each score uses the LDS parameter
 history associated with that beat, subject to the existing estimation limit.
 Both modes score the saved beat-specific smoothed state mean and covariance;
 the chain entropy in both modes uses the historical transitions that produced
-that smoothed path. This setting does not change filtering, parameter updates,
-or the LDS posterior KL. Historical scoring is still an in-sample score, not a
-pre-observation predictive score. The full-record example exposes the choice
+that smoothed path. With historical scoring, the LDS parameter term is the
+mean over included beats of the negative MNIW KLs for the parameter states
+used by those beat scores: observation state `j+1` and, after the first beat,
+transition state `j`. The denominator is the number of included observations
+in that cluster, even with soft responsibilities. Final scoring retains one
+KL for the final posterior. This changes the scoring aggregation, not filtering
+or parameter updates; the historical mean is an experimental score rather
+than the KL term of a conventional ELBO. Historical emission scoring remains
+in-sample, not pre-observation predictive. The full-record example exposes the choice
 through `LDS_SCORING` and `--lds-scoring`.
 
 The legacy policy retains the earlier nonconjugate mean and covariance rules

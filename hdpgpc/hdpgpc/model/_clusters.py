@@ -107,6 +107,8 @@ def create_gp_default(self, i=None, fitted_kernel=None):
         self.estimation_limit.append(estimation_limit)
         for t, y_ in enumerate(self.y[:-1]):
             gp_.condition_observation(t, y_, 0, posterior=False)
+        if self.observation_scope != 'cluster':
+            self.observation_policies[0].attach(gp_)
         return gp_
     else:
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp,\
@@ -150,6 +152,8 @@ def create_gp_default(self, i=None, fitted_kernel=None):
         self.estimation_limit[i] = estimation_limit
         for t, y_ in enumerate(self.y[:-1]):
             gp_.condition_observation(t, y_, 0, posterior=False)
+        if self.observation_scope != 'cluster':
+            self.observation_policies[0].attach(gp_)
         return gp_
 
 
@@ -344,7 +348,12 @@ def gpmodel_deepcopy(self, gpmodel):
     gp_.C_def, gp_.Sigma_def = gpmodel.C_def, gpmodel.Sigma_def
     gp_.internal_params = deepcopy(gpmodel.internal_params)
     gp_.observation_params = deepcopy(gpmodel.observation_params)
+    if gpmodel.lds_scoring == 'historical':
+        gp_.lds_internal_score_history = gpmodel.lds_internal_score_history.copy()
+        gp_.lds_observation_score_history = gpmodel.lds_observation_score_history.copy()
     gp_.ini_kernel_theta = gpmodel.ini_kernel_theta
     gp_.free_deg_MNIV = gpmodel.free_deg_MNIV
+    if self.observation_scope != 'cluster':
+        gpmodel.observation_policy.attach(gp_)
     return gp_
 

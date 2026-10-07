@@ -40,6 +40,7 @@ from hdpgpc.config import (
     AlignmentConfig,
     DynamicsConfig,
     GPEmissionConfig,
+    ObservationConfig,
     HDPConfig,
     HDPGPCConfig,
     InferenceConfig,
@@ -64,7 +65,8 @@ RECORDS = (
 CHANNELS = (0,)                 # Choose channel 0, 1, or both: (0, 1).
 SCALE_WAVEFORMS = False          # First-beat mean/std scaling; False keeps stored amplitudes.
 UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 grid.
-INFERENCE_MODE = "online_fast"      # "offline", "online", or "online_fast".
+INFERENCE_MODE = "offline"      # "offline", "online", or "online_fast".
+LDS_INDUCING_POINTS = None        # Reduced LDS basis size; 0 or None uses every waveform point.
 HARD_ASSIGNMENTS = True         # False uses soft responsibility weights during inference.
 ENABLE_WARP = False              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
@@ -73,28 +75,32 @@ SHARE_GP_FOR_PROPOSALS = True   # Proposals/new clusters may reuse the fitted or
 SAVE_PLOTS = True               # Also save the final figures when True.
 PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
 PLOT_LDS = True                 # Plot fitted LDS matrices, spectra, and stability measures.
-PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_LDS_perpoint_online"
+PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_LDS_perpoint_offline"
 PLOT_DPI = 160
 
 # Typed configuration values; these are experiment settings, not package defaults.
 # Lengthscale is measured in the selected grid units; noise settings depend on waveform scale.
 MAX_CLUSTERS = 30
-HDP_PRESET = "less"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
+HDP_PRESET = "balanced"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
 LDS_DEGREES_OF_FREEDOM = 5  # None uses the package default: 5 offline, 20 online.
-LDS_UPDATE = "conjugate_sequential"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
-LDS_SCORING = "historical"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
+LDS_UPDATE = "conjugate_batch"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
+LDS_SCORING = "final"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
+OBSERVATION_SCOPE = "fixed"      # "cluster" (legacy), "shared" (pooled), or "fixed".
+CUSTOM_C = None                    # Square LDS-grid matrix; None selects identity.
+CUSTOM_SIGMA = None                # Positive-definite LDS-grid covariance; None uses the initial noise.
+# Shared/fixed scope automatically selects final scoring; historical C/Sigma do not exist.
 LDS_STEP_SIZE = 0.05            # Fraction of new LDS evidence in natural_gradient mode.
-BIRTH_LDS_KL_PER_SQRT_POINT = True  # Existing flag: LDS KL / points online, / sqrt(points) offline.
+BIRTH_LDS_KL_PER_SQRT_POINT = True  # Historical flag name; LDS KL / LDS dimension in both schedules.
 INITIAL_LENGTHSCALE = 1.0
-LENGTHSCALE_BOUNDS = (0.1, 4.0)
+LENGTHSCALE_BOUNDS = (0.1, 10.0)
 FIT_GP = True                  # False keeps the supplied GP kernel fixed for every cluster.
 GP_OUTPUTSCALE_INITIAL = 1.0
 GP_OUTPUTSCALE_BOUNDS = (0.001, 1.0e+4)
-GP_WHITE_NOISE_INITIAL = 0.5
-GP_WHITE_NOISE_BOUNDS = (0.001, 1.0e+8)  # Lower and upper bounds for first-beat GP fitting.
+GP_WHITE_NOISE_INITIAL = 1.0
+GP_WHITE_NOISE_BOUNDS = (0.0001, 1.0e+8)  # Lower and upper bounds for first-beat GP fitting.
 CUSTOM_GP_KERNEL = None         # Set to a sklearn kernel; with FIT_GP=False it is never optimized.
-INITIAL_OBSERVATION_NOISE = 8.0e+1
+INITIAL_OBSERVATION_NOISE = 10.0e+1
 OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)  # LDS Sigma, separate from GP white noise.
 INITIAL_PROCESS_NOISE = 10.0e+1
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)
@@ -115,6 +121,7 @@ def _configuration(
     grid: np.ndarray, *, lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
     lds_update: str = LDS_UPDATE, lds_scoring: str = LDS_SCORING,
     lds_step_size: float = LDS_STEP_SIZE,
+    lds_inducing_points: int | None = LDS_INDUCING_POINTS,
     fit_gp: bool = FIT_GP,
     birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
     initial_observation_noise: float = INITIAL_OBSERVATION_NOISE,
@@ -125,14 +132,27 @@ def _configuration(
         raise ValueError("Online warping in this example requires 'gp_flow' or 'dtw_gp'.")
     if len(CHANNELS) > 1 and INFERENCE_MODE in ("online", "online_fast"):
         raise ValueError("The characterized online multi-output path is unsupported; select one channel.")
+    if lds_inducing_points is None or lds_inducing_points == 0:
+        basis = grid
+        sparse_lds = False
+    else:
+        if (isinstance(lds_inducing_points, bool)
+                or not isinstance(lds_inducing_points, int)
+                or not 1 <= lds_inducing_points <= len(grid)):
+            raise ValueError("lds_inducing_points must be between 1 and the waveform point count, or 0/None")
+        sparse_lds = lds_inducing_points < len(grid)
+        basis = (grid[np.linspace(0, len(grid) - 1, lds_inducing_points, dtype=int)].copy()
+                 if sparse_lds else grid)
 
     gp_kernel = (CUSTOM_GP_KERNEL if CUSTOM_GP_KERNEL is not None else
                  ConstantKernel(GP_OUTPUTSCALE_INITIAL, GP_OUTPUTSCALE_BOUNDS)
                  * RBF(INITIAL_LENGTHSCALE, LENGTHSCALE_BOUNDS)
                  + WhiteKernel(GP_WHITE_NOISE_INITIAL, GP_WHITE_NOISE_BOUNDS))
+    if OBSERVATION_SCOPE != "cluster":
+        lds_scoring = "final"
 
     return HDPGPCConfig(
-        x_basis=grid,
+        x_basis=basis,
         verbose=VERBOSE,
         hdp=HDPConfig(hdp_hyp=HDP_PRESET, max_models=MAX_CLUSTERS),
         emission=GPEmissionConfig(
@@ -143,7 +163,10 @@ def _configuration(
             ini_sigma=initial_observation_noise,
             bound_sigma=OBSERVATION_NOISE_BOUNDS,
             ini_outputscale=GP_OUTPUTSCALE_INITIAL,
+            inducing_points=sparse_lds,
         ),
+        observation=ObservationConfig(
+            scope=OBSERVATION_SCOPE, C=CUSTOM_C, Sigma=CUSTOM_SIGMA),
         dynamics=DynamicsConfig(
             model_type=MODEL_TYPE,
             ini_gamma=initial_process_noise,
@@ -195,7 +218,7 @@ def _load_record(record: str) -> tuple[np.ndarray, np.ndarray]:
         raise ValueError(f"Expected {signal_path.name} shaped (beats, points, channels), got {signal.shape}")
     if min(CHANNELS) < 0 or max(CHANNELS) >= signal.shape[-1]:
         raise ValueError(f"Selected channels {CHANNELS} are invalid for {signal_path.name} {signal.shape}")
-    return signal[:200], labels[:200]
+    return signal, labels
 
 
 def _prepare_record(
@@ -310,6 +333,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                lds_update: str = LDS_UPDATE,
                lds_scoring: str = LDS_SCORING,
                lds_step_size: float = LDS_STEP_SIZE,
+               lds_inducing_points: int | None = LDS_INDUCING_POINTS,
                birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
                plot_directory: Path = PLOT_DIRECTORY,
                scale_waveforms: bool = SCALE_WAVEFORMS,
@@ -354,6 +378,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         grid, lds_degrees_of_freedom=lds_degrees_of_freedom,
         lds_update=lds_update, lds_scoring=lds_scoring,
         lds_step_size=lds_step_size,
+        lds_inducing_points=lds_inducing_points,
         fit_gp=fit_gp,
         birth_lds_kl_per_sqrt_point=birth_lds_kl_per_sqrt_point,
         initial_observation_noise=initial_observation_noise,
@@ -362,11 +387,16 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
 
     print(f"\nRecord {record}: waveform shape={signal.shape}, annotations={len(annotations)}")
     print(f"Input shape={values.shape} (beats, points, outputs), channels={CHANNELS}")
+    print(f"LDS basis points={len(config.x_basis)} of {len(grid)}, "
+          f"inducing mode={config.emission.inducing_points}")
     print(f"Waveform scaling={'first-beat mean/std' if scale_waveforms else 'off'}, "
           f"grid range=0..{grid[-1, 0]:g}")
     print(f"Schedule={INFERENCE_MODE}, hard assignments={HARD_ASSIGNMENTS}, warp={ENABLE_WARP}, "
           f"alignment={ALIGNMENT_POLICY if ENABLE_WARP else 'none'}, verbose={VERBOSE}")
     print(f"Model={MODEL_TYPE}, HDP preset={HDP_PRESET}, cluster cap={MAX_CLUSTERS}")
+    print(f"Observation scope={config.observation.scope}, "
+          f"custom C={config.observation.C is not None}, "
+          f"custom Sigma={config.observation.Sigma is not None}")
     print(f"GP fitting={'on' if config.emission.fit_gp else 'off'}, "
           f"kernel={config.emission.kernels[0]}")
     gp_white_bounds = config.emission.kernels[0].get_params().get("k2__noise_level_bounds")
@@ -378,16 +408,13 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
           + (" (schedule default)" if lds_degrees_of_freedom is None else ""))
     print(f"LDS update={lds_update}"
           + (f", step size={lds_step_size:g}" if lds_update == "natural_gradient" else ""))
-    print(f"LDS scoring={lds_scoring}")
-    birth_lds_divisor = (values.shape[1] if INFERENCE_MODE in ("online", "online_fast")
-                         else np.sqrt(values.shape[1])) if birth_lds_kl_per_sqrt_point else 1
-    birth_lds_scale = ("waveform points" if INFERENCE_MODE in ("online", "online_fast")
-                       else "sqrt(waveform points)")
-    print(f"Experimental birth LDS KL / {birth_lds_scale}="
+    print(f"LDS scoring={config.dynamics.lds_scoring}")
+    birth_lds_divisor = len(config.x_basis) if birth_lds_kl_per_sqrt_point else 1
+    print("Experimental birth LDS KL / LDS dimension="
           f"{birth_lds_kl_per_sqrt_point} "
           f"(divisor={birth_lds_divisor:.6g})")
     _print_lds_priors(
-        dimension=values.shape[1], model_type=MODEL_TYPE,
+        dimension=len(config.x_basis), model_type=MODEL_TYPE,
         observation_noise=initial_observation_noise,
         process_noise=initial_process_noise,
         degrees_of_freedom=effective_dof,
@@ -554,9 +581,13 @@ def main() -> None:
         help="Fraction of new evidence used by the natural-gradient LDS update.",
     )
     parser.add_argument(
+        "--lds-inducing-points", type=int, default=LDS_INDUCING_POINTS,
+        help="Number of evenly spaced LDS basis points; 0 uses the full waveform grid.",
+    )
+    parser.add_argument(
         "--birth-lds-kl-per-sqrt-point", action=argparse.BooleanOptionalAction,
         default=BIRTH_LDS_KL_PER_SQRT_POINT,
-        help="Scale proposal LDS KL by waveform points online or sqrt(points) offline.",
+        help="Scale proposal LDS KL by LDS state dimension in either inference schedule.",
     )
     parser.add_argument(
         "--calibrate-lds-noise-priors", action=argparse.BooleanOptionalAction,
@@ -582,6 +613,7 @@ def main() -> None:
                         lds_degrees_of_freedom=args.lds_degrees_of_freedom,
                         lds_update=args.lds_update, lds_scoring=args.lds_scoring,
                         lds_step_size=args.lds_step_size,
+                        lds_inducing_points=args.lds_inducing_points,
                         birth_lds_kl_per_sqrt_point=args.birth_lds_kl_per_sqrt_point,
                         plot_directory=args.plot_dir,
                         scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,

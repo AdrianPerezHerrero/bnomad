@@ -1,8 +1,8 @@
 """Typed scientific configuration and stable data-only serialization."""
 
-from ._models import (HDPGPCConfig, HDPConfig, GPEmissionConfig, DynamicsConfig,
+from ._models import (HDPGPCConfig, HDPConfig, GPEmissionConfig, ObservationConfig, DynamicsConfig,
                       AlignmentConfig, InferenceConfig, MultiOutputConfig,
                       NumericalConfig)
 
-__all__ = ('HDPGPCConfig', 'HDPConfig', 'GPEmissionConfig', 'DynamicsConfig',
+__all__ = ('HDPGPCConfig', 'HDPConfig', 'GPEmissionConfig', 'ObservationConfig', 'DynamicsConfig',
            'AlignmentConfig', 'InferenceConfig', 'MultiOutputConfig', 'NumericalConfig')

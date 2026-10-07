@@ -149,19 +149,13 @@ def fit_torch(self, x, y, alpha_ini, gamma_ini, reduced_points=False, verbose=Fa
                 self.kernel.k1.theta = np.log(np.array([gp.covar_module.base_kernel.lengthscale.item()]))
             self.kernel.k2.theta = np.log(np.array([lik.noise.item()]))
         elif type(gp) is ProjectedGPModel:
-            self.x_basis, _ = torch.sort(torch.atleast_2d(x_basis).T, axis=0)
-            # Check if some points collapsed
             if reduced_points:
-                x_basis_clean = torch.clone(self.x_basis.detach())
-                collapsed = False
-                for i in torch.arange(self.x_basis.shape[0] - 1):
-                    if self.x_basis[i + 1] - self.x_basis[i] < torch.log(
-                            gp.covar_module.base_kernel.base_kernel.lengthscale):
-                        print("Inducing point removed, ", str(self.x_basis[i]))
-                        x_basis_clean = x_basis_clean[x_basis_clean != self.x_basis[i]]
-                        collapsed = True
-                if collapsed:
-                    self.x_basis = torch.atleast_2d(x_basis_clean).T
+                # Keep the learned locations and their count. Dropping nearby
+                # points here would desynchronize the LDS matrix dimensions.
+                learned = gp.covar_module.inducing_points.detach()
+                self.x_basis = torch.sort(learned.reshape(-1, 1), dim=0).values.clone()
+            else:
+                self.x_basis = torch.sort(torch.atleast_2d(x_basis).T, dim=0).values.clone()
             if self.cuda:
                 self.x_basis = self.x_basis.cuda()
             if hasattr(self.kernel.k1, "k1"):

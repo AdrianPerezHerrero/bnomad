@@ -33,6 +33,54 @@ def _cluster_occupied(self, resp):
     return torch.bincount(torch.argmax(resp, dim=1), minlength=resp.shape[1]) > 0
 
 
+def _synchronize_cluster_slots(self, source_order, models):
+    """Align warpers and per-cluster settings with already reordered GP models."""
+    old_warpers = self.wp_sys
+    self.wp_sys = [[(old_warpers[ld][int(index)]
+                     if int(index) < len(old_warpers[ld]) else self.create_wp_sys_default())
+                    for index in source_order] for ld in range(self.n_outputs)]
+    for name in ('x_basis_warp', 'inducing_points', 'estimation_limit',
+                 'bound_sigma', 'bound_gamma', 'bound_sigma_warp', 'annealing',
+                 'recursive_warp', 'warp_updating', 'model_type',
+                 'ini_lengthscale', 'bound_lengthscale'):
+        values = getattr(self, name, None)
+        if isinstance(values, list) and values:
+            setattr(self, name, [values[int(index)] if int(index) < len(values)
+                                 else values[0] for index in source_order])
+    self.x_basis = [model.x_basis for model in models[0]]
+
+
+def _commit_emergency_deletion(self, resp, resp_pair, q, q_lat, snr, models,
+                               warped, offsets, warp_scores, reorder, representers):
+    """Remove an empty reordered candidate and align every retained cluster slot."""
+    old_count = resp.shape[1]
+    if (reorder.numel() != old_count or len(models) != self.n_outputs
+            or any(len(output) != old_count for output in models)
+            or warped.shape[-1] != old_count or offsets.shape[-1] != old_count
+            or warp_scores.shape[1] != old_count
+            or representers.numel() != old_count):
+        raise RuntimeError('Emergency deletion received inconsistent cluster dimensions')
+    if torch.count_nonzero(resp[:, -1]):
+        raise RuntimeError('Emergency deletion requires a zero-responsibility last candidate')
+    kept = reorder[:-1].long()
+    resp, resp_pair, q, q_lat, snr = self.remove_last_group(
+        resp, resp_pair, q, q_lat, snr)
+    if not torch.allclose(resp.sum(dim=1), torch.ones_like(resp[:, 0]), atol=1e-6):
+        raise RuntimeError('Emergency deletion would leave unnormalized responsibilities')
+
+    self.gpmodels = [output[:-1] for output in models]
+    self.f_ind_old = representers[kept]
+    self.x_w = offsets[:, :, :, kept]
+    self.liks = warp_scores[:, kept, :]
+    warped = warped[:, :, :, kept]
+    self.y_w = warped
+    self.y_train = self.select_assigned_warp(warped, resp)
+    self.snr_norm = self.normalize_snr(snr)
+    _synchronize_cluster_slots(self, kept, self.gpmodels)
+    self.M = old_count - 1
+    return resp, resp_pair, q, q_lat, snr, warped, self.gpmodels
+
+
 def _flow_inputs(self, original, offsets, output, candidate):
     if getattr(self.alignment, 'uses_candidate_input_warp', False) and self.warp:
         return self.alignment.emission_grid_batch(
@@ -141,6 +189,15 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                                                                                                    resp, respPair,
                                                                                                    q, q_lat, snr,
                                                                                                    reallocate)
+        if self.observation_scope == 'shared':
+            self.update_shared_observation(resp)
+            for output, models in enumerate(self.gpmodels):
+                for cluster, emission in enumerate(models[:resp.shape[1]]):
+                    if emission.indexes:
+                        observations = (y_trains_w[:, :, [output], cluster]
+                                        if y_trains_w.ndim == 4 else y_trains_w[:, :, [output]])
+                        q[:, cluster, output] = emission.compute_sq_err_all(
+                            x_trains, observations)
         if resp.shape[1] > M:
             self.M = M + 1
             M = self.M
@@ -245,6 +302,8 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
         resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.estimate_q_first(M, x_trains=x_trains, y_trains=y_trains,
                                      y_trains_w_=y_trains_w, resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr,
                                      startPi=startPi, transPi=transPi, reallocate_=reallocate, reparam=reparam)
+        if reallocate and resp.shape[1] != M:
+            return resp, respPair, q, q_lat, snr, y_trains_w, reallocate
         if resp.shape[1] > self.M:
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                   self.gpmodels, self.M, snr='saved', post=True)
@@ -265,6 +324,8 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
                                            resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi, q_def=q_def__, elbo_def=elbo_def__,
                                            reparam=reparam)
             self.gpmodels = gpmodels
+            if resp.shape[1] != M:
+                return resp, respPair, q, q_lat, snr, y_trains_w, True
             if resp.shape[1] > self.M:
                 q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
                                                         self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
@@ -366,8 +427,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         resp_per_group_temp = torch.sum(resp_temp, axis=0)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
         resp_temp = resp_temp[:, reorder]
-        if not self.hard_assignments:
-            respPair_temp = respPair_temp[:, reorder, :][:, :, reorder]
+        respPair_temp = respPair_temp[:, reorder, :][:, :, reorder]
 
         # First, try to reallocate beats, if this not works then generate new group.
         q = torch.clone(q_)
@@ -422,6 +482,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                                                                                                          gpmodels=gpmodels_temp,
                                                                                                          reparam=reparam,
                                                                                                          post=False)
+            if resp_temp.shape[1] != M:
+                return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, True
             q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux,
                                                     post=False)
@@ -452,6 +514,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 _log(self, "Reallocating beats into existing groups.")
                 reallocate = True
                 self.gpmodels = gpmodels_temp
+                _synchronize_cluster_slots(self, reorder, gpmodels_temp)
                 self.x_w = x_w[:, :, :, reorder]
                 self.liks = liks[:, reorder, :]
                 y_trains_w = y_trains_w[:, :, :, reorder]
@@ -496,20 +559,14 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                   self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                   snr=snr_, post=False)
-            if q_bas + elbo_bas < q_bas_ + elbo_bas_:
+            if (q_bas + elbo_bas < q_bas_ + elbo_bas_
+                    and not torch.count_nonzero(resp_temp[:, -1])):
                 _log(self, "Emergency reallocation and removing last group.")
                 reallocate = True
-                for ld in range(self.n_outputs):
-                    gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
-                self.gpmodels = gpmodels_temp
-                if update_snr:
-                    self.snr_norm = self.normalize_snr(snr_aux)
-                resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
-                                                                                     respPair_temp, q,
-                                                                                     q_lat, snr_aux)
-                resp_per_group_temp = torch.sum(resp_temp, axis=0)
-                reorder = torch.argsort(resp_per_group_temp, descending=True)
-                self.f_ind_old = self.f_ind_old[reorder]
+                resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, _ = (
+                    _commit_emergency_deletion(
+                        self, resp_temp, respPair_temp, q, q_lat, snr_aux,
+                        gpmodels_temp, y_trains_w, x_w, liks, reorder, f_ind_old))
                 return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
             else:
                 _log(self, "Bad estimation")
@@ -675,8 +732,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 reorder = torch.argsort(resp_per_group_temp, descending=True)
                 # reorder = torch.arange(resp_per_group_temp.shape[0])
                 resp_temp = resp_temp[:, reorder]
+                respPair_temp = respPair_temp[:, reorder, :][:, :, reorder]
                 if not self.hard_assignments:
-                    respPair_temp = respPair_temp[:, reorder, :][:, :, reorder]
                     birth_position = int(torch.where(reorder == M - 1)[0][0].item())
                     if not torch.any(torch.argmax(resp_temp, dim=1) == birth_position):
                         continue
@@ -741,22 +798,15 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                           self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                           snr=snr_, post=False)
-                    if q_bas + elbo_bas < q_bas_ + elbo_bas_:
+                    if (q_bas + elbo_bas < q_bas_ + elbo_bas_
+                            and not torch.count_nonzero(resp_temp[:, -1])):
                         _log(self, "Emergency reallocation and removing last group.")
                         reallocate = True
-                        for ld in range(self.n_outputs):
-                            gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
-                            self.wp_sys[ld] = self.wp_sys[ld][:-1]
-                        resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
-                                                                                             respPair_temp, q,
-                                                                                             q_lat, snr_aux)
-                        self.gpmodels = gpmodels_temp
-                        self.f_ind_old = f_ind_old[reorder]
-                        y_trains_w = y_trains_w[:,:,:,reorder]
-                        self.y_w = y_trains_w
-                        self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
-                        if update_snr:
-                            self.snr_norm = self.normalize_snr(snr_aux)
+                        resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, _ = (
+                            _commit_emergency_deletion(
+                                self, resp_temp, respPair_temp, q, q_lat, snr_aux,
+                                gpmodels_temp, y_trains_w, x_w, liks, reorder,
+                                f_ind_old_temp))
                         return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                     else:
                         _log(self, "Bad estimation")
@@ -783,6 +833,10 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                                                                                                              gpmodels=gpmodels_temp,
                                                                                                              reparam=reparam,
                                                                                                              f_ind_old=f_ind_old_temp)
+                    if resp_temp.shape[1] != M:
+                        # Emergency deletion ended this birth proposal. The
+                        # old start/transition matrices still have M columns.
+                        return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, True
                     q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=post_)
@@ -817,8 +871,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     if q_bas + elbo_bas < q_bas_post + elbo_post:
                         _log(self, "Chosen to divide: " + str(m_chosen) + " with beat " + str(f_ind_new.item()))
                         self.gpmodels = gpmodels_temp
-                        for ld in range(self.n_outputs):
-                            self.wp_sys[ld].append(self.create_wp_sys_default())
+                        _synchronize_cluster_slots(self, reorder, gpmodels_temp)
                         self.x_w = x_w[:,:,:,reorder]
                         self.liks = liks[:,reorder,:]
                         y_trains_w = y_trains_w[:,:,:,reorder]
@@ -884,8 +937,7 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     resp_per_group_temp = torch.sum(resp_temp, axis=0)
     reorder = torch.argsort(resp_per_group_temp, descending=True)
     resp_temp = torch.clone(resp_temp[:, reorder])
-    if not self.hard_assignments:
-        respPair_temp = respPair_temp[:, reorder, :][:, :, reorder]
+    respPair_temp = respPair_temp[:, reorder, :][:, :, reorder]
 
     # after resp_temp = resp_temp[:, reorder] (or clone thereof)
     y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
@@ -963,11 +1015,15 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     if torch.all(_cluster_occupied(self, resp_temp)):
         if q_bas + elbo_bas < q_bas_post + elbo_post:
             # self.gpmodels = gpmodels_temp
-            self.x_w = x_w
-            self.liks = liks
+            if len(reorder) == self.M:
+                _synchronize_cluster_slots(self, reorder, gpmodels_temp)
             y_trains_w = y_trains_w[:,:,:,reorder]
             if reorder.shape[0] == self.f_ind_old.shape[0]:
-                self.f_ind_old = self.f_ind_old[reorder]
+                self.x_w = x_w[:, :, :, reorder]
+                self.liks = liks[:, reorder, :]
+                self.f_ind_old = f_ind_old[reorder]
+                self.y_w = y_trains_w
+                self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
             if update_snr:
                 self.snr_norm = self.normalize_snr(snr_aux)
             else:
@@ -977,20 +1033,14 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
             return resp, respPair, q_, q_lat_, snr_, y_trains_w_, gpmodels
     else:
         _log(self, f">>> Possible emergency reallocation. Prev ----:\n Q_em: {q_def}, Elbo: {elbo_def}")
-        if (q_def + elbo_def < q_bas_post + elbo_post) and (q_bas + elbo_bas < q_bas_post + elbo_post):
+        if ((q_def + elbo_def < q_bas_post + elbo_post)
+                and (q_bas + elbo_bas < q_bas_post + elbo_post)
+                and not torch.count_nonzero(resp_temp[:, -1])):
             _log(self, "Emergency reallocation and removing last group.")
-            reallocate = True
-            for ld in range(self.n_outputs):
-                gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
-            self.gpmodels = gpmodels_temp
-            if update_snr:
-                self.snr_norm = self.normalize_snr(snr_aux)
-            resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
-                                                                                 respPair_temp, q,
-                                                                                 q_lat, snr_aux)
-            resp_per_group_temp = torch.sum(resp_temp, axis=0)
-            reorder = torch.argsort(resp_per_group_temp, descending=True)
-            self.f_ind_old = self.f_ind_old[reorder]
+            resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = (
+                _commit_emergency_deletion(
+                    self, resp_temp, respPair_temp, q, q_lat, snr_aux,
+                    gpmodels_temp, y_trains_w, x_w, liks, reorder, f_ind_old))
             return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
         else:
             _log(self, "Bad estimation")
@@ -1210,6 +1260,12 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
                                                                  resp[:, m])
             snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
             self.gpmodels[ld][m] = gp
+    if self.observation_scope == 'shared':
+        self.update_shared_observation(resp)
+        for ld in range(self.n_outputs):
+            for m in range(M):
+                q[:, m, ld] = self.gpmodels[ld][m].compute_sq_err_all(
+                    x_trains, y_trains[:, :, [ld]])
     if warp:
         q, q_lat, warp_computed, y_trains = self.compute_warp_actual_state(x_trains, y_trains, q=q,
                                                                            q_lat=q_lat)
@@ -1223,6 +1279,12 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
                                                                      resp[:, m])
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
                 self.gpmodels[ld][m] = gp
+        if self.observation_scope == 'shared':
+            self.update_shared_observation(resp)
+            for ld in range(self.n_outputs):
+                for m in range(M):
+                    q[:, m, ld] = self.gpmodels[ld][m].compute_sq_err_all(
+                        x_trains, y_trains[:, :, [ld]])
     self.q.append(q)
     resp__ = torch.clone(resp)
     respPair__ = torch.clone(respPair)

@@ -40,6 +40,20 @@ class GPEmissionConfig:
 
 
 @dataclass(frozen=True)
+class ObservationConfig:
+    """Observation map policy. Fixed matrices currently use the LDS grid dimension.
+
+    ``cluster`` retains the original per-cluster MNIW update. ``shared`` learns
+    one MNIW posterior per output from all cluster responsibilities. ``fixed``
+    holds the supplied map and noise covariance, defaulting to identity C and
+    the emission's initial observation covariance.
+    """
+    scope: Literal['cluster', 'shared', 'fixed'] = 'cluster'
+    C: ndarray | None = None
+    Sigma: ndarray | None = None
+
+
+@dataclass(frozen=True)
 class DynamicsConfig:
     """Static/LDS controls; omitted MNIW degrees of freedom follow the schedule."""
     model_type: Literal['static', 'dynamic'] | list[Literal['static', 'dynamic']] | ndarray = 'dynamic'
@@ -102,7 +116,8 @@ class InferenceConfig:
     minibatch: int = 0
     classify: bool = False
     it_limit: int | None = None
-    # Existing flag name: online uses /points; offline retains /sqrt(points).
+    # Historical flag name retained for serialized-config compatibility;
+    # both schedules now use /points in experimental proposal scoring.
     birth_lds_kl_per_sqrt_point: bool = False
 
     def run(self, model, x, y):
@@ -164,7 +179,8 @@ class NumericalConfig:
             torch.use_deterministic_algorithms(self.deterministic)
 
 
-SECTIONS = {'hdp': HDPConfig, 'emission': GPEmissionConfig, 'dynamics': DynamicsConfig,
+SECTIONS = {'hdp': HDPConfig, 'emission': GPEmissionConfig, 'observation': ObservationConfig,
+            'dynamics': DynamicsConfig,
             'alignment': AlignmentConfig, 'inference': InferenceConfig,
             'multi_output': MultiOutputConfig, 'numerics': NumericalConfig}
 NON_CONSTRUCTOR = {'alignment': {'policy', 'flow_inducing', 'flow_features',
@@ -188,6 +204,7 @@ class HDPGPCConfig:
     verbose: bool = False
     hdp: HDPConfig = field(default_factory=HDPConfig)
     emission: GPEmissionConfig = field(default_factory=GPEmissionConfig)
+    observation: ObservationConfig = field(default_factory=ObservationConfig)
     dynamics: DynamicsConfig = field(default_factory=DynamicsConfig)
     alignment: AlignmentConfig = field(default_factory=AlignmentConfig)
     inference: InferenceConfig = field(default_factory=InferenceConfig)

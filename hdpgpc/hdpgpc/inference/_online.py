@@ -58,6 +58,29 @@ def _report_assignment(self, sample_index, model, birth):
     print(f"Sample {sample_index + 1}: assigned to cluster {model + 1}.", flush=True)
 
 
+def _refresh_shared_point_scores(self, q, weights, reorder, observations, sample_index,
+                                 warp_scores=None):
+    """Score the committed beat under the newly pooled observation posterior."""
+    if self.observation_scope != 'shared':
+        return
+    for output, models in enumerate(self.gpmodels):
+        for cluster, emission in enumerate(models):
+            if cluster >= len(weights) or weights[cluster] <= 0:
+                continue
+            if not emission.indexes or emission.indexes[-1] != sample_index:
+                continue
+            candidate = reorder[cluster]
+            observation = observations[candidate][-1]
+            grid = _flow_grid(self, candidate, self.x_train[-1])
+            score = emission.log_sq_error(
+                grid, _flow_observation(self, observation, output), i=-1,
+                first=emission.N == 1)
+            if warp_scores is not None:
+                score = score + warp_scores[candidate]
+            q[-1, cluster, output] = _flow_score(
+                self, candidate, output, emission, observation, score)
+
+
 def _online_objective(self, resp, resp_pair, q, q_lat, gpmodels, models, **kwargs):
     """Expose terms already calculated by the objective only for verbose runs."""
     result = self.compute_q_elbo(
@@ -448,6 +471,8 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
                 if self.model_type[m] == 'dynamic':
                     q_lat_chos[:, m, ld] = self._update_q_lat_tail(
                         self.gpmodels[ld][m], q_lat_chos[:, m, ld], [t], h_ini=1.0)
+    self.update_shared_observation(resp_mod, online=True)
+    _refresh_shared_point_scores(self, q_chos, resp_mod, reorder, y_mod, t, liks)
     initial_q, initial_elbo, initial_parts = _online_objective(
         self, resp[:, :M], respPair[:, :M, :M],
         self.weight_mean(q_chos)[:, :M], self.weight_mean(q_lat_chos)[:, :M],
@@ -960,6 +985,8 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                     q_lat_chos[:, m, ld] = self._update_q_lat_tail(
                         self.gpmodels[ld][m], q_lat_chos[:, m, ld], [t], h_ini=1.0)
 
+    self.update_shared_observation(resp_mod, online=True)
+    _refresh_shared_point_scores(self, q_chos, resp_mod, reorder, y_mod, t)
     # Store history + refresh caches for next call
     self.resp_assigned.append(torch.argmax(resp[:, :self.M], axis=1))
     self.q.append(q_chos.detach())

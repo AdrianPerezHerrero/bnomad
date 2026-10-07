@@ -20,13 +20,11 @@ from ..numerics._normalization import max_shift_log_scores
 from ..hdp._entropy import state_entropy_terms, pair_entropy_terms
 
 
-def _lds_point_dimension(self):
-    """Number of observed waveform points, including irregular input grids."""
-    grids = self.x_train
-    if isinstance(grids, (np.ndarray, torch.Tensor)) and grids.shape[0]:
-        return int(grids.shape[-2])
-    if len(grids):
-        return int(grids[-1].shape[0])
+def _lds_point_dimension(self, gpmodels):
+    """Dimension of the latent LDS matrices used in this score."""
+    for output in gpmodels:
+        if output:
+            return int(output[0].A[-1].shape[0])
     return len(self.x_basis_ini)
 
 
@@ -35,8 +33,8 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
     """Compute ELBO terms, optionally tempering the LDS KL for birth scoring.
 
     ``birth_score=False`` always returns the unmodified ELBO. The optional
-    score divides the LDS KL by the point count online or its square root
-    offline. This is an experiment, not an evidence lower bound.
+    score divides the LDS KL by the LDS state dimension in every schedule.
+    This is an experiment, not an evidence lower bound.
     """
     if verb is None:
         verb = self.verbose
@@ -53,8 +51,8 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
                                      one_sample=one_sample)
     else:
         elbo_bas = self.elbo_Linears(resp, respPair, one_sample=one_sample)
-    # Each cluster/output owns one parameter posterior. Its KL is global and
-    # must be counted once, independently of waveform length or SNR weights.
+    # Final scoring counts the final parameter KL once per cluster/output.
+    # Historical scoring uses that cluster's mean over scored beat states.
     elbo_bas_LDS = torch.zeros((), dtype=q.dtype, device=q.device)
     cluster_counts = torch.sum(resp, dim=0)
     for output in range(self.n_outputs):
@@ -63,9 +61,9 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
     raw_lds = elbo_bas_LDS
     adjusted_lds = birth_score and self.birth_lds_kl_per_sqrt_point
     if adjusted_lds:
-        dimension = _lds_point_dimension(self)
-        divisor = dimension if one_sample else np.sqrt(dimension)
-        divisor_name = str(dimension) if one_sample else f"sqrt({dimension})"
+        dimension = _lds_point_dimension(self, gpmodels)
+        divisor = dimension
+        divisor_name = str(dimension)
         elbo_bas_LDS = raw_lds / divisor
 
     chain_entropy = torch.zeros_like(q_bas)
@@ -109,11 +107,15 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
 
 
 def full_LDS_elbo(self, gpmodels, sum_resp, one_sample=False):
-    """Sum one negative LDS-parameter KL per active cluster in an output."""
+    """Sum cluster LDS terms and count a shared observation KL once."""
     elb = sum_resp.new_zeros(())
     for index, gp in enumerate(gpmodels):
         if sum_resp[index] > 0:
             elb = elb + gp.return_LDS_param_likelihood()
+    if gpmodels and torch.any(sum_resp > 0):
+        policy = getattr(gpmodels[0], 'observation_policy', None)
+        if policy is not None and policy.scope == 'shared':
+            elb = elb - policy.kl()
     return elb
 
 

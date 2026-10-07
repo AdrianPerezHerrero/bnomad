@@ -77,6 +77,9 @@ class ModelState:
         self.lds_update = options['lds_update']
         self.lds_scoring = options['lds_scoring']
         self.lds_step_size = options['lds_step_size']
+        self.observation_scope = options['scope']
+        self.observation_C_initial = options['C']
+        self.observation_Sigma_initial = options['Sigma']
         share_gp = options['share_gp']
         use_snr = options['use_snr']
         reduce_outputs = options['reduce_outputs']
@@ -273,6 +276,21 @@ class ModelState:
                                        ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
                 self.gpmodels[ld].append(gp_)
 
+        self.observation_policies = []
+        if self.observation_scope != 'cluster':
+            from ..dynamics._observation import ObservationPolicy
+            for ld in range(n_outputs):
+                template = self.gpmodels[ld][0]
+                initial_C = (self.observation_C_initial if self.observation_C_initial is not None
+                             else template.C[0])
+                initial_Sigma = (self.observation_Sigma_initial if self.observation_Sigma_initial is not None
+                                 else template.Sigma[0])
+                policy = ObservationPolicy(self.observation_scope, initial_C, initial_Sigma,
+                                           self.free_deg_MNIV)
+                self.observation_policies.append(policy)
+                for emission in self.gpmodels[ld]:
+                    policy.attach(emission)
+
         self.init_global_params(len(x_basis), self.M)
         if self.cuda:
             self.full_model_to_torch()
@@ -281,6 +299,12 @@ class ModelState:
     from ..model._clusters import (
         keep_last_all, set_default_options, get_default_options, create_gp_default, create_wp_sys_default, refill, reorder, new_group, remove_last_group, redefine_default, update_initial_sigma, return_model_of_sample, selected_gpmodels, gpmodel_deepcopy
     )
+
+    def update_shared_observation(self, responsibilities, *, online=False):
+        if self.observation_scope == 'shared':
+            for ld, policy in enumerate(self.observation_policies):
+                policy.update(self.gpmodels[ld], responsibilities, online=online,
+                              current_index=self.T - 1 if online else None)
 
     from ..inference._messages import (
         _safe_exp, variational_local_terms, LogLik, forward, backward, coupled_state_coef, sum_coupled_state_coef, compute_h, baum_welch, normalize_log

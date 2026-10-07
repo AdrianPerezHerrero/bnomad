@@ -51,7 +51,28 @@ def validate(c, *, for_build=False):
         if type(getattr(c, name)) is not typ:
             raise TypeError(name + ' must be ' + typ.__name__)
     import numpy as np
-    h, e, d, a, i, o, n = (getattr(c, k) for k in SECTIONS)
+    h, e, obs, d, a, i, o, n = (getattr(c, k) for k in SECTIONS)
+    if obs.scope not in ('cluster', 'shared', 'fixed'):
+        raise ValueError('observation.scope must be cluster, shared, or fixed')
+    if obs.scope == 'cluster' and (obs.C is not None or obs.Sigma is not None):
+        raise ValueError('observation.C/Sigma require shared or fixed scope')
+    for name in ('C', 'Sigma'):
+        matrix = getattr(obs, name)
+        if matrix is not None:
+            array = np.asarray(matrix)
+            if array.ndim != 2 or array.shape[0] != array.shape[1] or not np.all(np.isfinite(array)):
+                raise ValueError(f'observation.{name} must be a finite square matrix')
+            if name == 'Sigma' and (not np.allclose(array, array.T)
+                                     or not np.all(np.linalg.eigvalsh(array) > 0)):
+                raise ValueError('observation.Sigma must be symmetric positive definite')
+    if obs.scope != 'cluster' and not d.bayesian_params:
+        raise ValueError('shared/fixed observation parameters require bayesian_params=True')
+    if obs.scope != 'cluster' and d.lds_scoring == 'historical':
+        raise ValueError('shared/fixed observation parameters require final LDS scoring')
+    if obs.scope != 'cluster' and i.reestimate_initial_params:
+        raise ValueError('shared/fixed observation parameters require priors set before fitting')
+    if obs.scope == 'shared' and i.warp and a.policy == 'gp_flow':
+        raise ValueError('shared observation learning requires a common observation grid')
     integer(h.M, 'M', 1, optional=True)
     M = 1 if h.M is None else h.M
     integer(h.max_models, 'max_models', 1, optional=True)
@@ -60,6 +81,10 @@ def validate(c, *, for_build=False):
     if h.hdp_hyp not in ('less', 'balanced', 'more'):
         raise ValueError('hdp_hyp must be less, balanced or more')
     integer(o.n_outputs, 'n_outputs', 1)
+    if obs.scope != 'cluster' and o.n_outputs != 1:
+        raise ValueError('shared/fixed observation parameters currently require one output')
+    if obs.scope != 'cluster' and n.cuda:
+        raise ValueError('shared/fixed observation parameters currently require CPU inference')
     for obj, names in ((c, ('verbose',)), (h, ('hmm_switch',)),
                        (e, ('check_var', 'fit_gp')), (d, ('bayesian_params',)),
                        (o, ('share_gp', 'use_snr', 'reduce_outputs')), (n, ('cuda',))):
@@ -183,6 +208,15 @@ def validate(c, *, for_build=False):
                 raise ValueError('CUDA requested but unavailable on this host')
         if c.x_basis is None:
             raise ValueError('x_basis is required to build a model')
+        if obs.scope != 'cluster':
+            grids = c.x_basis if isinstance(c.x_basis, list) else [c.x_basis]
+            if any(not np.array_equal(grids[0], grid) for grid in grids[1:]):
+                raise ValueError('shared/fixed observation parameters require a common LDS grid')
+            dimension = len(grids[0])
+            for name in ('C', 'Sigma'):
+                matrix = getattr(obs, name)
+                if matrix is not None and np.asarray(matrix).shape != (dimension, dimension):
+                    raise ValueError(f'observation.{name} must match the LDS grid dimension {dimension}')
         required = [(e.ini_sigma, 'ini_sigma'), (d.ini_gamma, 'ini_gamma'),
                     (e.bound_sigma, 'bound_sigma'), (d.bound_gamma, 'bound_gamma'),
                     (a.bound_noise_warp, 'bound_noise_warp')]

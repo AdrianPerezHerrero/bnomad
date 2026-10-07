@@ -250,6 +250,10 @@ class GaussianProcessEmission:
                 self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
             else:
                 self.observation_params = matrix_normal_inv_wishart(ini_C, np.eye(ini_C.shape[0]), self.free_deg_MNIV, ini_Sigma)
+        if self.lds_scoring == 'historical':
+            self.lds_internal_score_history = []
+            self.lds_observation_score_history = []
+            _trajectory.record_lds_parameter_score(self)
 
 
     def GPR_static(self, ini_Sigma=None):
@@ -295,6 +299,8 @@ class GaussianProcessEmission:
             self.observation_params.m_mean = self.C[-1]
             self.internal_params.set_scale(self.Gamma[-1])
             self.internal_params.m_mean = self.A[-1]
+        if self.lds_scoring == 'historical':
+            _trajectory.record_lds_parameter_score(self, replace_last=True)
         self.fitted = True
         print("---Kernel estimated---")
         print(self.gp.kernel)
@@ -607,7 +613,7 @@ class GaussianProcessEmission:
             return q, q_lat
 
         batch_lds = self.lds_update == 'conjugate_batch'
-        if batch_lds and any(not torch.equal(x_trains[index], self.x_basis)
+        if batch_lds and not self.inducing_points and any(not torch.equal(x_trains[index], self.x_basis)
                              for index in active.tolist()):
             raise NotImplementedError('conjugate_batch requires a common observation grid')
         for index in active.tolist():
@@ -1035,6 +1041,16 @@ class GaussianProcessEmission:
     def reduce_noise_matrix(self, x_basis=None, x_train=None):
         return self.gp.projection_matrix(x_basis, x_train)
 
+    def project_observation_to_basis(self, y, x_train):
+        """Map a waveform to the inducing grid for the LDS observation update."""
+        observation = self.cond_to_cuda(self.cond_to_torch(y)).reshape(-1, 1)
+        if torch.equal(self.x_basis, x_train):
+            return observation
+        if not self.inducing_points:
+            raise NotImplementedError('LDS observation projection requires inducing_points=True')
+        projection = self.reduce_noise_matrix(self.x_basis, x_train)
+        return projection.to(device=observation.device, dtype=observation.dtype) @ observation
+
     def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False,
                             snr=1.0, first_observation=False):
         """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
@@ -1107,7 +1123,8 @@ class GaussianProcessEmission:
         self.likelihood = recursive_numpy(self.likelihood)
         self.K = recursive_numpy(self.K)
         self.internal_params.to_numpy()
-        self.observation_params.to_numpy()
+        if getattr(self, 'observation_policy', None) is None:
+            self.observation_params.to_numpy()
 
     def model_to_torch(self):
         def recursive_torch(x):
@@ -1138,7 +1155,8 @@ class GaussianProcessEmission:
         self.likelihood = recursive_torch(self.likelihood)
         self.K = recursive_torch(self.K)
         self.internal_params.to_torch()
-        self.observation_params.to_torch()
+        if getattr(self, 'observation_policy', None) is None:
+            self.observation_params.to_torch()
 
     def model_to_cuda(self):
         if torch.cuda.is_available() and self.cuda:
@@ -1172,7 +1190,8 @@ class GaussianProcessEmission:
             self.likelihood = recursive_cuda(self.likelihood)
             self.K = recursive_cuda(self.K)
             self.internal_params.to_cuda()
-            self.observation_params.to_cuda()
+            if getattr(self, 'observation_policy', None) is None:
+                self.observation_params.to_cuda()
             self.cuda = True
             self.gp.cuda = True
 
@@ -1205,6 +1224,7 @@ class GaussianProcessEmission:
         self.likelihood = recursive_cpu(self.likelihood)
         self.K = recursive_cpu(self.K)
         self.internal_params.to_cpu()
-        self.observation_params.to_cpu()
+        if getattr(self, 'observation_policy', None) is None:
+            self.observation_params.to_cpu()
         self.cuda = False
         self.gp.cuda = False
