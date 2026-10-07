@@ -176,7 +176,8 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
             if iteration == 14:
                 _log(self, "STOP")
             q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
-                                                  self.gpmodels, self.M, snr='saved', post=False)
+                                                  self.gpmodels, self.M, snr='saved', post=False,
+                                                  birth_score=False)
             elbo_ = elbo_ + elbo_lin + q_obs
             if self.verbose:
                 delta = "n/a" if previous_elbo is None else f"{(elbo_ - previous_elbo).item():+.6g}"
@@ -272,7 +273,8 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
                 q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
                                                         self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
                                                         post=False)
-            _log(self, "ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
+            score_name = "birth_score_change" if self.birth_lds_kl_per_point else "ELBO_reduction"
+            _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
             if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post, rtol=1e-5) and i > 0) or i == 10:  # or reparam:
                 if not reparam:
                     reparam = True
@@ -423,7 +425,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux,
                                                     post=False)
-            _log(self, "ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
+            score_name = "birth_score_change" if self.birth_lds_kl_per_point else "ELBO_reduction"
+            _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
             if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                               rtol=1e-5) and i__ > 0) or i__ == 20:  # or reparam:
                 break
@@ -783,7 +786,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=post_)
-                    _log(self, "ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
+                    score_name = "birth_score_change" if self.birth_lds_kl_per_point else "ELBO_reduction"
+                    _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
                     if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                                       rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:
                         break
@@ -1134,7 +1138,8 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
                                                      respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
                 _log(self, '\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
                 q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
-                                                      self.gpmodels, self.M, snr='saved', post=False)
+                                                      self.gpmodels, self.M, snr='saved', post=False,
+                                                      birth_score=False)
                 elbo_ = elbo_ + elbo_lin + q_obs
                 _log(self, "ELBO + Nonlinear: " + str(elbo_))
                 iteration = iteration + 1
@@ -1249,7 +1254,8 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
     elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                          respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
     q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
-                                          self.gpmodels, self.M, snr='saved', post=False)
+                                          self.gpmodels, self.M, snr='saved', post=False,
+                                          birth_score=False)
     elbo_ = elbo_ + elbo_lin + q_obs
     _log(self, '\n-------ELBO:' + str(elbo_) + '-------')
     self.elbo_last = elbo_

@@ -658,7 +658,7 @@ class GaussianProcessEmission:
 
 
     def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=False,
-                   *, warm_start=True):
+                   *, warm_start=False):
         """ Method to reinitiate LDS parameters. Can save some of them.
         """
         if self.lds_update == 'conjugate_batch' and self.N > 0 and warm_start:

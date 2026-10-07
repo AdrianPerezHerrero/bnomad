@@ -15,9 +15,11 @@ import numpy as np
 class LDSNoisePriorEstimate:
     """Scalar prior scales and diagnostics from the identity-LDS pilot model.
 
-    ``observation`` and ``process`` can be passed as ``ini_sigma`` and
-    ``ini_gamma``. They are variances: robust summaries of the estimated
-    covariance diagonals, not standard deviations or full covariance matrices.
+    With the default positivity check, ``observation`` and ``process`` can be
+    passed as ``ini_sigma`` and ``ini_gamma``. They are variance-scale moment
+    estimates, not standard deviations or full covariance matrices. With
+    ``require_positive_components=False``, either raw estimate may be negative
+    and must not be used directly as a covariance prior.
     """
 
     observation: float
@@ -37,6 +39,7 @@ def estimate_lds_noise_priors(
     max_beats: int = 256,
     segment_length: int = 32,
     random_state: int = 0,
+    require_positive_components: bool = True,
 ) -> LDSNoisePriorEstimate:
     """Estimate isotropic Gamma/Sigma prior scales from a contiguous minibatch.
 
@@ -47,14 +50,14 @@ def estimate_lds_noise_priors(
         Cov(y_t - y_(t-1), y_(t-1) - y_(t-2)) = -Sigma.
 
     The function estimates these moments separately for every waveform point
-    and output, then uses the median diagonal estimate as the scalar prior
-    scale, provided that median is positive. It samples nonoverlapping blocks
-    of consecutive beats so lagged pairs
+    and output, then uses the median diagonal estimate as the scalar scale.
+    It samples nonoverlapping blocks of consecutive beats so lagged pairs
     never cross a block boundary. It does not know the true latent states or
     cluster boundaries. A nonnegative median lag covariance or nonpositive
     process estimate indicates the pilot model cannot separate the noises;
-    this raises ValueError rather than silently substituting an arbitrary
-    fraction of waveform variance.
+    by default this raises ValueError. Set ``require_positive_components=False``
+    only when using the raw estimates as diagnostics for a pooled prior, and
+    validate that pooled variance before constructing an LDS.
 
     The selected data should represent typical within-cluster behavior. For
     online inference, supply an independent calibration record or prefix, not
@@ -73,6 +76,8 @@ def estimate_lds_noise_priors(
         raise ValueError("max_beats must be an integer of at least 3")
     if not isinstance(segment_length, int) or segment_length < 3:
         raise ValueError("segment_length must be an integer of at least 3")
+    if type(require_positive_components) is not bool:
+        raise TypeError("require_positive_components must be boolean")
 
     length = min(segment_length, values.shape[0], max_beats)
     candidate_starts = np.arange(0, values.shape[0] - length + 1, length)
@@ -105,9 +110,10 @@ def estimate_lds_noise_priors(
     process_diagonal = difference_variance + 2.0 * difference_lag_covariance
     observation = float(np.median(observation_diagonal))
     process = float(np.median(process_diagonal))
-    if observation <= 0 or process <= 0:
+    if (not np.isfinite(observation) or not np.isfinite(process) or
+            (require_positive_components and (observation <= 0 or process <= 0))):
         raise ValueError(
-            "identity random-walk noise moments are not positive: "
+            "identity random-walk noise moments are invalid for separate priors: "
             f"median Sigma={observation:.6g}, median Gamma={process:.6g}; "
             "select typical contiguous segments or use explicit prior scales"
         )

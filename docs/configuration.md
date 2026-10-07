@@ -41,6 +41,14 @@ inference. GP filtering and Bayesian LDS sufficient statistics then use each
 observation's fractional responsibility. Cluster creation and reported labels
 still use a MAP choice. Soft assignments require `bayesian_params=True` and
 can cost substantially more because an observation may update several GPs.
+`InferenceConfig.birth_lds_kl_per_point` defaults to `False`. When enabled,
+the local birth and absorb proposal score divides the summed LDS parameter
+KL by the configured waveform point count. The same divisor applies to the
+baseline and every proposal. This is an experimental score, not an ELBO;
+the MNIW posterior updates remain unchanged. Offline iteration summaries
+still report the raw ELBO, while proposal logs report the adjusted LDS score
+and its unscaled value. The full-record example enables the experiment and
+provides `--no-birth-lds-kl-per-point` to restore ordinary proposal scoring.
 Offline emission fitting drops only fractional weights whose combined mass is
 at most `1e-8` of that cluster's responsibility total. A cluster with less
 than `1e-8` total mass is skipped during that fitting pass. This avoids
@@ -76,12 +84,18 @@ For optional prior-scale calibration before construction,
 outputs are covariance diagonal variances, not standard deviations. Its
 identity random-walk pilot assumes `A=C=I` and independent temporal process
 and observation noise. It uses the variance and lag-one covariance of beat
-differences, and raises an error if these moments cannot identify positive
-noise scales. Pass `estimate.observation` to `GPEmissionConfig.ini_sigma` and
-`estimate.process` to `DynamicsConfig.ini_gamma`; the function never changes
-an existing model or its prior during inference. The full-record example
-provides `--calibrate-lds-noise-priors` for offline experiments. The estimate
-can be biased by regime changes, nonidentity `A`/`C`, or atypical blocks, and
+differences, and by default raises an error if either scale is not positive.
+The returned values may be passed separately to
+`GPEmissionConfig.ini_sigma` and `DynamicsConfig.ini_gamma`; the function never
+changes an existing model or its prior during inference. The full-record
+example provides `--calibrate-lds-noise-priors` for offline experiments and
+uses the arithmetic mean of the two estimated scales for both initial noise
+priors. It calls the estimator with `require_positive_components=False` and
+permits a negative individual moment estimate only when their mean is positive
+and finite; the negative estimate is a
+diagnostic, not a usable covariance. It logs the separate estimates and the
+common prior. The estimate can be biased by regime changes, nonidentity
+`A`/`C`, or atypical blocks, and
 does not guarantee a smaller LDS KL.
 `DynamicsConfig.lds_update` selects `conjugate_sequential` (the package default),
 `conjugate_batch`, `natural_gradient`, or `legacy`. The former `conjugate` name

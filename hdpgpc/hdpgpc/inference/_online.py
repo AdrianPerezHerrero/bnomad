@@ -71,14 +71,18 @@ def _report_online_objective(self, sample_index, label, q, elbo, components,
     if not self.verbose:
         return
     total = float((q + elbo).item())
-    delta = '' if baseline is None else f", delta_ELBO={total - float(baseline):+.6g}"
+    experimental = self.birth_lds_kl_per_point
+    score_label = 'birth_score' if experimental else 'ELBO'
+    delta = '' if baseline is None else f", delta_{score_label}={total - float(baseline):+.6g}"
     warp = getattr(self, '_flow_online_posteriors', {}).get(candidate)
     warp_term = '' if warp is None else f", warp_ELBO_term={-float(warp.kl.item()):.6g}"
-    print(f"Sample {sample_index + 1}: {label}: ELBO={total:.6g}{delta}, "
+    raw_lds = (f", LDS_raw={float(components['lds_raw'].item()):.6g}"
+               if experimental else '')
+    print(f"Sample {sample_index + 1}: {label}: {score_label}={total:.6g}{delta}, "
           f"emission={float(components['emission'].item()):.6g}, "
           f"latent={float(components['latent'].item()):.6g}, "
           f"HDP={float(components['hdp'].item()):.6g}, "
-          f"LDS={float(components['lds'].item()):.6g}, "
+          f"LDS={float(components['lds'].item()):.6g}{raw_lds}, "
           f"chain_entropy={float(components['chain_entropy'].item()):.6g}{warp_term}", flush=True)
 
 

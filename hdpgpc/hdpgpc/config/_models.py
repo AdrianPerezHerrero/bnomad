@@ -101,6 +101,7 @@ class InferenceConfig:
     minibatch: int = 0
     classify: bool = False
     it_limit: int | None = None
+    birth_lds_kl_per_point: bool = False
 
     def run(self, model, x, y):
         """Run one existing entry point; never combine or reorder schedules."""

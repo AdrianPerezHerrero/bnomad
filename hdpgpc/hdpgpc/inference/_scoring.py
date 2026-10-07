@@ -20,9 +20,22 @@ from ..numerics._normalization import max_shift_log_scores
 from ..hdp._entropy import state_entropy_terms, pair_entropy_terms
 
 
+def _lds_point_dimension(self):
+    """Number of observed waveform points, including irregular input grids."""
+    grids = self.x_train
+    if isinstance(grids, (np.ndarray, torch.Tensor)) and grids.shape[0]:
+        return int(grids.shape[-2])
+    if len(grids):
+        return int(grids[-1].shape[0])
+    return len(self.x_basis_ini)
+
+
 def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None, snr=None, post=False,
-                   one_sample=False, verb=None, return_components=False):
-    """ Method to compute ELBO terms.
+                   one_sample=False, verb=None, return_components=False, birth_score=True):
+    """Compute ELBO terms, optionally tempering the LDS KL for birth scoring.
+
+    ``birth_score=False`` always returns the unmodified ELBO. The optional
+    per-point score is an experiment, not an evidence lower bound.
     """
     if verb is None:
         verb = self.verbose
@@ -46,6 +59,11 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
     for output in range(self.n_outputs):
         elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(
             gpmodels[output], cluster_counts, one_sample=one_sample)
+    raw_lds = elbo_bas_LDS
+    adjusted_lds = birth_score and self.birth_lds_kl_per_point
+    if adjusted_lds:
+        dimension = _lds_point_dimension(self)
+        elbo_bas_LDS = raw_lds / dimension
 
     chain_entropy = torch.zeros_like(q_bas)
     if one_sample and not self.hard_assignments:
@@ -62,6 +80,7 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
             'latent': elbo_latent,
             'hdp': torch.as_tensor(elbo_bas) if self.hmm_switch else torch.zeros_like(q_bas),
             'lds': elbo_bas_LDS,
+            'lds_raw': raw_lds,
             'chain_entropy': chain_entropy,
         }
 
@@ -70,8 +89,11 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
     if verb:
         print("Sum resp_temp: " + str(torch.sum(resp, dim=0).int().numpy()) + " - Total samples: " + str(
             torch.sum(resp).int().numpy()))
-        print(
-            f"Q_em: {q_bas.item():.2f}, Q_lat: {elbo_latent.item():.2f}, Elbo_linear: {elbo_bas:.2f}, Elbo_LDS: {elbo_bas_LDS.item():.2f}")
+        lds_label = (f"BirthScore_LDS: {elbo_bas_LDS.item():.2f} "
+                     f"(raw {raw_lds.item():.2f} / {dimension})" if adjusted_lds else
+                     f"Elbo_LDS: {elbo_bas_LDS.item():.2f}")
+        print(f"Q_em: {q_bas.item():.2f}, Q_lat: {elbo_latent.item():.2f}, "
+              f"Elbo_linear: {elbo_bas:.2f}, {lds_label}")
     if self.hmm_switch:
         elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
     else:
