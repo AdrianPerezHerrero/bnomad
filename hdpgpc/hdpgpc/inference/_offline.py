@@ -273,7 +273,7 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
                 q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
                                                         self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
                                                         post=False)
-            score_name = "birth_score_change" if self.birth_lds_kl_per_point else "ELBO_reduction"
+            score_name = "birth_score_change" if self.birth_lds_kl_per_sqrt_point else "ELBO_reduction"
             _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
             if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post, rtol=1e-5) and i > 0) or i == 10:  # or reparam:
                 if not reparam:
@@ -425,7 +425,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux,
                                                     post=False)
-            score_name = "birth_score_change" if self.birth_lds_kl_per_point else "ELBO_reduction"
+            score_name = "birth_score_change" if self.birth_lds_kl_per_sqrt_point else "ELBO_reduction"
             _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
             if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                               rtol=1e-5) and i__ > 0) or i__ == 20:  # or reparam:
@@ -786,7 +786,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=post_)
-                    score_name = "birth_score_change" if self.birth_lds_kl_per_point else "ELBO_reduction"
+                    score_name = "birth_score_change" if self.birth_lds_kl_per_sqrt_point else "ELBO_reduction"
                     _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
                     if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                                       rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:

@@ -62,8 +62,8 @@ RECORDS = (
 CHANNELS = (0,)                 # Choose channel 0, 1, or both: (0, 1).
 SCALE_WAVEFORMS = False          # First-beat mean/std scaling; False keeps stored amplitudes.
 UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 grid.
-INFERENCE_MODE = "offline"      # "offline", "online", or "online_fast".
-HARD_ASSIGNMENTS = False         # False uses soft responsibility weights during inference.
+INFERENCE_MODE = "online_fast"      # "offline", "online", or "online_fast".
+HARD_ASSIGNMENTS = True         # False uses soft responsibility weights during inference.
 ENABLE_WARP = False              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
 VERBOSE = True                 # False: progress/summary; True: per-sample/iteration detail.
@@ -71,28 +71,28 @@ SHARE_GP_FOR_PROPOSALS = True   # Offline proposals/new clusters start from a fi
 SAVE_PLOTS = True               # Also save the final figures when True.
 PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
 PLOT_LDS = True                 # Plot fitted LDS matrices, spectra, and stability measures.
-PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_LDS_perpoint"
+PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_LDS_perpoint_online"
 PLOT_DPI = 160
 
 # Typed configuration values; these are experiment settings, not package defaults.
 # Lengthscale is measured in the selected grid units; noise settings depend on waveform scale.
 MAX_CLUSTERS = 30
-HDP_PRESET = "more"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
+HDP_PRESET = "balanced"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
 LDS_DEGREES_OF_FREEDOM = 5  # None uses the package default: 5 offline, 20 online.
-LDS_UPDATE = "conjugate_batch"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
-LDS_SCORING = "final"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
+LDS_UPDATE = "conjugate_sequential"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
+LDS_SCORING = "historical"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
 LDS_STEP_SIZE = 0.05            # Fraction of new LDS evidence in natural_gradient mode.
-BIRTH_LDS_KL_PER_POINT = True   # Experimental proposal score: LDS KL / waveform points.
+BIRTH_LDS_KL_PER_SQRT_POINT = True  # Experimental proposal score: LDS KL / sqrt(waveform points).
 INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 4.0)
-INITIAL_OBSERVATION_NOISE = 1.0e+2
+INITIAL_OBSERVATION_NOISE = 1.0e+1
 OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)
-INITIAL_PROCESS_NOISE = 1.0e+2
+INITIAL_PROCESS_NOISE = 1.0e+1
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)
 # Optional, independent identity-LDS pilot calibration before model.fit.
 # It uses random contiguous blocks from this record, so enable it only offline.
-CALIBRATE_LDS_NOISE_PRIORS = True
+CALIBRATE_LDS_NOISE_PRIORS = False
 LDS_CALIBRATION_MAX_BEATS = 20
 LDS_CALIBRATION_SEGMENT_LENGTH = 20
 
@@ -107,7 +107,7 @@ def _configuration(
     grid: np.ndarray, *, lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
     lds_update: str = LDS_UPDATE, lds_scoring: str = LDS_SCORING,
     lds_step_size: float = LDS_STEP_SIZE,
-    birth_lds_kl_per_point: bool = BIRTH_LDS_KL_PER_POINT,
+    birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
     initial_observation_noise: float = INITIAL_OBSERVATION_NOISE,
     initial_process_noise: float = INITIAL_PROCESS_NOISE,
 ) -> HDPGPCConfig:
@@ -147,7 +147,7 @@ def _configuration(
         inference=InferenceConfig(
             schedule=INFERENCE_MODE,
             hard_assignments=HARD_ASSIGNMENTS,
-            birth_lds_kl_per_point=birth_lds_kl_per_point,
+            birth_lds_kl_per_sqrt_point=birth_lds_kl_per_sqrt_point,
             warp=ENABLE_WARP,
             it_limit=OFFLINE_ITERATIONS if INFERENCE_MODE == "offline" else None,
             n_explore_steps=5,
@@ -293,7 +293,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                lds_update: str = LDS_UPDATE,
                lds_scoring: str = LDS_SCORING,
                lds_step_size: float = LDS_STEP_SIZE,
-               birth_lds_kl_per_point: bool = BIRTH_LDS_KL_PER_POINT,
+               birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
                plot_directory: Path = PLOT_DIRECTORY,
                scale_waveforms: bool = SCALE_WAVEFORMS,
                unit_grid: bool = UNIT_GRID,
@@ -337,7 +337,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         grid, lds_degrees_of_freedom=lds_degrees_of_freedom,
         lds_update=lds_update, lds_scoring=lds_scoring,
         lds_step_size=lds_step_size,
-        birth_lds_kl_per_point=birth_lds_kl_per_point,
+        birth_lds_kl_per_sqrt_point=birth_lds_kl_per_sqrt_point,
         initial_observation_noise=initial_observation_noise,
         initial_process_noise=initial_process_noise,
     )
@@ -356,8 +356,9 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     print(f"LDS update={lds_update}"
           + (f", step size={lds_step_size:g}" if lds_update == "natural_gradient" else ""))
     print(f"LDS scoring={lds_scoring}")
-    print(f"Experimental birth LDS KL / waveform points="
-          f"{birth_lds_kl_per_point} (divisor={values.shape[1] if birth_lds_kl_per_point else 1})")
+    print(f"Experimental birth LDS KL / sqrt(waveform points)="
+          f"{birth_lds_kl_per_sqrt_point} "
+          f"(divisor={np.sqrt(values.shape[1]) if birth_lds_kl_per_sqrt_point else 1:.6g})")
     _print_lds_priors(
         dimension=values.shape[1], model_type=MODEL_TYPE,
         observation_noise=initial_observation_noise,
@@ -522,9 +523,9 @@ def main() -> None:
         help="Fraction of new evidence used by the natural-gradient LDS update.",
     )
     parser.add_argument(
-        "--birth-lds-kl-per-point", action=argparse.BooleanOptionalAction,
-        default=BIRTH_LDS_KL_PER_POINT,
-        help="Experiment with LDS parameter KL divided by waveform points in proposal scores.",
+        "--birth-lds-kl-per-sqrt-point", action=argparse.BooleanOptionalAction,
+        default=BIRTH_LDS_KL_PER_SQRT_POINT,
+        help="Experiment with LDS parameter KL divided by sqrt(waveform points) in proposal scores.",
     )
     parser.add_argument(
         "--calibrate-lds-noise-priors", action=argparse.BooleanOptionalAction,
@@ -550,7 +551,7 @@ def main() -> None:
                         lds_degrees_of_freedom=args.lds_degrees_of_freedom,
                         lds_update=args.lds_update, lds_scoring=args.lds_scoring,
                         lds_step_size=args.lds_step_size,
-                        birth_lds_kl_per_point=args.birth_lds_kl_per_point,
+                        birth_lds_kl_per_sqrt_point=args.birth_lds_kl_per_sqrt_point,
                         plot_directory=args.plot_dir,
                         scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,
                         calibrate_lds_noise_priors=args.calibrate_lds_noise_priors,

@@ -35,7 +35,8 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
     """Compute ELBO terms, optionally tempering the LDS KL for birth scoring.
 
     ``birth_score=False`` always returns the unmodified ELBO. The optional
-    per-point score is an experiment, not an evidence lower bound.
+    score divided by the square root of the point count is an experiment,
+    not an evidence lower bound.
     """
     if verb is None:
         verb = self.verbose
@@ -60,10 +61,11 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
         elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(
             gpmodels[output], cluster_counts, one_sample=one_sample)
     raw_lds = elbo_bas_LDS
-    adjusted_lds = birth_score and self.birth_lds_kl_per_point
+    adjusted_lds = birth_score and self.birth_lds_kl_per_sqrt_point
     if adjusted_lds:
         dimension = _lds_point_dimension(self)
-        elbo_bas_LDS = raw_lds / dimension
+        divisor = np.sqrt(dimension)
+        elbo_bas_LDS = raw_lds / divisor
 
     chain_entropy = torch.zeros_like(q_bas)
     if one_sample and not self.hard_assignments:
@@ -90,7 +92,8 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
         print("Sum resp_temp: " + str(torch.sum(resp, dim=0).int().numpy()) + " - Total samples: " + str(
             torch.sum(resp).int().numpy()))
         lds_label = (f"BirthScore_LDS: {elbo_bas_LDS.item():.2f} "
-                     f"(raw {raw_lds.item():.2f} / {dimension})" if adjusted_lds else
+                     f"(raw {raw_lds.item():.2f} / sqrt({dimension}); divisor={divisor:.6g})"
+                     if adjusted_lds else
                      f"Elbo_LDS: {elbo_bas_LDS.item():.2f}")
         print(f"Q_em: {q_bas.item():.2f}, Q_lat: {elbo_latent.item():.2f}, "
               f"Elbo_linear: {elbo_bas:.2f}, {lds_label}")

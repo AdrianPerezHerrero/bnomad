@@ -88,7 +88,7 @@ class ModelState:
         self.M = M
         self.verbose = verbose
         self.hard_assignments = options['hard_assignments']
-        self.birth_lds_kl_per_point = options.get('birth_lds_kl_per_point', False)
+        self.birth_lds_kl_per_sqrt_point = options.get('birth_lds_kl_per_sqrt_point', False)
         self.actual_state = 0
         self.cuda = cuda
         self.device = 'cuda' if self.cuda else 'cpu'

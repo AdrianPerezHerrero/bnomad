@@ -41,14 +41,14 @@ inference. GP filtering and Bayesian LDS sufficient statistics then use each
 observation's fractional responsibility. Cluster creation and reported labels
 still use a MAP choice. Soft assignments require `bayesian_params=True` and
 can cost substantially more because an observation may update several GPs.
-`InferenceConfig.birth_lds_kl_per_point` defaults to `False`. When enabled,
+`InferenceConfig.birth_lds_kl_per_sqrt_point` defaults to `False`. When enabled,
 the local birth and absorb proposal score divides the summed LDS parameter
-KL by the configured waveform point count. The same divisor applies to the
-baseline and every proposal. This is an experimental score, not an ELBO;
+KL by the square root of the waveform point count. The same divisor applies to
+the baseline and every proposal. This is an experimental score, not an ELBO;
 the MNIW posterior updates remain unchanged. Offline iteration summaries
 still report the raw ELBO, while proposal logs report the adjusted LDS score
 and its unscaled value. The full-record example enables the experiment and
-provides `--no-birth-lds-kl-per-point` to restore ordinary proposal scoring.
+provides `--no-birth-lds-kl-per-sqrt-point` to restore ordinary proposal scoring.
 Offline emission fitting drops only fractional weights whose combined mass is
 at most `1e-8` of that cluster's responsibility total. A cluster with less
 than `1e-8` total mass is skipped during that fitting pass. This avoids

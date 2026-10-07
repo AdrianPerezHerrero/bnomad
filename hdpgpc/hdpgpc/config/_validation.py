@@ -20,7 +20,7 @@ def validate_inference(c):
     if c.schedule not in (None, 'online', 'online_fast', 'offline'):
         raise ValueError('Unknown inference schedule')
     for name in ('warp', 'classify', 'reestimate_initial_params',
-                 'hard_assignments', 'birth_lds_kl_per_point'):
+                 'hard_assignments', 'birth_lds_kl_per_sqrt_point'):
         boolean(getattr(c, name), name)
     for name in ('batch', 'force_model'):
         integer(getattr(c, name), name, optional=True)
