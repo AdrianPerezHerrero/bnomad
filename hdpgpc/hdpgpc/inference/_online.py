@@ -175,17 +175,27 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
         q_prev = torch.clone(q_aux)
         q_lat_prev = torch.clone(q_lat)
         # Compute first birth cost
+        birth_observation_update = self.bayesian_params and self.model_type_def == 'dynamic'
         for ld in range(self.n_outputs):
             prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
             prov_gp.reinit_GP(save_last=False)
             prov_gp.reinit_LDS(save_last=False)
             proposal_grid = _flow_grid(self, len(y_mod) - 1, self.x_train[-1])
-            point_score = self.estimate_new(t, prov_gp, proposal_grid,
-                                            _flow_observation(self, y_mod[-1][-1], ld), h=1.0) + liks[-1]
-            q_prev[[-1], -1, ld] = _flow_score(self, len(y_mod) - 1, ld, prov_gp,
-                                                y_mod[-1][-1], point_score)
+            if not birth_observation_update:
+                point_score = self.estimate_new(t, prov_gp, proposal_grid,
+                                                _flow_observation(self, y_mod[-1][-1], ld), h=1.0) + liks[-1]
+                q_prev[[-1], -1, ld] = _flow_score(self, len(y_mod) - 1, ld, prov_gp,
+                                                    y_mod[-1][-1], point_score)
             _include_with_alignment(self, prov_gp, t, len(y_mod) - 1,
                                     self.x_train[-1], y_mod[-1][-1], 1.0, ld)
+            if birth_observation_update:
+                prov_gp.bayesian_new_params(
+                    1.0, model_type=self.model_type_def, first_observation=True)
+                point_score = prov_gp.log_sq_error(
+                    proposal_grid, _flow_observation(self, y_mod[-1][-1], ld),
+                    i=-1, first=True) + liks[-1]
+                q_prev[-1, -1, ld] = _flow_score(
+                    self, len(y_mod) - 1, ld, prov_gp, y_mod[-1][-1], point_score)
             self.gpmodels[ld].append(prov_gp)
             # self.M = M + 1
             q_lat_prev[:, -1, ld] = prov_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)), h_ini=1.0)
@@ -240,7 +250,7 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
                     self.gpmodels[ld][m] = post_gp
                     post_gp.backwards_pair(1.0)
                     if self.hard_assignments:
-                        post_gp.bayesian_new_params(1.0)
+                        post_gp.bayesian_new_params(1.0, first_observation=True)
                     q_lat_post[:, m, ld] = post_gp.compute_q_lat_all(torch.from_numpy(np.array(self.x_train)),
                                                                      h_ini=1.0)
                     # q_post[[-1], m, ld] = self.estimate_new(t, post_gp, self.x_train[-1], y_mod[m][-1], h=1.0)
@@ -418,17 +428,21 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
             if resp_mod[m] > 0.9 or (not self.hard_assignments and m == model):
                 self.y_train = torch.concatenate([self.y_train, torch.atleast_2d(y_mod[reorder[m]][-1]).T[:, :, np.newaxis]])
             if self.bayesian_params:
-                self.gpmodels[ld][m].bayesian_new_params(resp_mod[m], model_type=self.model_type[m])
+                self.gpmodels[ld][m].bayesian_new_params(
+                    resp_mod[m], model_type=self.model_type[m], first_observation=True)
             else:
                 self.gpmodels[ld][m].new_params_weighted(resp_mod[m], batch=minibatch, min_samples=self.min_samples,
                                                          max_samples=self.max_samples,
                                                          div_samples=self.div_samples, verbose=False,
                                                          model_type=self.model_type[m], check_var=self.check_var)
-            if not self.hard_assignments and resp_mod[m] > 0:
+            first_bayesian_observation = (self.bayesian_params and self.model_type[m] == 'dynamic' and
+                                          self.gpmodels[ld][m].N == 1)
+            if resp_mod[m] > 0 and (not self.hard_assignments or first_bayesian_observation):
                 proposal_grid = _flow_grid(self, reorder[m], self.x_train[-1])
                 observation = y_mod[reorder[m]][-1]
                 point_score = self.gpmodels[ld][m].log_sq_error(
-                    proposal_grid, _flow_observation(self, observation, ld), i=-1) + liks[reorder[m]]
+                    proposal_grid, _flow_observation(self, observation, ld),
+                    i=-1, first=first_bayesian_observation) + liks[reorder[m]]
                 q_chos[-1, m, ld] = _flow_score(self, reorder[m], ld,
                                                 self.gpmodels[ld][m], observation, point_score)
                 if self.model_type[m] == 'dynamic':
@@ -699,6 +713,7 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         q_prev = torch.clone(q_aux)
         q_lat_prev = torch.clone(q_lat)
         prov_gps = []
+        birth_observation_update = self.bayesian_params and self.model_type_def == 'dynamic'
 
         for ld in range(self.n_outputs):
             prov_gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_template])
@@ -708,12 +723,21 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
             # Keep original behavior: birth uses y_mod[-1][-1] :contentReference[oaicite:6]{index=6}
             y_birth = y_mod[-1][-1]
             proposal_grid = _flow_grid(self, len(y_mod) - 1, self.x_train[-1])
-            point_score = self.estimate_new(t, prov_gp, proposal_grid,
-                                            _flow_observation(self, y_birth, ld), h=1.0)
-            q_prev[-1, -1, ld] = _flow_score(self, len(y_mod) - 1, ld,
-                                             prov_gp, y_birth, point_score)
+            if not birth_observation_update:
+                point_score = self.estimate_new(t, prov_gp, proposal_grid,
+                                                _flow_observation(self, y_birth, ld), h=1.0)
+                q_prev[-1, -1, ld] = _flow_score(self, len(y_mod) - 1, ld,
+                                                 prov_gp, y_birth, point_score)
             _include_with_alignment(self, prov_gp, t, len(y_mod) - 1,
                                     self.x_train[-1], y_birth, 1.0, ld)
+            if birth_observation_update:
+                prov_gp.bayesian_new_params(
+                    1.0, model_type=self.model_type_def, first_observation=True)
+                point_score = prov_gp.log_sq_error(
+                    proposal_grid, _flow_observation(self, y_birth, ld),
+                    i=-1, first=True)
+                q_prev[-1, -1, ld] = _flow_score(
+                    self, len(y_mod) - 1, ld, prov_gp, y_birth, point_score)
             # The newborn contributes its initial-state term only at t.
             if self.model_type_def == 'dynamic':
                 q_lat_prev[:, -1, ld] = self._update_q_lat_tail(
@@ -780,7 +804,8 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                                             self.x_train[-1], y_mod[m_cand][-1], 1.0, ld)
                     post_gp.backwards_pair(1.0)  # tail-only smoothing :contentReference[oaicite:10]{index=10}
                     if self.hard_assignments and self.bayesian_params:
-                        post_gp.bayesian_new_params(1.0, model_type=self.model_type[m_cand])
+                        post_gp.bayesian_new_params(
+                            1.0, model_type=self.model_type[m_cand], first_observation=True)
                     elif self.hard_assignments:
                         post_gp.new_params_weighted(
                             1.0, batch=None, min_samples=self.min_samples, max_samples=self.max_samples,
@@ -913,18 +938,22 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                     [self.y_train, torch.atleast_2d(y_mod[reorder[m]][-1]).T[:, :, np.newaxis]])
 
             if self.bayesian_params:
-                self.gpmodels[ld][m].bayesian_new_params(h, model_type=self.model_type[m])
+                self.gpmodels[ld][m].bayesian_new_params(
+                    h, model_type=self.model_type[m], first_observation=True)
             else:
                 self.gpmodels[ld][m].new_params_weighted(h, batch=minibatch, min_samples=self.min_samples,
                                                          max_samples=self.max_samples,
                                                          div_samples=self.div_samples,
                                                          verbose=False, model_type=self.model_type[m],
                                                          check_var=self.check_var)
-            if not self.hard_assignments and h > 0:
+            first_bayesian_observation = (self.bayesian_params and self.model_type[m] == 'dynamic' and
+                                          self.gpmodels[ld][m].N == 1)
+            if h > 0 and (not self.hard_assignments or first_bayesian_observation):
                 proposal_grid = _flow_grid(self, reorder[m], self.x_train[-1])
                 observation = y_mod[reorder[m]][-1] if m < len(y_mod) else y
                 point_score = self.gpmodels[ld][m].log_sq_error(
-                    proposal_grid, _flow_observation(self, observation, ld), i=-1)
+                    proposal_grid, _flow_observation(self, observation, ld),
+                    i=-1, first=first_bayesian_observation)
                 q_chos[-1, m, ld] = _flow_score(self, reorder[m], ld,
                                                 self.gpmodels[ld][m], observation, point_score)
                 if self.model_type[m] == 'dynamic':

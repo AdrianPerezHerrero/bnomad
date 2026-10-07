@@ -56,20 +56,20 @@ class HDPVariational:
         # HDP Hyperparams
         if hdp_hyp == 'less':
             # Less clusters scheme
-            self.gamma = 1e+02
+            self.gamma = 1e+03
             self.transAlpha = 1e+03
             self.startAlpha = 1e+00
             self.kappa = 0.0
         elif hdp_hyp == 'balanced':
             #Balanced scheme
-            self.gamma = 1e+01
-            self.transAlpha = 1e+03
+            self.gamma = 1e+03
+            self.transAlpha = 1e+02
             self.startAlpha = 1e+00
             self.kappa = 0.0
         elif hdp_hyp == 'more':
             #More clusters scheme
-            self.gamma = 1e+00
-            self.transAlpha = 1e-01
+            self.gamma = 1e+01
+            self.transAlpha = 1e+02
             self.startAlpha = 1e+00
             self.kappa = 0.0
 

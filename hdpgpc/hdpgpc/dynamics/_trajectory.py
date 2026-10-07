@@ -374,20 +374,25 @@ def bayesian_batch_params(self, resp, grid_samples=None):
     self.y_var[-1] = torch.atleast_2d(torch.sqrt(torch.diag(Sigma_new).clamp_min(0))).T
 
 
-def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False, snr=1.0):
+def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False,
+                        snr=1.0, first_observation=False):
     """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
         Can use full data batch n-step estimation or 1-step estimation.
+        Online first_observation updates C/Sigma from one beat without an A/Gamma transition.
     """
     if len(torch.nonzero(self.Gamma[-1]))< 1:
         model_type = 'static'
+    first_observation_update = (first_observation and model_type == 'dynamic'
+                                and self.N == 1 and not full_data)
     if h > 0.0:
         if snr > 0.5:
-            if (full_data and 1 < self.N) or 1 < self.N < self.estimation_limit or force:
+            if ((full_data and 1 < self.N) or 1 < self.N < self.estimation_limit
+                    or force or first_observation_update):
                 failure_stage = 'internal predictive covariance'
                 try:
                     # if not full_data:
                     #     self.backwards()
-                    if model_type == 'dynamic':
+                    if model_type == 'dynamic' and not first_observation_update:
                         if not full_data:
                             A, Gamma = self.A[-1], self.Gamma[-1]
                             samples_A = self.f_star_sm[-1]
@@ -439,6 +444,10 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                             self, self.internal_params, N_k, samples_A, samples_A_,
                             cov, cov_, cov_cross, annealing=self.annealing,
                         )
+                    elif model_type == 'dynamic':
+                        # One beat has an observation but no state transition.
+                        N_k = h
+                        new_int_dist = self.internal_params
                     elif model_type == 'static':
                         N_k = h
                         new_int_dist = self.internal_params
@@ -508,8 +517,9 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                 new_obs_dist = self.observation_params
             self.internal_params = new_int_dist
             self.observation_params = new_obs_dist
-            if 1 < self.N:
-                Gamma_ = _lds_scale(self, new_int_dist, final=full_data)
+            if 1 < self.N or first_observation_update:
+                Gamma_ = (self.Gamma[-1] if first_observation_update else
+                          _lds_scale(self, new_int_dist, final=full_data))
                 Sigma_ = _lds_scale(self, new_obs_dist, final=full_data)
             else:
                 Gamma_ = self.Gamma[-1]
@@ -519,11 +529,12 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                     factor_S = self.Sigma[0] / (self.N ** 2)
                     factor_G = self.Gamma[0]
                 else:
-                    factor_G = self.Gamma[0] / (self.N ** 2)
+                    factor_G = (torch.zeros_like(self.Gamma[0]) if first_observation_update
+                                else self.Gamma[0] / (self.N ** 2))
                     factor_S = self.Sigma[0] / (self.N ** 2)
                 Gamma_ = Gamma_ + factor_G
                 Sigma_ = Sigma_ + factor_S
-            if self.N < self.estimation_limit or full_data:
+            if self.N < self.estimation_limit or full_data or first_observation_update:
                 self.A.append(new_int_dist.get_mean())
                 self.Gamma.append(Gamma_)
                 if model_type == 'static':

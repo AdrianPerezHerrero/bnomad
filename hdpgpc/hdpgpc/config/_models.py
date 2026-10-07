@@ -101,6 +101,7 @@ class InferenceConfig:
     minibatch: int = 0
     classify: bool = False
     it_limit: int | None = None
+    # Existing flag name: online uses /points; offline retains /sqrt(points).
     birth_lds_kl_per_sqrt_point: bool = False
 
     def run(self, model, x, y):

@@ -83,12 +83,12 @@ LDS_DEGREES_OF_FREEDOM = 5  # None uses the package default: 5 offline, 20 onlin
 LDS_UPDATE = "conjugate_sequential"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
 LDS_SCORING = "historical"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
 LDS_STEP_SIZE = 0.05            # Fraction of new LDS evidence in natural_gradient mode.
-BIRTH_LDS_KL_PER_SQRT_POINT = True  # Experimental proposal score: LDS KL / sqrt(waveform points).
+BIRTH_LDS_KL_PER_SQRT_POINT = True  # Existing flag: LDS KL / points online, / sqrt(points) offline.
 INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 4.0)
-INITIAL_OBSERVATION_NOISE = 1.0e+1
+INITIAL_OBSERVATION_NOISE = 8.0e+1
 OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)
-INITIAL_PROCESS_NOISE = 1.0e+1
+INITIAL_PROCESS_NOISE = 10.0e+1
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)
 # Optional, independent identity-LDS pilot calibration before model.fit.
 # It uses random contiguous blocks from this record, so enable it only offline.
@@ -179,7 +179,7 @@ def _load_record(record: str) -> tuple[np.ndarray, np.ndarray]:
         raise ValueError(f"Expected {signal_path.name} shaped (beats, points, channels), got {signal.shape}")
     if min(CHANNELS) < 0 or max(CHANNELS) >= signal.shape[-1]:
         raise ValueError(f"Selected channels {CHANNELS} are invalid for {signal_path.name} {signal.shape}")
-    return signal, labels
+    return signal[:200], labels[:200]
 
 
 def _prepare_record(
@@ -356,9 +356,13 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     print(f"LDS update={lds_update}"
           + (f", step size={lds_step_size:g}" if lds_update == "natural_gradient" else ""))
     print(f"LDS scoring={lds_scoring}")
-    print(f"Experimental birth LDS KL / sqrt(waveform points)="
+    birth_lds_divisor = (values.shape[1] if INFERENCE_MODE in ("online", "online_fast")
+                         else np.sqrt(values.shape[1])) if birth_lds_kl_per_sqrt_point else 1
+    birth_lds_scale = ("waveform points" if INFERENCE_MODE in ("online", "online_fast")
+                       else "sqrt(waveform points)")
+    print(f"Experimental birth LDS KL / {birth_lds_scale}="
           f"{birth_lds_kl_per_sqrt_point} "
-          f"(divisor={np.sqrt(values.shape[1]) if birth_lds_kl_per_sqrt_point else 1:.6g})")
+          f"(divisor={birth_lds_divisor:.6g})")
     _print_lds_priors(
         dimension=values.shape[1], model_type=MODEL_TYPE,
         observation_noise=initial_observation_noise,
@@ -525,7 +529,7 @@ def main() -> None:
     parser.add_argument(
         "--birth-lds-kl-per-sqrt-point", action=argparse.BooleanOptionalAction,
         default=BIRTH_LDS_KL_PER_SQRT_POINT,
-        help="Experiment with LDS parameter KL divided by sqrt(waveform points) in proposal scores.",
+        help="Scale proposal LDS KL by waveform points online or sqrt(points) offline.",
     )
     parser.add_argument(
         "--calibrate-lds-noise-priors", action=argparse.BooleanOptionalAction,

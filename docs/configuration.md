@@ -43,8 +43,10 @@ still use a MAP choice. Soft assignments require `bayesian_params=True` and
 can cost substantially more because an observation may update several GPs.
 `InferenceConfig.birth_lds_kl_per_sqrt_point` defaults to `False`. When enabled,
 the local birth and absorb proposal score divides the summed LDS parameter
-KL by the square root of the waveform point count. The same divisor applies to
-the baseline and every proposal. This is an experimental score, not an ELBO;
+KL by the waveform point count in `online` and `online_fast`, or by its square
+root in `offline`. The existing field name is retained for compatibility. The
+same schedule-specific divisor applies to the baseline and every proposal.
+This is an experimental score, not an ELBO;
 the MNIW posterior updates remain unchanged. Offline iteration summaries
 still report the raw ELBO, while proposal logs report the adjusted LDS score
 and its unscaled value. The full-record example enables the experiment and

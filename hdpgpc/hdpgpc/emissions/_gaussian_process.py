@@ -1029,13 +1029,16 @@ class GaussianProcessEmission:
     def reduce_noise_matrix(self, x_basis=None, x_train=None):
         return self.gp.projection_matrix(x_basis, x_train)
 
-    def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False, snr=1.0):
+    def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False,
+                            snr=1.0, first_observation=False):
         """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
             Can use full data batch n-step estimation or 1-step estimation.
         """
         if self.lds_update == 'conjugate_batch':
             raise ValueError('conjugate_batch updates require an offline full pass')
-        return _trajectory.bayesian_new_params(self, h, model_type, full_data, q, force, snr)
+        return _trajectory.bayesian_new_params(
+            self, h, model_type, full_data, q, force, snr,
+            first_observation=first_observation)
 
 
     #Methods to perform the conversion from NumPy to torch and from Cuda to cpu. Still have to solve this.
