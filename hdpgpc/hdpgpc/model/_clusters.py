@@ -71,6 +71,7 @@ def create_gp_default(self, i=None, fitted_kernel=None):
         kernel = kernel.clone_with_theta(kernel.theta)
         gp_ = gp.GaussianProcessEmission(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params,
                            cuda=self.cuda,
+                           fit_gp=self.fit_gp,
                            inducing_points=inducing_points, estimation_limit=estimation_limit,
                            free_deg_MNIV=free_deg_MNIV, verbose=self.verbose,
                            lds_update=getattr(self, 'lds_update', 'conjugate_sequential'),
@@ -113,7 +114,8 @@ def create_gp_default(self, i=None, fitted_kernel=None):
         kernel = fitted_kernel if fitted_kernel is not None else kernel
         kernel = kernel.clone_with_theta(kernel.theta)
         gp_ = gp.GaussianProcessEmission(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params,
-                           cuda=self.cuda, inducing_points=inducing_points, estimation_limit=estimation_limit,
+                           cuda=self.cuda, fit_gp=self.fit_gp,
+                           inducing_points=inducing_points, estimation_limit=estimation_limit,
                            free_deg_MNIV=free_deg_MNIV, verbose=self.verbose,
                            lds_update=getattr(self, 'lds_update', 'conjugate_sequential'),
                            lds_scoring=getattr(self, 'lds_scoring', 'final'),
@@ -313,7 +315,8 @@ def selected_gpmodels(self):
 def gpmodel_deepcopy(self, gpmodel):
     gp_ = gp.GaussianProcessEmission(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone(),
                        annealing=gpmodel.annealing, bayesian=gpmodel.bayesian,
-                       cuda=gpmodel.cuda, inducing_points=gpmodel.inducing_points,
+                       cuda=gpmodel.cuda, fit_gp=gpmodel.fit_gp,
+                       inducing_points=gpmodel.inducing_points,
                        estimation_limit=gpmodel.estimation_limit,
                        free_deg_MNIV=gpmodel.free_deg_MNIV, verbose=self.verbose,
                        lds_update=getattr(gpmodel, 'lds_update', 'conjugate_sequential'),

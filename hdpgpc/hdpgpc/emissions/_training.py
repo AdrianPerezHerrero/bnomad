@@ -12,6 +12,7 @@ from operator import itemgetter
 from scipy.linalg import cholesky, cho_solve
 import scipy.optimize
 from sklearn.utils import check_random_state
+from sklearn.gaussian_process.kernels import ConstantKernel, Product, RBF, Sum, WhiteKernel
 import warnings
 import torch
 import gpytorch
@@ -46,32 +47,48 @@ def fit_torch(self, x, y, alpha_ini, gamma_ini, reduced_points=False, verbose=Fa
         x_basis = self.x_basis.T[0].detach().clone()
         if self.cuda and torch.cuda.is_available():
             x_basis = x_basis.cuda()
+        if not (isinstance(self.kernel, Sum)
+                and isinstance(self.kernel.k1, Product)
+                and isinstance(self.kernel.k1.k1, ConstantKernel)
+                and isinstance(self.kernel.k1.k2, RBF)
+                and isinstance(self.kernel.k2, WhiteKernel)):
+            raise ValueError('GP fitting supports ConstantKernel * RBF + WhiteKernel; '
+                             'use fit_gp=False to keep another supplied sklearn kernel fixed')
         alpha_ini_bounds = self.kernel.k2.noise_level_bounds
-
-        if hasattr(self.kernel.k1, 'k2'):
-            lengthscale_bounds = self.kernel.k1.k2.length_scale_bounds
-        else:
-            lengthscale_bounds = self.kernel.k1.length_scale_bounds
-        if hasattr(self.kernel.k1, 'k1'):
-            gamma_ini_bounds = self.kernel.k1.k1.constant_value_bounds
-        else:
-            gamma_ini_bounds = (1e-2, 1e+3)
-        outputscale_constraint = gpytorch.constraints.GreaterThan(gamma_ini_bounds[0])
+        lengthscale_bounds = self.kernel.k1.k2.length_scale_bounds
+        outputscale_bounds = self.kernel.k1.k1.constant_value_bounds
+        for name, bounds in (('white noise', alpha_ini_bounds),
+                             ('lengthscale', lengthscale_bounds),
+                             ('outputscale', outputscale_bounds)):
+            if isinstance(bounds, str) or bounds[0] >= bounds[1]:
+                raise ValueError(f'GP fitting requires a nonzero {name} bound interval; '
+                                 'use fit_gp=False for fixed kernel parameters')
+        lik = gpytorch.likelihoods.GaussianLikelihood(
+            noise_constraint=gpytorch.constraints.Interval(*alpha_ini_bounds))
         if reduced_points or not torch.equal(x_basis, x_):
-            if not reduced_points:
-                lik = gpytorch.likelihoods.GaussianLikelihood(
-                    noise_constraint=gpytorch.constraints.GreaterThan(alpha_ini_bounds[0]))
-            else:
-                lik = gpytorch.likelihoods.GaussianLikelihood(
-                    noise_constraint=gpytorch.constraints.Interval(alpha_ini_bounds[0], alpha_ini_bounds[1]))
             gp = ProjectedGPModel(x_, y_, lik, x_basis)
-            if not reduced_points:
-                gp.covar_module.base_kernel.base_kernel.raw_lengthscale_constraint =\
-                    gpytorch.constraints.Interval(lengthscale_bounds[0], lengthscale_bounds[1])
+            scale_kernel = gp.covar_module.base_kernel
         else:
-            lik = gpytorch.likelihoods.GaussianLikelihood(
-                noise_constraint=gpytorch.constraints.Interval(alpha_ini_bounds[0], alpha_ini_bounds[1]))
             gp = ExactGPModel(x_, y_, lik)
+            scale_kernel = gp.covar_module
+
+        scale_kernel.base_kernel.register_constraint(
+            'raw_lengthscale', gpytorch.constraints.Interval(*lengthscale_bounds))
+        scale_kernel.register_constraint(
+            'raw_outputscale', gpytorch.constraints.Interval(*outputscale_bounds))
+
+        def inside(value, bounds):
+            lower, upper = map(float, bounds)
+            width = upper - lower
+            lower_margin = min(width / 4, max(abs(lower) * 1e-6, np.finfo(float).eps))
+            upper_margin = min(width / 4, max(abs(upper) * 1e-6, np.finfo(float).eps))
+            return float(np.clip(value, lower + lower_margin, upper - upper_margin))
+
+        scale_kernel.base_kernel.lengthscale = inside(
+            self.kernel.k1.k2.length_scale, lengthscale_bounds)
+        scale_kernel.outputscale = inside(
+            self.kernel.k1.k1.constant_value, outputscale_bounds)
+        lik.noise = inside(self.kernel.k2.noise_level, alpha_ini_bounds)
 
         lik.train()
         gp.train()
@@ -126,8 +143,8 @@ def fit_torch(self, x, y, alpha_ini, gamma_ini, reduced_points=False, verbose=Fa
             if hasattr(self.kernel.k1, "k1"):
                 self.kernel.k1.k1.theta = np.log(np.array([gp.covar_module.outputscale.item()]))
             if hasattr(self.kernel.k1, "k2"):
-                #self.kernel.k1.k2.theta = np.log(np.array([gp.covar_module.base_kernel.lengthscale.item()]))
-                self.kernel.k1.k2.theta = np.log(np.array([1.2]))
+                self.kernel.k1.k2.theta = np.log(
+                    np.array([gp.covar_module.base_kernel.lengthscale.item()]))
             else:
                 self.kernel.k1.theta = np.log(np.array([gp.covar_module.base_kernel.lengthscale.item()]))
             self.kernel.k2.theta = np.log(np.array([lik.noise.item()]))

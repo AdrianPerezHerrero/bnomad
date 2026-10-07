@@ -16,7 +16,7 @@ model = HDPGPC(restored).fit(waveforms())
 | Section | Type | Controls |
 | --- | --- | --- |
 | `hdp` | `HDPConfig` | `M`, concentration preset, HMM dependence, maximum models |
-| `emission` | `GPEmissionConfig` | kernels, lengthscale/output/noise initialization and bounds, inducing points |
+| `emission` | `GPEmissionConfig` | kernels, first-beat fitting policy, lengthscale/output/noise initialization and bounds, inducing points |
 | `dynamics` | `DynamicsConfig` | static/dynamic mode, process noise, ML/Bayesian updates, annealing, estimation limits |
 | `alignment` | `AlignmentConfig` | `gp`/`dtw_gp`/`gp_flow`/`none`, basis, noise/bounds, recursion, warp mode |
 | `inference` | `InferenceConfig` | online/fast/offline schedule and separate call controls |
@@ -29,6 +29,16 @@ Bare `HDPGPCConfig()` is an incomplete serializable recipe. Construction require
 a basis, initial observation/process noise and lengthscale initialization/bounds
 for automatic kernels. Static construction also still requires process noise;
 this preserved assumption is not silently corrected.
+
+`GPEmissionConfig.fit_gp=True` fits a GP kernel on the first included beat.
+For this path, supply a `ConstantKernel * RBF + WhiteKernel` kernel; its
+outputscale, lengthscale, and white-noise bounds are enforced by the GPyTorch
+optimizer and its values initialize that optimizer. Set `fit_gp=False` and
+provide `kernels=[your_sklearn_kernel]` to use the supplied covariance kernel
+without GP hyperparameter fitting, including for new clusters. The LDS
+observation noise `ini_sigma` and the GP kernel's white noise are separate
+settings. The full-record script exposes the GP white-noise value and bounds
+independently of the LDS observation-noise prior.
 
 Alignment policy defaults to `gp`, replacing the serialized token `legacy` with
 the same scientific choice. Change that token explicitly in older recipes.

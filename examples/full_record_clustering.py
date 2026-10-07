@@ -7,6 +7,7 @@ Run from the repository root after installing the package::
     python examples/full_record_clustering.py --records 100 --save-plots
     python examples/full_record_clustering.py --records 100 --no-scale-waveforms --unit-grid
     python examples/full_record_clustering.py --records 102 --calibrate-lds-noise-priors
+    python examples/full_record_clustering.py --records 100 --no-fit-gp
 
 Edit the experiment controls below to choose records, channels, inference schedule,
 alignment policy, warping, and model hyperparameters. If there is one extra trailing annotation,
@@ -26,6 +27,7 @@ import traceback
 
 import matplotlib.pyplot as plt
 import numpy as np
+from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
 from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 
 from tutorial_utils import plot_record_results
@@ -67,7 +69,7 @@ HARD_ASSIGNMENTS = True         # False uses soft responsibility weights during 
 ENABLE_WARP = False              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
 VERBOSE = True                 # False: progress/summary; True: per-sample/iteration detail.
-SHARE_GP_FOR_PROPOSALS = True   # Offline proposals/new clusters start from a fitted GP copy.
+SHARE_GP_FOR_PROPOSALS = True   # Proposals/new clusters may reuse the fitted or fixed GP kernel.
 SAVE_PLOTS = True               # Also save the final figures when True.
 PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
 PLOT_LDS = True                 # Plot fitted LDS matrices, spectra, and stability measures.
@@ -86,8 +88,14 @@ LDS_STEP_SIZE = 0.05            # Fraction of new LDS evidence in natural_gradie
 BIRTH_LDS_KL_PER_SQRT_POINT = True  # Existing flag: LDS KL / points online, / sqrt(points) offline.
 INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 4.0)
+FIT_GP = True                  # False keeps the supplied GP kernel fixed for every cluster.
+GP_OUTPUTSCALE_INITIAL = 1.0
+GP_OUTPUTSCALE_BOUNDS = (0.001, 1.0e+4)
+GP_WHITE_NOISE_INITIAL = 0.5
+GP_WHITE_NOISE_BOUNDS = (0.001, 1.0e+8)  # Lower and upper bounds for first-beat GP fitting.
+CUSTOM_GP_KERNEL = None         # Set to a sklearn kernel; with FIT_GP=False it is never optimized.
 INITIAL_OBSERVATION_NOISE = 8.0e+1
-OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)
+OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)  # LDS Sigma, separate from GP white noise.
 INITIAL_PROCESS_NOISE = 10.0e+1
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)
 # Optional, independent identity-LDS pilot calibration before model.fit.
@@ -107,6 +115,7 @@ def _configuration(
     grid: np.ndarray, *, lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
     lds_update: str = LDS_UPDATE, lds_scoring: str = LDS_SCORING,
     lds_step_size: float = LDS_STEP_SIZE,
+    fit_gp: bool = FIT_GP,
     birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
     initial_observation_noise: float = INITIAL_OBSERVATION_NOISE,
     initial_process_noise: float = INITIAL_PROCESS_NOISE,
@@ -117,16 +126,23 @@ def _configuration(
     if len(CHANNELS) > 1 and INFERENCE_MODE in ("online", "online_fast"):
         raise ValueError("The characterized online multi-output path is unsupported; select one channel.")
 
+    gp_kernel = (CUSTOM_GP_KERNEL if CUSTOM_GP_KERNEL is not None else
+                 ConstantKernel(GP_OUTPUTSCALE_INITIAL, GP_OUTPUTSCALE_BOUNDS)
+                 * RBF(INITIAL_LENGTHSCALE, LENGTHSCALE_BOUNDS)
+                 + WhiteKernel(GP_WHITE_NOISE_INITIAL, GP_WHITE_NOISE_BOUNDS))
+
     return HDPGPCConfig(
         x_basis=grid,
         verbose=VERBOSE,
         hdp=HDPConfig(hdp_hyp=HDP_PRESET, max_models=MAX_CLUSTERS),
         emission=GPEmissionConfig(
+            kernels=[gp_kernel.clone_with_theta(gp_kernel.theta)],
+            fit_gp=fit_gp,
             ini_lengthscale=INITIAL_LENGTHSCALE,
             bound_lengthscale=LENGTHSCALE_BOUNDS,
             ini_sigma=initial_observation_noise,
             bound_sigma=OBSERVATION_NOISE_BOUNDS,
-            ini_outputscale=1.0,
+            ini_outputscale=GP_OUTPUTSCALE_INITIAL,
         ),
         dynamics=DynamicsConfig(
             model_type=MODEL_TYPE,
@@ -289,6 +305,7 @@ def _print_lds_priors(*, dimension: int, model_type: str,
 def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                plot_warps: bool = PLOT_WARPS,
                plot_lds: bool = PLOT_LDS,
+               fit_gp: bool = FIT_GP,
                lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
                lds_update: str = LDS_UPDATE,
                lds_scoring: str = LDS_SCORING,
@@ -337,6 +354,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         grid, lds_degrees_of_freedom=lds_degrees_of_freedom,
         lds_update=lds_update, lds_scoring=lds_scoring,
         lds_step_size=lds_step_size,
+        fit_gp=fit_gp,
         birth_lds_kl_per_sqrt_point=birth_lds_kl_per_sqrt_point,
         initial_observation_noise=initial_observation_noise,
         initial_process_noise=initial_process_noise,
@@ -349,6 +367,11 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     print(f"Schedule={INFERENCE_MODE}, hard assignments={HARD_ASSIGNMENTS}, warp={ENABLE_WARP}, "
           f"alignment={ALIGNMENT_POLICY if ENABLE_WARP else 'none'}, verbose={VERBOSE}")
     print(f"Model={MODEL_TYPE}, HDP preset={HDP_PRESET}, cluster cap={MAX_CLUSTERS}")
+    print(f"GP fitting={'on' if config.emission.fit_gp else 'off'}, "
+          f"kernel={config.emission.kernels[0]}")
+    gp_white_bounds = config.emission.kernels[0].get_params().get("k2__noise_level_bounds")
+    if gp_white_bounds is not None:
+        print(f"GP white-noise bounds={gp_white_bounds}")
     effective_dof = (lds_degrees_of_freedom if lds_degrees_of_freedom is not None
                      else (5 if INFERENCE_MODE == "offline" else 20))
     print(f"LDS MNIW degrees of freedom={effective_dof}"
@@ -511,6 +534,10 @@ def main() -> None:
         help="Include fitted LDS matrix and stability diagnostics (default: PLOT_LDS).",
     )
     parser.add_argument(
+        "--fit-gp", action=argparse.BooleanOptionalAction, default=FIT_GP,
+        help="Fit the supplied GP kernel on the first beat; --no-fit-gp keeps it fixed.",
+    )
+    parser.add_argument(
         "--lds-degrees-of-freedom", type=int, default=LDS_DEGREES_OF_FREEDOM,
         help="MNIW prior degrees of freedom for LDS parameters; omit for the schedule default.",
     )
@@ -551,7 +578,7 @@ def main() -> None:
                 try:
                     run_record(
                         record, save_plots=args.save_plots, plot_warps=args.plot_warps,
-                        plot_lds=args.plot_lds,
+                        plot_lds=args.plot_lds, fit_gp=args.fit_gp,
                         lds_degrees_of_freedom=args.lds_degrees_of_freedom,
                         lds_update=args.lds_update, lds_scoring=args.lds_scoring,
                         lds_step_size=args.lds_step_size,

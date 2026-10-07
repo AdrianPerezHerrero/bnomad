@@ -61,7 +61,7 @@ def validate(c, *, for_build=False):
         raise ValueError('hdp_hyp must be less, balanced or more')
     integer(o.n_outputs, 'n_outputs', 1)
     for obj, names in ((c, ('verbose',)), (h, ('hmm_switch',)),
-                       (e, ('check_var',)), (d, ('bayesian_params',)),
+                       (e, ('check_var', 'fit_gp')), (d, ('bayesian_params',)),
                        (o, ('share_gp', 'use_snr', 'reduce_outputs')), (n, ('cuda',))):
         for name in names:
             boolean(getattr(obj, name), name)

@@ -33,7 +33,7 @@ class GaussianProcessEmission:
     def __init__(self, kernel, x_basis, annealing=True, bayesian=False, cuda=False, inducing_points=False,
                  estimation_limit=None, free_deg_MNIV=5, verbose=True,
                  lds_update='conjugate_sequential', lds_step_size=0.2,
-                 lds_scoring='final'):
+                 lds_scoring='final', fit_gp=True):
         self.gp = GaussianProcessPrior(kernel, x_basis, cuda=cuda, verbose=verbose)
         self.x_basis = self.cond_to_torch(x_basis)
         self.x_train = []
@@ -62,7 +62,9 @@ class GaussianProcessEmission:
         if estimation_limit is None:
             estimation_limit = np.inf
         self.estimation_limit = estimation_limit
-        self.fitted = False
+        self.fit_gp = fit_gp
+        self.fitted = not fit_gp
+        self.gp.fitted = not fit_gp
         self.A_def, self.Gamma_def, self.C_def, self.Sigma_def = None, None, None, None
         self.ini_cov_def = None
         self.ini_kernel_theta = self.gp.kernel.theta
@@ -237,6 +239,8 @@ class GaussianProcessEmission:
         self.Gamma_def = self.cond_to_cuda(self.cond_to_torch(ini_Gamma))
         self.C_def = self.cond_to_cuda(self.cond_to_torch(ini_C))
         self.Sigma_def = self.cond_to_cuda(self.cond_to_torch(ini_Sigma))
+        if not self.fit_gp:
+            self.gp.assign_alpha_ini(self.Sigma_def, self.Gamma_def)
         self.var.append(np.atleast_2d(np.diag(ini_Gamma)).T)
         self.y_var.append(np.atleast_2d(np.diag(ini_Sigma)).T)
         # DEGREES OF FREEDOM AT LEAST 3
@@ -261,6 +265,8 @@ class GaussianProcessEmission:
     def fit_kernel_params(self, x_train, y, alpha_ini, gamma_ini, valid=True):
         """ Optimize RBF kernel hyperparameters
         """
+        if not self.fit_gp:
+            raise ValueError('GP hyperparameter fitting is disabled for this emission')
         alph_ = self.cond_to_torch(alpha_ini[0][0])
         gam_ = self.cond_to_torch(gamma_ini[0][0])
         if valid:

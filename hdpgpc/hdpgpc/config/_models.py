@@ -29,6 +29,7 @@ class HDPConfig:
 class GPEmissionConfig:
     """Kernel/prior values; lists and arrays retain legacy per-cluster semantics."""
     kernels: list[Kernel] | None = None
+    fit_gp: bool = True
     ini_lengthscale: ScalarOption = None
     bound_lengthscale: Bounds = None
     ini_sigma: ScalarOption = None

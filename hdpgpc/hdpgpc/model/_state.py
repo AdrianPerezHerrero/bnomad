@@ -88,6 +88,7 @@ class ModelState:
         self.M = M
         self.verbose = verbose
         self.hard_assignments = options['hard_assignments']
+        self.fit_gp = options['fit_gp']
         self.birth_lds_kl_per_sqrt_point = options.get('birth_lds_kl_per_sqrt_point', False)
         self.actual_state = 0
         self.cuda = cuda
@@ -248,6 +249,7 @@ class ModelState:
                 if self.bayesian_params:
                     gp_ = gp.GaussianProcessEmission(kernels[m], x_basis[m], annealing=self.annealing[m],
                                        bayesian=self.bayesian_params, cuda=self.cuda,
+                                       fit_gp=self.fit_gp,
                                        inducing_points=inducing_points[m],
                                        estimation_limit=estimation_limit[m], free_deg_MNIV=self.free_deg_MNIV,
                                        verbose=self.verbose, lds_update=self.lds_update,
@@ -255,6 +257,7 @@ class ModelState:
                                        lds_step_size=self.lds_step_size)
                 else:
                     gp_ = gp.GaussianProcessEmission(kernels[m], x_basis[m], annealing=self.annealing[m], cuda=self.cuda,
+                                       fit_gp=self.fit_gp,
                                        inducing_points=inducing_points[m], estimation_limit=estimation_limit[m],
                                        free_deg_MNIV=self.free_deg_MNIV, verbose=self.verbose,
                                        lds_update=self.lds_update, lds_scoring=self.lds_scoring,
