@@ -714,14 +714,10 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
                                              prov_gp, y_birth, point_score)
             _include_with_alignment(self, prov_gp, t, len(y_mod) - 1,
                                     self.x_train[-1], y_birth, 1.0, ld)
-            # q_lat for a new model is non-zero only at t (indexes contains only t) :contentReference[oaicite:7]{index=7}
+            # The newborn contributes its initial-state term only at t.
             if self.model_type_def == 'dynamic':
-                if self.hard_assignments:
-                    q_lat_prev[:, -1, ld] = self._update_q_lat_tail(
-                        prov_gp, q_lat_prev[:, -1, ld], [t], h_ini=0.5) * 5.0
-                else:
-                    q_lat_prev[:, -1, ld] = self._update_q_lat_tail(
-                        prov_gp, q_lat_prev[:, -1, ld], [t], h_ini=1.0)
+                q_lat_prev[:, -1, ld] = self._update_q_lat_tail(
+                    prov_gp, q_lat_prev[:, -1, ld], [t], h_ini=1.0)
 
             prov_gps.append(prov_gp)
 

@@ -77,7 +77,7 @@ PLOT_DPI = 160
 # Typed configuration values; these are experiment settings, not package defaults.
 # Lengthscale is measured in the selected grid units; noise settings depend on waveform scale.
 MAX_CLUSTERS = 30
-HDP_PRESET = "balanced"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
+HDP_PRESET = "less"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
 LDS_DEGREES_OF_FREEDOM = 5  # None uses the package default: 5 offline, 20 online.
 LDS_UPDATE = "conjugate_sequential"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
