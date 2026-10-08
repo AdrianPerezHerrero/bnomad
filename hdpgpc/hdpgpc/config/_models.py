@@ -58,18 +58,24 @@ class NoisePolicyConfig:
 
 @dataclass(frozen=True)
 class ObservationConfig:
-    """Observation map policy. Fixed matrices currently use the LDS grid dimension.
+    """Observation map policy. Ordinary fixed matrices use the LDS grid dimension.
 
     ``cluster`` retains the original per-cluster MNIW update. ``shared`` learns
     one MNIW posterior per output from all cluster responsibilities. ``fixed``
     holds the supplied map and noise covariance, defaulting to identity C and
-    the emission's initial observation covariance.
+    the emission's initial observation covariance. A calibrated PCA observation
+    uses a rectangular fixed C and a separate waveform grid.
     """
     scope: Literal['cluster', 'shared', 'fixed'] = 'cluster'
     C: ndarray | None = None
     Sigma: ndarray | None = None
     C_policy: MatrixPolicyConfig | None = None
     Sigma_policy: NoisePolicyConfig | None = None
+    # Direct rectangular PCA observation y = pca_mean + C f + epsilon.
+    # Set by with_pca_emission after independent minibatch calibration.
+    pca_grid: ndarray | None = None
+    pca_mean: ndarray | None = None
+    pca_variances: ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -211,7 +217,8 @@ NON_CONSTRUCTOR = {'alignment': {'policy', 'flow_inducing', 'flow_features',
                                  'dtw_lengthscale', 'dtw_amplitude', 'dtw_anchor_noise'},
                    'inference': {'schedule', 'warp', 'force_model', 'minibatch', 'classify', 'it_limit'},
                    'numerics': {'seed', 'num_threads', 'dtype', 'deterministic'},
-                   'observation': {'C_policy', 'Sigma_policy'},
+                   'observation': {'C_policy', 'Sigma_policy',
+                                   'pca_grid', 'pca_mean', 'pca_variances'},
                    'dynamics': {'A_policy', 'Gamma_policy'}}
 
 

@@ -72,6 +72,18 @@ def _plot_latent_process(axis, state, gamma, color, *, legend=False):
               label='Smoothed latent mean' if legend else None)
 
 
+def _plot_cluster_latent(axis, state, gamma, color, *, pca=False, legend=False):
+    if not pca:
+        _plot_latent_process(axis, state, gamma, color, legend=legend)
+        return
+    # PCA coordinates index components rather than waveform time; a separate
+    # inset avoids presenting their coefficients on the observation x-axis.
+    inset = axis.inset_axes((0.62, 0.57, 0.35, 0.36))
+    _plot_latent_process(inset, state, gamma, color)
+    inset.set_title('PCA state ±2√diag Γ', fontsize=7)
+    inset.tick_params(labelsize=6)
+
+
 def load_record(record_name="100"):
     """Load the specified MIT-BIH record; fetch at most 3.3 MB if no local copy is present."""
     data_file = f"{record_name}.npy"
@@ -145,6 +157,7 @@ def plot_results(model, values, grid=None, title='Clustering results'):
 
     cluster_ids = np.asarray(model.cluster_ids_).reshape(-1)
     count = values.shape[2]
+    pca = model.config.observation.pca_grid is not None
     lds_matrices = [model_lds_arrays(model, output=output) for output in range(count)]
     colors = plt.get_cmap('tab20')
     fig = plt.figure(
@@ -191,9 +204,9 @@ def plot_results(model, values, grid=None, title='Clustering results'):
             axis.fill_between(x, mean - 2 * sd, mean + 2 * sd, color=color, alpha=0.2)
             axis.plot(x, mean, color=color, linewidth=1.8, zorder=3,
                       label='Observation mean' if position == output == 0 else None)
-            _plot_latent_process(
+            _plot_cluster_latent(
                 axis, latent_states[output], lds_matrices[output][int(cluster)]['Gamma'],
-                color, legend=position == output == 0,
+                color, pca=pca, legend=position == output == 0,
             )
             if position == output == 0:
                 axis.legend(loc='best', fontsize=7, frameon=False)
@@ -224,6 +237,7 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
     cluster_ids = np.asarray(model.cluster_ids_).reshape(-1)
     if not len(cluster_ids):
         raise ValueError('model must contain at least one assigned cluster')
+    pca = model.config.observation.pca_grid is not None
 
     if annotations is not None:
         annotations = np.asarray(annotations).reshape(-1)
@@ -338,9 +352,9 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
             axis.fill_between(x, mean - 2 * sd, mean + 2 * sd,
                               color=annotation_color, alpha=0.22)
             axis.plot(x, mean, color=annotation_color, linewidth=1.8, zorder=3)
-            _plot_latent_process(
+            _plot_cluster_latent(
                 axis, latent_states[cluster][output], lds_matrices[cluster]['Gamma'],
-                annotation_color,
+                annotation_color, pca=pca,
             )
             axis.autoscale_view()
             axis.set(xlabel='Rescaled coordinate', ylabel='Scaled amplitude',
@@ -374,7 +388,9 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
 
         gallery_header.text(
             0, 0.5,
-            'Clusters · solid: C f_sm (±2 SD) · dashed dark: f_sm (±2√diag Γ) · faint: beats',
+            ('Clusters · solid: PCA reconstruction (±2 SD) · inset: latent PCA state / Γ · faint: beats'
+             if pca else
+             'Clusters · solid: C f_sm (±2 SD) · dashed dark: f_sm (±2√diag Γ) · faint: beats'),
             va='center', fontsize=10, fontweight='bold',
         )
         if annotations is not None:

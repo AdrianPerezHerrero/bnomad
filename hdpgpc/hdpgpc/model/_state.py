@@ -80,6 +80,9 @@ class ModelState:
         self.observation_scope = options['scope']
         self.observation_C_initial = options['C']
         self.observation_Sigma_initial = options['Sigma']
+        self.pca_observation_grid = config.observation.pca_grid
+        self.pca_observation_mean = config.observation.pca_mean
+        self.pca_latent_variances = config.observation.pca_variances
         self.lds_policies = resolved_lds_policies(config)
         self.custom_lds_policies = any((config.observation.C_policy,
                                         config.observation.Sigma_policy,
@@ -339,7 +342,18 @@ class ModelState:
                     initial[index] = torch.as_tensor(value, dtype=torch.float64)
                 elif name in ('A', 'C') and self.lds_policies[name].mode == 'fixed':
                     initial[index] = torch.eye(initial[index].shape[0], dtype=torch.float64)
-        emission.initial_conditions(ini_mean=None, ini_cov=None,
+        initial_covariance = None
+        if self.pca_observation_grid is not None:
+            emission.direct_observation_grid = torch.as_tensor(
+                self.pca_observation_grid, dtype=torch.float64)
+            emission.direct_observation_offset = torch.as_tensor(
+                self.pca_observation_mean, dtype=torch.float64).reshape(-1, 1)
+            emission.gp.direct_observation_grid = emission.direct_observation_grid
+            emission.gp.direct_observation_offset = emission.direct_observation_offset
+            initial_covariance = torch.diag(torch.as_tensor(
+                self.pca_latent_variances, dtype=torch.float64))
+            emission.gp.direct_initial_covariance = initial_covariance
+        emission.initial_conditions(ini_mean=None, ini_cov=initial_covariance,
                                     ini_A=initial[0], ini_Gamma=initial[1],
                                     ini_C=initial[2], ini_Sigma=initial[3])
 

@@ -4,6 +4,8 @@ from dataclasses import replace
 import math
 from numbers import Real
 
+import numpy as np
+
 from ._models import (HDPGPCConfig, MatrixPolicyConfig, NoisePolicyConfig,
                       resolved_lds_policies)
 
@@ -47,6 +49,8 @@ def with_lds_preset(config: HDPGPCConfig, preset: str, *,
     """
     if not isinstance(config, HDPGPCConfig):
         raise TypeError('config must be HDPGPCConfig')
+    if config.observation.pca_grid is not None:
+        raise ValueError('PCA fixes C/Sigma and selects free A/Gamma; LDS presets do not apply')
     if preset not in LDS_PRESETS:
         raise ValueError('Unknown LDS preset: ' + str(preset))
     if (isinstance(shrink_strength, bool) or not isinstance(shrink_strength, Real)
@@ -87,3 +91,43 @@ def with_lds_preset(config: HDPGPCConfig, preset: str, *,
                                     else config.dynamics.lds_scoring))
     hdp = replace(config.hdp, hmm_switch=True)
     return replace(config, observation=observation, dynamics=dynamics, hdp=hdp)
+
+
+def with_pca_emission(config: HDPGPCConfig, estimate) -> HDPGPCConfig:
+    """Install a calibrated rectangular PCA decoder as one fixed C/Sigma pair.
+
+    A and Gamma remain learned per cluster. The latent LDS dimension is the
+    PCA component count; the observation grid retains the waveform dimension.
+    GP kernel fitting and warping are excluded because component indices are
+    not waveform coordinates.
+    """
+    from ..dynamics._pca import PCAObservationEstimate
+
+    if not isinstance(config, HDPGPCConfig) or not isinstance(estimate, PCAObservationEstimate):
+        raise TypeError('expected HDPGPCConfig and PCAObservationEstimate')
+    if config.multi_output.n_outputs != 1:
+        raise ValueError('PCA observation currently requires one output channel')
+    if config.inference.warp or config.numerics.cuda:
+        raise ValueError('PCA observation currently requires warp=False and CPU inference')
+    dimension = estimate.components.shape[1]
+    observation = replace(
+        config.observation, scope='cluster', C=None, Sigma=None,
+        C_policy=MatrixPolicyConfig(mode='fixed', value=estimate.components.copy()),
+        Sigma_policy=NoisePolicyConfig(mode='fixed', value=estimate.residual_covariance.copy()),
+        pca_grid=estimate.grid.copy(), pca_mean=estimate.mean.copy(),
+        pca_variances=estimate.latent_variances.copy(),
+    )
+    dynamics = replace(
+        config.dynamics, model_type='dynamic', bayesian_params=True,
+        A_policy=MatrixPolicyConfig(mode='cluster'),
+        Gamma_policy=NoisePolicyConfig(mode='cluster'), lds_scoring='final',
+        lds_update=('conjugate_sequential' if (
+            config.dynamics.lds_update == 'legacy' or
+            (config.dynamics.lds_update == 'conjugate_batch' and
+             config.inference.schedule != 'offline'))
+                    else config.dynamics.lds_update),
+    )
+    emission = replace(config.emission, inducing_points=True, fit_gp=False)
+    return replace(config, x_basis=np.arange(dimension, dtype=np.float64)[:, None],
+                   observation=observation, dynamics=dynamics, emission=emission,
+                   multi_output=replace(config.multi_output, use_snr=False))

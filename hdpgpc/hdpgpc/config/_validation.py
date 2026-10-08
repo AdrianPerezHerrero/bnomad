@@ -57,6 +57,30 @@ def validate(c, *, for_build=False):
     if (obs.C_policy is not None or obs.Sigma_policy is not None) and (obs.C is not None or obs.Sigma is not None):
         raise ValueError('Custom C/Sigma values belong in their independent policies')
     policies = resolved_lds_policies(c)
+    pca_fields = (obs.pca_grid, obs.pca_mean, obs.pca_variances)
+    pca_observation = any(value is not None for value in pca_fields)
+    if pca_observation:
+        if any(value is None for value in pca_fields):
+            raise ValueError('PCA observation requires grid, mean and latent variances')
+        grid = np.asarray(obs.pca_grid)
+        mean = np.asarray(obs.pca_mean)
+        variances = np.asarray(obs.pca_variances)
+        decoder = np.asarray(policies['C'].value)
+        noise = np.asarray(policies['Sigma'].value)
+        if (grid.ndim != 2 or grid.shape[1] != 1 or mean.shape != (len(grid),)
+                or decoder.ndim != 2 or decoder.shape[0] != len(grid)
+                or variances.shape != (decoder.shape[1],)
+                or noise.shape != (len(grid), len(grid))
+                or not all(np.isfinite(value).all() for value in
+                           (grid, mean, variances, decoder, noise))
+                or not np.all(variances > 0)):
+            raise ValueError('PCA observation dimensions/values must match the waveform and latent grids')
+        if (policies['C'].mode != 'fixed' or policies['Sigma'].mode != 'fixed'
+                or policies['A'].mode != 'cluster' or policies['Gamma'].mode != 'cluster'
+                or d.model_type != 'dynamic' or o.n_outputs != 1 or i.warp or n.cuda
+                or e.fit_gp or not e.inducing_points or i.reestimate_initial_params):
+            raise ValueError('PCA requires fixed C/Sigma, free dynamic A/Gamma, one output, '
+                             'fixed GP kernel, inducing mode, CPU and no warp/recalibration')
     for name in ('A', 'C'):
         policy = policies[name]
         if type(policy) is not MatrixPolicyConfig or policy.mode not in ('cluster', 'shrinkage', 'shared', 'fixed'):
@@ -82,8 +106,11 @@ def validate(c, *, for_build=False):
     for name, policy in policies.items():
         if policy.value is not None:
             matrix = np.asarray(policy.value)
-            if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1] or not np.all(np.isfinite(matrix)):
-                raise ValueError(f'{name} policy value must be a finite square matrix')
+            if (matrix.ndim != 2 or not np.all(np.isfinite(matrix))
+                    or (matrix.shape[0] != matrix.shape[1]
+                        and not (pca_observation and name == 'C'))):
+                raise ValueError(f'{name} policy value must be a finite square matrix'
+                                 + (' (except rectangular PCA C)' if pca_observation else ''))
             if name in ('Gamma', 'Sigma') and (not np.allclose(matrix, matrix.T)
                     or not np.all(np.linalg.eigvalsh(matrix) > 0)):
                 raise ValueError(f'{name} policy covariance must be positive definite')
@@ -270,8 +297,12 @@ def validate(c, *, for_build=False):
                 raise ValueError('Shared LDS parameters require a common LDS grid')
             dimension = len(grids_all[0])
             for name, policy in policies.items():
-                if policy.value is not None and np.asarray(policy.value).shape != (dimension, dimension):
-                    raise ValueError(f'{name} policy value must match LDS dimension {dimension}')
+                required_shape = ((len(obs.pca_grid), dimension) if pca_observation and name == 'C'
+                                  else (len(obs.pca_grid), len(obs.pca_grid))
+                                  if pca_observation and name == 'Sigma'
+                                  else (dimension, dimension))
+                if policy.value is not None and np.asarray(policy.value).shape != required_shape:
+                    raise ValueError(f'{name} policy value must match dimension {required_shape}')
         if obs.scope != 'cluster':
             grids = c.x_basis if isinstance(c.x_basis, list) else [c.x_basis]
             if any(not np.array_equal(grids[0], grid) for grid in grids[1:]):

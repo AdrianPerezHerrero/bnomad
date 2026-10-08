@@ -129,6 +129,10 @@ class GaussianProcessEmission:
         latent_cov = torch.as_tensor(latent_cov, dtype=C.dtype, device=C.device)
         projected = C @ latent_cov @ C.T
         x_post = self.cond_to_torch(x_post).to(self.x_basis.device)
+        if getattr(self, 'direct_observation_offset', None) is not None:
+            if not torch.equal(x_post.reshape(-1, 1), self.direct_observation_grid):
+                raise ValueError('PCA emission requires its calibrated observation grid')
+            return projected
         if torch.equal(x_post, self.x_basis):
             return projected
 
@@ -331,7 +335,9 @@ class GaussianProcessEmission:
         Sigma = self.cond_to_torch(Sigma)
 
         if x_train is None:
-            x_train = self.x_basis
+            x_train = (self.direct_observation_grid
+                       if getattr(self, 'direct_observation_offset', None) is not None
+                       else self.x_basis)
 
         if mean is None:
             params = None
@@ -797,8 +803,11 @@ class GaussianProcessEmission:
                 Gamma = self.Gamma[-1]
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
+            observation_noise = (Sigma if getattr(self, 'direct_observation_offset', None)
+                                 is not None else Sigma / h)
             f_star_, cov_f_ = self.gp.posterior(f_star_sm_, cov_f_sm_, y, A,
-                                                Gamma / h, C, Sigma / h, x_train=x_train, h=h)
+                                                Gamma / h, C, observation_noise,
+                                                x_train=x_train, h=h)
         else:
             f_star_ = torch.clone(self.f_star[-1])
             cov_f_ = torch.clone(self.cov_f[-1])
@@ -835,7 +844,22 @@ class GaussianProcessEmission:
         mean = torch.linalg.multi_dot([C, mean])
         Sigma = Sigma# + torch.linalg.multi_dot([C, Gamma, C.T])
         x_basis = self.x_basis
-        return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
+        return self._observation_distribution(x_post, x_basis, mean, Sigma)
+
+    def _observation_distribution(self, x_post, x_basis, mean, Sigma):
+        """Use the direct PCA decoder or the original GP grid projection."""
+        offset = getattr(self, 'direct_observation_offset', None)
+        if offset is None:
+            return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
+        x_post = self.cond_to_torch(x_post).reshape(-1, 1)
+        if not torch.equal(x_post, self.direct_observation_grid):
+            raise ValueError('PCA emission requires its calibrated observation grid')
+        return mean.reshape(-1, 1) + offset, Sigma
+
+    def _project_process_noise(self, Gamma, C):
+        if getattr(self, 'direct_observation_offset', None) is not None:
+            return C @ Gamma @ C.T
+        return Gamma
 
     def observe_last(self, x_post):
         """ Compute the last observation distribution over new x_post.
@@ -844,7 +868,7 @@ class GaussianProcessEmission:
         Sigma = self.Sigma[-1]
         mean = torch.matmul(C, self.f_star_sm[-1])
         x_basis = self.x_basis
-        return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
+        return self._observation_distribution(x_post, x_basis, mean, Sigma)
 
     def observe(self, x_post, t, params=None, proj=False, *, final_lds=False,
                 smoothed=False):
@@ -864,8 +888,8 @@ class GaussianProcessEmission:
             mean = self.C[-1] @ states[state_index]
             Sigma = self.Sigma[-1]
             if proj:
-                Sigma = Sigma + self.Gamma[-1]
-            return self.gp.pred_dist(x_post, self.x_basis, mean, Sigma)
+                Sigma = Sigma + self._project_process_noise(self.Gamma[-1], self.C[-1])
+            return self._observation_distribution(x_post, self.x_basis, mean, Sigma)
         if params is None:
             #Case when model is not initialited
             if len(self.indexes) == 0:
@@ -883,19 +907,19 @@ class GaussianProcessEmission:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 if proj:
-                    Sigma = Sigma + self.Gamma[-1]
+                    Sigma = Sigma + self._project_process_noise(self.Gamma[-1], C)
                 mean = torch.matmul(C, states[t])
             else:
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
-                    Sigma = Sigma + Gamma
+                    Sigma = Sigma + self._project_process_noise(Gamma, C)
                 mean = torch.matmul(C, states[t])
         else:
             mean = params[0]
             Sigma = params[3]
             mean = torch.matmul(params[2], mean)
         x_basis = self.x_basis
-        return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
+        return self._observation_distribution(x_post, x_basis, mean, Sigma)
 
     def get_params(self, t):
         """Method to return params on a specific iteration of the model
@@ -1040,6 +1064,15 @@ class GaussianProcessEmission:
     def sample_last(self, num_samples=1, random_state=0):
         """ Method to resample last GP as a distribution.
         """
+        if getattr(self, 'direct_observation_offset', None) is not None:
+            mean = ((self.C[-1] @ self.f_star_sm[-1]).reshape(-1, 1)
+                    + self.direct_observation_offset).reshape(-1)
+            covariance = (self.C[-1] @ self.cov_f_sm[-1] @ self.C[-1].T
+                          + self.Sigma[-1])
+            draws = np.random.default_rng(random_state).multivariate_normal(
+                mean.detach().cpu().numpy(), covariance.detach().cpu().numpy(),
+                size=num_samples)
+            return [draw.copy() for draw in np.atleast_2d(draws)]
         samples = self.gp.sample_y(self.f_star_sm[-1], self.cov_f_sm[-1], self.C[-1], self.Sigma[-1], num_samples,
                                    random_state).T
         rav_samples = []
@@ -1053,6 +1086,11 @@ class GaussianProcessEmission:
     def project_observation_to_basis(self, y, x_train):
         """Map a waveform to the inducing grid for the LDS observation update."""
         observation = self.cond_to_cuda(self.cond_to_torch(y)).reshape(-1, 1)
+        if getattr(self, 'direct_observation_offset', None) is not None:
+            if not torch.equal(self.cond_to_torch(x_train).reshape(-1, 1),
+                               self.direct_observation_grid):
+                raise ValueError('PCA emission requires its calibrated observation grid')
+            return self.C[-1].T @ (observation - self.direct_observation_offset)
         if torch.equal(self.x_basis, x_train):
             return observation
         if not self.inducing_points:

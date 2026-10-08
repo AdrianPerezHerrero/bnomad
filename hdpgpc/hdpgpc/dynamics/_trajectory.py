@@ -402,13 +402,14 @@ def bayesian_batch_params(self, resp, grid_samples=None):
         root = weight ** 0.5
         mean = self.f_star_sm[position + 1].reshape(-1, 1)
         covariance = self.cov_f_sm[position + 1]
-        observation = self.project_observation_to_basis(
-            self.y_train[position], self.x_train[position]).to(device=device, dtype=dtype)
-        if observation.shape[0] != prior_obs.get_mean().shape[0]:
-            raise ValueError('conjugate_batch observation dimension differs from the LDS grid')
-        obs_y.append(root * observation)
-        obs_f.append(root * mean)
-        obs_cov = obs_cov + weight * covariance
+        if getattr(self, 'direct_observation_offset', None) is None:
+            observation = self.project_observation_to_basis(
+                self.y_train[position], self.x_train[position]).to(device=device, dtype=dtype)
+            if observation.shape[0] != prior_obs.get_mean().shape[0]:
+                raise ValueError('conjugate_batch observation dimension differs from the LDS grid')
+            obs_y.append(root * observation)
+            obs_f.append(root * mean)
+            obs_cov = obs_cov + weight * covariance
         observation_mass += weight
 
         if position == 0 or torch.count_nonzero(self.Gamma[0]) == 0:
@@ -427,24 +428,25 @@ def bayesian_batch_params(self, resp, grid_samples=None):
         transition_cov_cross = transition_cov_cross + weight * covariance @ gain.T
         transition_mass += weight
 
-    if not obs_y:
+    if observation_mass <= 0:
         return
-    zeros = torch.zeros_like(obs_cov)
-    observations = torch.cat(obs_y, dim=1)
-    latent_observations = torch.cat(obs_f, dim=1)
-    if getattr(self, 'observation_policy', None) is not None:
+    if (getattr(self, 'direct_observation_offset', None) is not None
+            or getattr(self, 'observation_policy', None) is not None):
         new_obs = prior_obs
-    elif isinstance(prior_obs, inv_wishart):
-        C_fixed = prior_obs.get_C()
-        residual = observations - C_fixed @ latent_observations
-        scatter = residual @ residual.T + C_fixed @ obs_cov @ C_fixed.T
-        new_n0 = prior_obs.n0 + observation_mass
-        new_scale = ((prior_obs.n0 - 2) * prior_obs.scale + scatter) / (new_n0 - 2)
-        new_obs = inv_wishart(new_n0, 0.5 * (new_scale + new_scale.T), C_fixed)
     else:
-        new_obs = prior_obs.posterior(
-            observation_mass, observations, latent_observations,
-            zeros, obs_cov, zeros)
+        observations = torch.cat(obs_y, dim=1)
+        latent_observations = torch.cat(obs_f, dim=1)
+        if isinstance(prior_obs, inv_wishart):
+            C_fixed = prior_obs.get_C()
+            residual = observations - C_fixed @ latent_observations
+            scatter = residual @ residual.T + C_fixed @ obs_cov @ C_fixed.T
+            new_n0 = prior_obs.n0 + observation_mass
+            new_scale = ((prior_obs.n0 - 2) * prior_obs.scale + scatter) / (new_n0 - 2)
+            new_obs = inv_wishart(new_n0, 0.5 * (new_scale + new_scale.T), C_fixed)
+        else:
+            new_obs = prior_obs.posterior(
+                observation_mass, observations, latent_observations,
+                torch.zeros_like(obs_cov), obs_cov, torch.zeros_like(obs_cov))
     new_int = prior_int
     if transition_y and getattr(self, 'transition_policy', None) is None:
         new_int = prior_int.posterior(
@@ -559,7 +561,7 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                     else:
                         print("Only programmed static and dynamic models.")
                         new_int_dist = self.internal_params
-                    if not full_data:
+                    if not full_data or getattr(self, 'direct_observation_offset', None) is not None:
                         sparse_observation = (self.inducing_points and
                                               not torch.equal(self.x_basis, self.x_train[-1]))
                         if sparse_observation:
@@ -602,7 +604,8 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                             cov_ = torch.zeros(cov.shape, device=cov.device)
                             cov_cross = torch.zeros(cov.shape, device=cov.device)
                     failure_stage = 'observation projection'
-                    if (torch.equal(self.x_basis, self.x_train[-1]) or
+                    if (getattr(self, 'direct_observation_offset', None) is not None or
+                            torch.equal(self.x_basis, self.x_train[-1]) or
                             (not full_data and sparse_observation)):
                         project_mat = None
                     else:

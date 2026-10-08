@@ -39,6 +39,44 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
     x_basis_mean = torch.matmul(A, mean_prior)
     x_basis_cov = cov_prior
     x_basis_ = backend.x_basis
+
+    # A calibrated PCA decoder acts directly on the observation grid. The
+    # latent coordinates are component indices, so GP interpolation between
+    # those indices and waveform times has no mathematical meaning here.
+    offset = getattr(backend, 'direct_observation_offset', None)
+    if offset is not None:
+        y = y.reshape(-1, 1)
+        x_basis_mean = x_basis_mean.reshape(-1, 1)
+        expected_grid = backend.direct_observation_grid
+        if x_train is not None and not torch.equal(
+                torch.as_tensor(x_train, dtype=expected_grid.dtype).reshape(-1, 1),
+                expected_grid):
+            raise ValueError('PCA emission requires its calibrated observation grid')
+        if x_warped is not None and not torch.equal(
+                torch.as_tensor(x_warped, dtype=expected_grid.dtype).reshape(-1, 1),
+                expected_grid):
+            raise ValueError('PCA emission does not support warped grids')
+        initial_cov = backend.direct_initial_covariance
+        P_t = (cov_prior if torch.equal(cov_prior, initial_cov)
+               else A @ cov_prior @ A.T + Gamma)
+        # Information form factors only the latent covariance. PCA calibration
+        # supplies diagonal Sigma, so waveform length does not drive a cubic
+        # solve at every beat.
+        P_t = 0.5 * (P_t + P_t.T)
+        prior_precision = torch.cholesky_inverse(torch.linalg.cholesky(P_t))
+        if torch.equal(Sigma, torch.diag(torch.diag(Sigma))):
+            inverse_variance = h / torch.diag(Sigma)
+            weighted_C = inverse_variance[:, None] * C
+            weighted_y = inverse_variance[:, None] * (y - offset)
+        else:
+            noise_chol = torch.linalg.cholesky(0.5 * (Sigma + Sigma.T))
+            weighted_C = h * torch.cholesky_solve(C, noise_chol)
+            weighted_y = h * torch.cholesky_solve(y - offset, noise_chol)
+        precision = prior_precision + C.T @ weighted_C
+        cov_post = torch.cholesky_inverse(torch.linalg.cholesky(
+            0.5 * (precision + precision.T)))
+        mean_post = cov_post @ (prior_precision @ x_basis_mean + C.T @ weighted_y)
+        return mean_post, 0.5 * (cov_post + cov_post.T)
     if x_train is None:
         x_train = backend.cond_to_torch(np.atleast_2d(np.arange(0, y_train.shape[0], dtype=np.float64)).T)
     if x_warped is None:

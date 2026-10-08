@@ -351,6 +351,12 @@ def gpmodel_deepcopy(self, gpmodel):
     gp_.internal_params = deepcopy(gpmodel.internal_params)
     gp_.observation_params = deepcopy(gpmodel.observation_params)
     gp_.lds_pair_policies = getattr(gpmodel, 'lds_pair_policies', None)
+    if getattr(gpmodel, 'direct_observation_offset', None) is not None:
+        gp_.direct_observation_grid = gpmodel.direct_observation_grid
+        gp_.direct_observation_offset = gpmodel.direct_observation_offset
+        gp_.gp.direct_observation_grid = gpmodel.gp.direct_observation_grid
+        gp_.gp.direct_observation_offset = gpmodel.gp.direct_observation_offset
+        gp_.gp.direct_initial_covariance = gpmodel.gp.direct_initial_covariance
     if gpmodel.lds_scoring == 'historical':
         gp_.lds_internal_score_history = gpmodel.lds_internal_score_history.copy()
         gp_.lds_observation_score_history = gpmodel.lds_observation_score_history.copy()

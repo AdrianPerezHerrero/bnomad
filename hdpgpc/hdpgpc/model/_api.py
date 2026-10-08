@@ -55,6 +55,8 @@ class HDPGPC:
 
     def _default_grid(self):
         import numpy as np
+        if self._config.observation.pca_grid is not None:
+            return self._config.observation.pca_grid
         basis = self._config.x_basis
         if isinstance(basis, list):
             if not all(np.array_equal(basis[0], other) for other in basis[1:]):
@@ -215,13 +217,17 @@ class HDPGPC:
     def predictive(self, cluster, *, grid=None) -> Prediction:
         """Read the current observation distribution, not a forecast/label predictor.
 
-        Default coordinates are this cluster's first-output GP basis. Supplied
+        Default coordinates are the waveform grid for PCA, otherwise this
+        cluster's first-output GP basis. Supplied
         coordinates are model/aligned coordinates; no inverse warp is performed.
         """
         import numpy as np
         cluster = self._cluster(cluster)
         models = [output[cluster] for output in self._backend.gpmodels]
-        coordinates = _data(models[0].x_basis if grid is None else grid, 'grid')
+        default_coordinates = (self._config.observation.pca_grid
+                               if self._config.observation.pca_grid is not None
+                               else models[0].x_basis)
+        coordinates = _data(default_coordinates if grid is None else grid, 'grid')
         if coordinates.ndim == 1:
             coordinates = coordinates[:, None]
         if coordinates.ndim != 2 or coordinates.shape[1] != 1 or not len(coordinates):

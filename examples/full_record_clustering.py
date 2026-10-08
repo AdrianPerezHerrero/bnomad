@@ -32,7 +32,7 @@ from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 
 from tutorial_utils import plot_record_results
 from hdpgpc import HDPGPC
-from hdpgpc.dynamics import estimate_lds_noise_priors
+from hdpgpc.dynamics import estimate_lds_noise_priors, estimate_pca_observation
 from hdpgpc.diagnostics import (
     model_lds_arrays, model_warp_arrays, plot_lds_diagnostics, plot_warp_diagnostics,
 )
@@ -49,6 +49,7 @@ from hdpgpc.config import (
     MatrixPolicyConfig,
     NoisePolicyConfig,
     with_lds_preset,
+    with_pca_emission,
 )
 
 
@@ -70,6 +71,13 @@ SCALE_WAVEFORMS = False          # First-beat mean/std scaling; False keeps stor
 UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 grid.
 INFERENCE_MODE = "offline"      # "offline", "online", or "online_fast".
 LDS_INDUCING_POINTS = None        # Reduced LDS basis size; 0 or None uses every waveform point.
+# Set a component count for a fixed PCA emission calibrated before fitting.
+# It overrides LDS_PRESET and all manual LDS matrix modes. Online calibration
+# pretrains on a record prefix, then replays that prefix during clustering;
+# use a separate calibration record for a strictly causal evaluation.
+PCA_COMPONENTS = 36
+PCA_CALIBRATION_MAX_BEATS = 128
+PCA_RESIDUAL_NOISE_FLOOR = 1.0e-3
 HARD_ASSIGNMENTS = True         # False uses soft responsibility weights during inference.
 ENABLE_WARP = False              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
@@ -86,12 +94,12 @@ PLOT_DPI = 160
 MAX_CLUSTERS = 30
 HDP_PRESET = "more"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
-LDS_DEGREES_OF_FREEDOM = 5  # None uses the package default: 5 offline, 20 online.
+LDS_DEGREES_OF_FREEDOM = 10  # None uses the package default: 5 offline, 20 online.
 LDS_UPDATE = "conjugate_batch"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
 LDS_SCORING = "final"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
 # Set None to use the four manual modes below. Named bundles are documented in
 # agents/lds_presets.md; "only_plastic" retains this example's prior behavior.
-LDS_PRESET = "only_stable"
+LDS_PRESET = "all_free"
 # Independent LDS policies; all four choices are explicit in this script.
 # Matrix: cluster, shrinkage, shared, fixed. Noise: cluster, cluster_diagonal,
 # shared, shared_diagonal, fixed. Matched learned scopes are required within
@@ -118,9 +126,9 @@ GP_OUTPUTSCALE_BOUNDS = (0.001, 1.0e+4)
 GP_WHITE_NOISE_INITIAL = 1.0
 GP_WHITE_NOISE_BOUNDS = (0.0001, 1.0e+8)  # Lower and upper bounds for first-beat GP fitting.
 CUSTOM_GP_KERNEL = None         # Set to a sklearn kernel; with FIT_GP=False it is never optimized.
-INITIAL_OBSERVATION_NOISE = 5.0e+1
+INITIAL_OBSERVATION_NOISE = 1.0e+2
 OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)  # LDS Sigma, separate from GP white noise.
-INITIAL_PROCESS_NOISE = 5.0e+1
+INITIAL_PROCESS_NOISE = 1.0e+2
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)
 # Optional, independent identity-LDS pilot calibration before model.fit.
 # It uses random contiguous blocks from this record, so enable it only offline.
@@ -144,13 +152,15 @@ def _configuration(
     birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
     initial_observation_noise: float = INITIAL_OBSERVATION_NOISE,
     initial_process_noise: float = INITIAL_PROCESS_NOISE,
+    pca_estimate=None,
 ) -> HDPGPCConfig:
     """Build the full experiment recipe in one visible place."""
     if ENABLE_WARP and INFERENCE_MODE != "offline" and ALIGNMENT_POLICY not in ("gp_flow", "dtw_gp"):
         raise ValueError("Online warping in this example requires 'gp_flow' or 'dtw_gp'.")
     if len(CHANNELS) > 1 and INFERENCE_MODE in ("online", "online_fast"):
         raise ValueError("The characterized online multi-output path is unsupported; select one channel.")
-    if lds_inducing_points is None or lds_inducing_points == 0:
+    pca_selected = pca_estimate is not None
+    if pca_selected or lds_inducing_points is None or lds_inducing_points == 0:
         basis = grid
         sparse_lds = False
     else:
@@ -172,7 +182,10 @@ def _configuration(
             or LDS_GAMMA_MODE in ("shared", "shared_diagonal")):
         lds_scoring = "final"
 
-    manual_model_type = "dynamic" if LDS_PRESET is not None else MODEL_TYPE
+    if pca_selected and (lds_update == 'legacy' or
+                         (lds_update == 'conjugate_batch' and INFERENCE_MODE != 'offline')):
+        lds_update = 'conjugate_sequential'
+    manual_model_type = "dynamic" if (LDS_PRESET is not None or pca_selected) else MODEL_TYPE
     config = HDPGPCConfig(
         x_basis=basis,
         verbose=VERBOSE,
@@ -188,18 +201,18 @@ def _configuration(
             inducing_points=sparse_lds,
         ),
         observation=ObservationConfig(
-            C_policy=MatrixPolicyConfig(
+            C_policy=None if pca_selected else MatrixPolicyConfig(
                 mode=LDS_C_MODE, value=CUSTOM_C,
                 strength=LDS_C_SHRINKAGE if LDS_C_MODE == 'shrinkage' else 1.0),
-            Sigma_policy=NoisePolicyConfig(
+            Sigma_policy=None if pca_selected else NoisePolicyConfig(
                 mode=LDS_SIGMA_MODE, value=CUSTOM_SIGMA)),
         dynamics=DynamicsConfig(
             model_type=manual_model_type,
             ini_gamma=initial_process_noise,
-            A_policy=(None if manual_model_type == "static" else MatrixPolicyConfig(
+            A_policy=(None if manual_model_type == "static" or pca_selected else MatrixPolicyConfig(
                 mode=LDS_A_MODE, value=CUSTOM_A,
                 strength=LDS_A_SHRINKAGE if LDS_A_MODE == 'shrinkage' else 1.0)),
-            Gamma_policy=(None if manual_model_type == "static" else NoisePolicyConfig(
+            Gamma_policy=(None if manual_model_type == "static" or pca_selected else NoisePolicyConfig(
                 mode=LDS_GAMMA_MODE, value=CUSTOM_GAMMA)),
             bound_gamma=PROCESS_NOISE_BOUNDS,
             annealing=False,
@@ -234,6 +247,8 @@ def _configuration(
             deterministic=True,
         ),
     )
+    if pca_estimate is not None:
+        return with_pca_emission(config, pca_estimate)
     return (with_lds_preset(config, LDS_PRESET,
                             shrink_strength=LDS_SHRINK_STRENGTH)
             if LDS_PRESET is not None else config)
@@ -342,7 +357,7 @@ def _print_lds_priors(*, dimension: int, model_type: str,
                 else f"custom {np.asarray(value).shape} covariance")
 
     print("------ Initial LDS parameter priors ------")
-    print(f"Source={source}; waveform dimension={dimension}")
+    print(f"Source={source}; LDS dimension={dimension}")
     if model_type == "dynamic":
         for matrix, noise, scale in (('A', 'Gamma', process_noise),
                                      ('C', 'Sigma', observation_noise)):
@@ -384,6 +399,22 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     )
     initial_observation_noise = INITIAL_OBSERVATION_NOISE
     initial_process_noise = INITIAL_PROCESS_NOISE
+    pca_estimate = None
+    if PCA_COMPONENTS is not None:
+        if calibrate_lds_noise_priors:
+            raise ValueError('PCA uses its calibrated residual noise; disable LDS noise calibration')
+        if ENABLE_WARP or len(CHANNELS) != 1:
+            raise ValueError('PCA currently requires warp=False and one selected channel')
+        pca_estimate = estimate_pca_observation(
+            values, grid, components=PCA_COMPONENTS,
+            max_beats=PCA_CALIBRATION_MAX_BEATS, random_state=RANDOM_SEED,
+            sampling='uniform' if INFERENCE_MODE == 'offline' else 'prefix',
+            noise_floor=PCA_RESIDUAL_NOISE_FLOOR,
+        )
+        print(f'PCA calibration: {len(pca_estimate.beat_indices)} beats, '
+              f'{PCA_COMPONENTS} components, explained variance '
+              f'{pca_estimate.explained_variance_ratio:.1%}, '
+              f'mean residual variance={np.diag(pca_estimate.residual_covariance).mean():.6g}')
     if calibrate_lds_noise_priors:
         effective_model_type = "static" if LDS_PRESET == "static_mixture" else (
             "dynamic" if LDS_PRESET is not None else MODEL_TYPE)
@@ -424,6 +455,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         birth_lds_kl_per_sqrt_point=birth_lds_kl_per_sqrt_point,
         initial_observation_noise=initial_observation_noise,
         initial_process_noise=initial_process_noise,
+        pca_estimate=pca_estimate,
     )
 
     print(f"\nRecord {record}: waveform shape={signal.shape}, annotations={len(annotations)}")
@@ -435,7 +467,8 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     print(f"Schedule={INFERENCE_MODE}, hard assignments={HARD_ASSIGNMENTS}, warp={ENABLE_WARP}, "
           f"alignment={ALIGNMENT_POLICY if ENABLE_WARP else 'none'}, verbose={VERBOSE}")
     print(f"Model={config.dynamics.model_type}, Markov={config.hdp.hmm_switch}, "
-          f"LDS preset={LDS_PRESET or 'manual'}, HDP preset={HDP_PRESET}, "
+          f"LDS preset={'PCA' if pca_estimate is not None else (LDS_PRESET or 'manual')}, "
+          f"HDP preset={HDP_PRESET}, "
           f"cluster cap={MAX_CLUSTERS}")
     from hdpgpc.config._models import resolved_lds_policies
     selected = resolved_lds_policies(config)
@@ -455,8 +488,9 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                      else (5 if INFERENCE_MODE == "offline" else 20))
     print(f"LDS MNIW degrees of freedom={effective_dof}"
           + (" (schedule default)" if lds_degrees_of_freedom is None else ""))
-    print(f"LDS update={lds_update}"
-          + (f", step size={lds_step_size:g}" if lds_update == "natural_gradient" else ""))
+    print(f"LDS update={config.dynamics.lds_update}"
+          + (f", step size={lds_step_size:g}"
+             if config.dynamics.lds_update == "natural_gradient" else ""))
     print(f"LDS scoring={config.dynamics.lds_scoring}")
     birth_lds_divisor = len(config.x_basis) if birth_lds_kl_per_sqrt_point else 1
     print("Experimental birth LDS KL / LDS dimension="
