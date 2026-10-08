@@ -27,6 +27,12 @@ def _convert_observation_owners(self, target):
             emission.C_def = owner.prior.get_mean()
             emission.Sigma_def = owner.prior.get_scale()
             emission.observation_params = owner.posterior
+    for output, owner in enumerate(getattr(self, 'transition_policies', ())):
+        owner.convert(target)
+        for emission in self.gpmodels[output]:
+            emission.A_def = owner.prior.get_mean()
+            emission.Gamma_def = owner.prior.get_scale()
+            emission.internal_params = owner.posterior
 
 
 def cond_to_torch(self, x):

@@ -376,17 +376,19 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
         resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
         startStateCount = resp[0]
         transStateCount = self.hdp.transition_counts(respPair)
-        if M > 2:
-            self.reinit_global_params(M - 1, transStateCount, startStateCount)
-        if M >= 2:
-            nIters = 4
-            for giter in range(nIters):
-                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                       self.cond_cuda(startStateCount), M)
-                self.rho, self.omega = self.find_optimum_rhoOmega()
-
-        # Update transition matrix
-        transPi = self.hdp.stored_log_transitions(M, self.transTheta)
+        if self.hmm_switch:
+            if M > 2:
+                self.reinit_global_params(M - 1, transStateCount, startStateCount)
+            if M >= 2:
+                nIters = 4
+                for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M)
+                    self.rho, self.omega = self.find_optimum_rhoOmega()
+            transPi = self.hdp.stored_log_transitions(M, self.transTheta)
+        else:
+            self.hdp.update_iid_weights(resp[:, :M])
+            transPi = self.hdp.iid_log_transitions(M)
         self.trans_A = transPi
     else:
         if force_model is None:
@@ -395,17 +397,19 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
             reorder = torch.arange(M, device=resp.device)
         startStateCount = resp[0, :M]
         transStateCount = self.hdp.transition_counts(respPair[:, :M, :M])
-        if M > 2:
-            self.reinit_global_params(M - 1, transStateCount, startStateCount)
-        if M >= 2:
-            nIters = 4
-            for giter in range(nIters):
-                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                       self.cond_cuda(startStateCount), M)
-                self.rho, self.omega = self.find_optimum_rhoOmega()
-
-        # Update transition matrix
-        transPi = self.hdp.stored_log_transitions(M, self.transTheta)
+        if self.hmm_switch:
+            if M > 2:
+                self.reinit_global_params(M - 1, transStateCount, startStateCount)
+            if M >= 2:
+                nIters = 4
+                for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M)
+                    self.rho, self.omega = self.find_optimum_rhoOmega()
+            transPi = self.hdp.stored_log_transitions(M, self.transTheta)
+        else:
+            self.hdp.update_iid_weights(resp[:, :M])
+            transPi = self.hdp.iid_log_transitions(M)
         self.trans_A = transPi
 
     if len(resp.shape) == 1:
@@ -937,13 +941,17 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
     M_eff = self.M
     startStateCount = resp[0, :M_eff]
     transStateCount = self.hdp.transition_counts(respPair[:, :M_eff, :M_eff])
-    if M_eff > 2:
-        self.reinit_global_params(M_eff - 1, transStateCount, startStateCount)
-    if M_eff >= 2:
-        for _ in range(4):
-            self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                   self.cond_cuda(startStateCount), M_eff)
-            self.rho, self.omega = self.find_optimum_rhoOmega()
+    if self.hmm_switch:
+        if M_eff > 2:
+            self.reinit_global_params(M_eff - 1, transStateCount, startStateCount)
+        if M_eff >= 2:
+            for _ in range(4):
+                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                       self.cond_cuda(startStateCount), M_eff)
+                self.rho, self.omega = self.find_optimum_rhoOmega()
+    else:
+        self.hdp.update_iid_weights(resp[:, :M_eff])
+        self.trans_A = self.hdp.iid_log_transitions(M_eff)
 
     # Update actual GP models with the selected marginal responsibilities.
     self.actual_state = model

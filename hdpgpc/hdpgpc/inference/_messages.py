@@ -51,6 +51,11 @@ def _safe_exp(self, x, hard=None):
 
 def _transition_weights(self, trans_A, n_states):
     """Exponentiate supplied expected log transitions with one common shift."""
+    if not self.hmm_switch:
+        weights = self.hdp.expected_log_iid_weights(n_states)
+        weights = torch.exp(weights - weights.max())
+        weights = weights.clamp_min(torch.finfo(weights.dtype).tiny)
+        return weights.repeat(n_states, 1)
     if trans_A is None or not hasattr(trans_A, 'shape') or trans_A.shape != (n_states, n_states):
         trans_A = self.compute_trans_A(n_states)
     trans_A = self.cond_cuda(self.cond_to_torch(trans_A))
@@ -138,9 +143,13 @@ def variational_local_terms(self, q, transTheta=None, startTheta=None, liks=None
         startTheta = self.startTheta
     if liks is None:
         liks = np.zeros(q.shape[1])
-    transPi = self.hdp.expected_log_transitions(M, transTheta)
+    if self.hmm_switch:
+        transPi = self.hdp.expected_log_transitions(M, transTheta)
+        startPi = self.hdp.expected_log_start(M, startTheta)
+    else:
+        transPi = self.hdp.iid_log_transitions(q.shape[1])
+        startPi = self.hdp.expected_log_iid_weights(q.shape[1])
     self.trans_A = transPi
-    startPi = self.hdp.expected_log_start(M, startTheta)
     liks_ = np.array(liks)[:, np.newaxis]  # * 0.5
     q[-1] = q[-1] + liks_
     if classify:
@@ -202,7 +211,7 @@ def forward(self, pi=None, trans_A=None, q=None):
     alphas : matrix of shape txm with alphas.
 
     """
-    if pi is None:
+    if pi is None and self.hmm_switch:
         pi = self.pi[-1]
     if trans_A is None:
         trans_A = self.trans_A
@@ -211,9 +220,12 @@ def forward(self, pi=None, trans_A=None, q=None):
     M = self.M
     T = q.shape[0]
     K = q.shape[1]
+    if not self.hmm_switch:
+        pi = self.hdp.expected_log_iid_weights(K)
     fmsg = torch.zeros((T, K), device=self.device)
     margPrObs = torch.zeros(T, device=self.device)
-    start_logits = self.cond_cuda(self.cond_to_torch(self.compute_trans_pi(K, pi)))
+    start_logits = (self.cond_cuda(self.cond_to_torch(pi)) if not self.hmm_switch
+                    else self.cond_cuda(self.cond_to_torch(self.compute_trans_pi(K, pi))))
     pi_ = torch.exp(start_logits - torch.max(start_logits))
 
     def safe_exp(x):

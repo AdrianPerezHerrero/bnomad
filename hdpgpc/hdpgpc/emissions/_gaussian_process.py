@@ -245,10 +245,18 @@ class GaussianProcessEmission:
         self.y_var.append(np.atleast_2d(np.diag(ini_Sigma)).T)
         # DEGREES OF FREEDOM AT LEAST 3
         if self.bayesian:
-            self.internal_params = matrix_normal_inv_wishart(ini_A, np.eye(ini_A.shape[0]),  self.free_deg_MNIV, ini_Gamma)
-            if torch.all(ini_Gamma == torch.zeros(ini_Gamma.shape)):
-                self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
+            pair_policies = getattr(self, 'lds_pair_policies', None)
+            if pair_policies is not None:
+                from ..dynamics._parameter_posterior import make_pair_prior
+                self.internal_params = make_pair_prior(
+                    ini_A, ini_Gamma, self.free_deg_MNIV, *pair_policies['transition'])
+                self.observation_params = make_pair_prior(
+                    ini_C, ini_Sigma, self.free_deg_MNIV, *pair_policies['observation'])
             else:
+                self.internal_params = matrix_normal_inv_wishart(ini_A, np.eye(ini_A.shape[0]),  self.free_deg_MNIV, ini_Gamma)
+            if pair_policies is None and torch.all(ini_Gamma == torch.zeros(ini_Gamma.shape)):
+                self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
+            elif pair_policies is None:
                 self.observation_params = matrix_normal_inv_wishart(ini_C, np.eye(ini_C.shape[0]), self.free_deg_MNIV, ini_Sigma)
         if self.lds_scoring == 'historical':
             self.lds_internal_score_history = []
@@ -279,13 +287,14 @@ class GaussianProcessEmission:
         noise = self.gp.kernel.get_params()["k2__noise_level"]
         noise = alph_
         self.x_basis = self.cond_to_cuda(self.cond_to_torch(self.gp.x_basis))
-        self.Sigma[-1] = self.cond_to_cuda(self.cond_to_torch(torch.mul(noise, torch.eye(len(self.x_basis), device=noise.device))))
-        self.Sigma_def = torch.clone(self.Sigma[-1])
-        self.y_var[-1] = self.cond_to_cuda(self.cond_to_torch(np.atleast_2d(np.diag(self.cond_to_cpu(self.Sigma[-1]))).T))
-        self.C[-1] = self.cond_to_cuda(torch.eye(len(self.x_basis)))
-        self.A[-1] = self.cond_to_cuda(torch.eye(len(self.x_basis)))
-        self.Gamma[-1] = self.cond_to_cuda(self.cond_to_torch(torch.mul(torch.mean(torch.diag(self.Gamma[-1])),
-                                                                        torch.eye(len(self.x_basis), device=self.device))))
+        if getattr(self, 'lds_pair_policies', None) is None:
+            self.Sigma[-1] = self.cond_to_cuda(self.cond_to_torch(torch.mul(noise, torch.eye(len(self.x_basis), device=noise.device))))
+            self.Sigma_def = torch.clone(self.Sigma[-1])
+            self.y_var[-1] = self.cond_to_cuda(self.cond_to_torch(np.atleast_2d(np.diag(self.cond_to_cpu(self.Sigma[-1]))).T))
+            self.C[-1] = self.cond_to_cuda(torch.eye(len(self.x_basis)))
+            self.A[-1] = self.cond_to_cuda(torch.eye(len(self.x_basis)))
+            self.Gamma[-1] = self.cond_to_cuda(self.cond_to_torch(torch.mul(torch.mean(torch.diag(self.Gamma[-1])),
+                                                                            torch.eye(len(self.x_basis), device=self.device))))
         self.f_star[-1] = self.cond_to_cuda(self.cond_to_torch(self.compute_mean()))
         self.f_star_sm[-1] = self.cond_to_cuda(self.cond_to_torch(self.compute_mean()))
         ini_cov = self.cond_to_cuda(self.cond_to_torch(
@@ -294,7 +303,7 @@ class GaussianProcessEmission:
         self.ini_cov_def = ini_cov
         self.cov_f[-1] = ini_cov
         self.cov_f_sm[-1] = ini_cov
-        if self.bayesian:
+        if self.bayesian and getattr(self, 'lds_pair_policies', None) is None:
             self.observation_params.set_scale(self.cond_to_cuda(self.cond_to_torch(torch.mul(noise, torch.eye(len(self.x_basis), device=noise.device)))))
             self.observation_params.m_mean = self.C[-1]
             self.internal_params.set_scale(self.Gamma[-1])
@@ -1122,7 +1131,8 @@ class GaussianProcessEmission:
         self.Sigma = recursive_numpy(self.Sigma)
         self.likelihood = recursive_numpy(self.likelihood)
         self.K = recursive_numpy(self.K)
-        self.internal_params.to_numpy()
+        if getattr(self, 'transition_policy', None) is None:
+            self.internal_params.to_numpy()
         if getattr(self, 'observation_policy', None) is None:
             self.observation_params.to_numpy()
 
@@ -1154,7 +1164,8 @@ class GaussianProcessEmission:
         self.Sigma = recursive_torch(self.Sigma)
         self.likelihood = recursive_torch(self.likelihood)
         self.K = recursive_torch(self.K)
-        self.internal_params.to_torch()
+        if getattr(self, 'transition_policy', None) is None:
+            self.internal_params.to_torch()
         if getattr(self, 'observation_policy', None) is None:
             self.observation_params.to_torch()
 
@@ -1189,7 +1200,8 @@ class GaussianProcessEmission:
             self.Sigma = recursive_cuda(self.Sigma)
             self.likelihood = recursive_cuda(self.likelihood)
             self.K = recursive_cuda(self.K)
-            self.internal_params.to_cuda()
+            if getattr(self, 'transition_policy', None) is None:
+                self.internal_params.to_cuda()
             if getattr(self, 'observation_policy', None) is None:
                 self.observation_params.to_cuda()
             self.cuda = True
@@ -1223,7 +1235,8 @@ class GaussianProcessEmission:
         self.Sigma = recursive_cpu(self.Sigma)
         self.likelihood = recursive_cpu(self.likelihood)
         self.K = recursive_cpu(self.K)
-        self.internal_params.to_cpu()
+        if getattr(self, 'transition_policy', None) is None:
+            self.internal_params.to_cpu()
         if getattr(self, 'observation_policy', None) is None:
             self.observation_params.to_cpu()
         self.cuda = False

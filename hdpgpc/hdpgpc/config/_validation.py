@@ -46,12 +46,65 @@ def validate_numerics(n):
 
 
 def validate(c, *, for_build=False):
-    from ._models import SECTIONS
+    from ._models import SECTIONS, MatrixPolicyConfig, NoisePolicyConfig, resolved_lds_policies
     for name, typ in SECTIONS.items():
         if type(getattr(c, name)) is not typ:
             raise TypeError(name + ' must be ' + typ.__name__)
     import numpy as np
     h, e, obs, d, a, i, o, n = (getattr(c, k) for k in SECTIONS)
+    if (obs.C_policy is not None or obs.Sigma_policy is not None) and obs.scope != 'cluster':
+        raise ValueError('Use independent C_policy/Sigma_policy or legacy observation.scope, not both')
+    if (obs.C_policy is not None or obs.Sigma_policy is not None) and (obs.C is not None or obs.Sigma is not None):
+        raise ValueError('Custom C/Sigma values belong in their independent policies')
+    policies = resolved_lds_policies(c)
+    for name in ('A', 'C'):
+        policy = policies[name]
+        if type(policy) is not MatrixPolicyConfig or policy.mode not in ('cluster', 'shrinkage', 'shared', 'fixed'):
+            raise ValueError(f'{name} policy requires a valid MatrixPolicyConfig')
+        if not isinstance(policy.strength, Real) or not math.isfinite(policy.strength) or policy.strength < 1:
+            raise ValueError(f'{name} prior strength must be finite and >= 1')
+        if policy.mode != 'shrinkage' and policy.strength != 1:
+            raise ValueError(f'{name} prior strength applies only to shrinkage mode')
+        if policy.mode == 'shrinkage' and policy.strength <= 1:
+            raise ValueError(f'{name} shrinkage requires strength > 1')
+        if policy.mode == 'shrinkage' and policy.value is not None:
+            raise ValueError(f'{name} shrinkage is centered on identity; omit the custom value')
+    for name in ('Gamma', 'Sigma'):
+        policy = policies[name]
+        if type(policy) is not NoisePolicyConfig or policy.mode not in (
+                'cluster', 'cluster_diagonal', 'shared', 'shared_diagonal', 'fixed'):
+            raise ValueError(f'{name} policy requires a valid NoisePolicyConfig')
+        if (not isinstance(policy.strength, Real) or not math.isfinite(policy.strength)
+                or policy.strength < 1):
+            raise ValueError(f'{name} prior strength must be finite and >= 1')
+        if policy.mode == 'fixed' and policy.strength != 1:
+            raise ValueError(f'{name} fixed noise has no prior strength')
+    for name, policy in policies.items():
+        if policy.value is not None:
+            matrix = np.asarray(policy.value)
+            if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1] or not np.all(np.isfinite(matrix)):
+                raise ValueError(f'{name} policy value must be a finite square matrix')
+            if name in ('Gamma', 'Sigma') and (not np.allclose(matrix, matrix.T)
+                    or not np.all(np.linalg.eigvalsh(matrix) > 0)):
+                raise ValueError(f'{name} policy covariance must be positive definite')
+            if name in ('Gamma', 'Sigma') and 'diagonal' in policy.mode and not np.allclose(matrix, np.diag(np.diag(matrix))):
+                raise ValueError(f'{name} diagonal policy value must be diagonal')
+    for matrix_name, noise_name in (('A', 'Gamma'), ('C', 'Sigma')):
+        matrix_mode, noise_mode = policies[matrix_name].mode, policies[noise_name].mode
+        matrix_scope = 'fixed' if matrix_mode == 'fixed' else ('shared' if matrix_mode == 'shared' else 'cluster')
+        noise_scope = 'fixed' if noise_mode == 'fixed' else ('shared' if noise_mode.startswith('shared') else 'cluster')
+        if {matrix_scope, noise_scope} == {'shared', 'cluster'}:
+            raise ValueError(f'{matrix_name}/{noise_name}: mixed shared and cluster learned scopes lack a joint MNIW posterior')
+    custom_policies = any(getattr(c.observation, key) is not None for key in ('C_policy', 'Sigma_policy')) or any(
+        getattr(c.dynamics, key) is not None for key in ('A_policy', 'Gamma_policy'))
+    if custom_policies and not d.bayesian_params:
+        raise ValueError('LDS parameter policies require bayesian_params=True')
+    if custom_policies and d.lds_update == 'legacy':
+        raise ValueError('Independent LDS policies require a conjugate or natural-gradient update')
+    if custom_policies and d.lds_scoring == 'historical' and any(p.mode.startswith('shared') for p in policies.values()):
+        raise ValueError('Shared LDS parameters require final scoring')
+    if custom_policies and i.reestimate_initial_params:
+        raise ValueError('LDS policies require priors set before fitting')
     if obs.scope not in ('cluster', 'shared', 'fixed'):
         raise ValueError('observation.scope must be cluster, shared, or fixed')
     if obs.scope == 'cluster' and (obs.C is not None or obs.Sigma is not None):
@@ -71,8 +124,8 @@ def validate(c, *, for_build=False):
         raise ValueError('shared/fixed observation parameters require final LDS scoring')
     if obs.scope != 'cluster' and i.reestimate_initial_params:
         raise ValueError('shared/fixed observation parameters require priors set before fitting')
-    if obs.scope == 'shared' and i.warp and a.policy == 'gp_flow':
-        raise ValueError('shared observation learning requires a common observation grid')
+    if (obs.scope == 'shared' or any(p.mode.startswith('shared') for p in policies.values())) and i.warp and a.policy == 'gp_flow':
+        raise ValueError('shared LDS learning requires a common LDS grid')
     integer(h.M, 'M', 1, optional=True)
     M = 1 if h.M is None else h.M
     integer(h.max_models, 'max_models', 1, optional=True)
@@ -81,9 +134,9 @@ def validate(c, *, for_build=False):
     if h.hdp_hyp not in ('less', 'balanced', 'more'):
         raise ValueError('hdp_hyp must be less, balanced or more')
     integer(o.n_outputs, 'n_outputs', 1)
-    if obs.scope != 'cluster' and o.n_outputs != 1:
+    if (obs.scope != 'cluster' or any(p.mode.startswith('shared') for p in policies.values())) and o.n_outputs != 1:
         raise ValueError('shared/fixed observation parameters currently require one output')
-    if obs.scope != 'cluster' and n.cuda:
+    if (obs.scope != 'cluster' or any(p.mode.startswith('shared') for p in policies.values())) and n.cuda:
         raise ValueError('shared/fixed observation parameters currently require CPU inference')
     for obj, names in ((c, ('verbose',)), (h, ('hmm_switch',)),
                        (e, ('check_var', 'fit_gp')), (d, ('bayesian_params',)),
@@ -154,6 +207,8 @@ def validate(c, *, for_build=False):
     for value in clusters(d.model_type, 'model_type'):
         if value not in ('static', 'dynamic'):
             raise ValueError('model_type must be static or dynamic')
+        if value == 'static' and (d.A_policy is not None or d.Gamma_policy is not None):
+            raise ValueError('A/Gamma policies require a dynamic LDS; the static model has no transition')
     for obj, names in ((e, ('inducing_points',)), (d, ('annealing',)),
                        (a, ('recursive_warp', 'warp_updating'))):
         for name in names:
@@ -208,6 +263,15 @@ def validate(c, *, for_build=False):
                 raise ValueError('CUDA requested but unavailable on this host')
         if c.x_basis is None:
             raise ValueError('x_basis is required to build a model')
+        grids_all = c.x_basis if isinstance(c.x_basis, list) else [c.x_basis]
+        if custom_policies:
+            if any(p.mode.startswith('shared') for p in policies.values()) and any(
+                    not np.array_equal(grids_all[0], grid) for grid in grids_all[1:]):
+                raise ValueError('Shared LDS parameters require a common LDS grid')
+            dimension = len(grids_all[0])
+            for name, policy in policies.items():
+                if policy.value is not None and np.asarray(policy.value).shape != (dimension, dimension):
+                    raise ValueError(f'{name} policy value must match LDS dimension {dimension}')
         if obs.scope != 'cluster':
             grids = c.x_basis if isinstance(c.x_basis, list) else [c.x_basis]
             if any(not np.array_equal(grids[0], grid) for grid in grids[1:]):

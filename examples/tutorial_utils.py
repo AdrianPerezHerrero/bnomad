@@ -12,8 +12,10 @@ from urllib.request import urlopen
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-from matplotlib.colors import to_rgba
+from matplotlib.colors import to_rgb, to_rgba
 from matplotlib.lines import Line2D
+
+from hdpgpc.diagnostics import model_lds_arrays
 
 DATA_REVISION = '615109a9e474d37626abaff6c51f1c159b26124a'
 DATA_HASHES = {
@@ -39,6 +41,35 @@ def _annotation_color(label):
     if isinstance(label, bytes):
         label = label.decode('utf-8')
     return ANNOTATION_COLORS[ANNOTATION_CODES.get(str(label), 0)]
+
+
+def _darker_color(color):
+    """Keep an annotation hue while giving its latent curve a darker tone."""
+    rgb = np.asarray(to_rgb(color))
+    return tuple(rgb * 0.62) if np.any(rgb) else (0.22, 0.22, 0.22)
+
+
+def _plot_latent_process(axis, state, gamma, color, *, legend=False):
+    """Draw f_star_sm and a process-noise band on the latent state's own grid.
+
+    Gamma is a process covariance, so its diagonal contributes standard
+    deviations through sqrt(diag(Gamma)); this band is not the smoothed-state
+    posterior covariance or the observation predictive covariance.
+    """
+    x = np.asarray(state.grid).reshape(-1)
+    mean = np.asarray(state.smoothed_mean).reshape(-1)
+    gamma = np.asarray(gamma)
+    if gamma.shape != (len(mean), len(mean)) or len(x) != len(mean):
+        raise ValueError('latent mean, grid and Gamma must have matching LDS dimensions')
+    sd = np.sqrt(np.maximum(np.diag(gamma), 0.0))
+    latent_color = _darker_color(color)
+    if np.any(sd > 0):
+        axis.fill_between(x, mean - 2 * sd, mean + 2 * sd,
+                          color=latent_color, alpha=0.16, zorder=2,
+                          label='Latent ±2√diag Γ' if legend else None)
+    axis.plot(x, mean, color=latent_color, linewidth=1.65,
+              linestyle='--', zorder=4,
+              label='Smoothed latent mean' if legend else None)
 
 
 def load_record(record_name="100"):
@@ -102,6 +133,8 @@ def plot_results(model, values, grid=None, title='Clustering results'):
     Each cluster gets one row of panels, one per output. Included observations
     are drawn with low opacity so dense clusters remain readable; the fitted
     observation mean and its two-standard-deviation band are drawn on top.
+    The darker dashed curve shows the smoothed latent mean, with a separate
+    band from the diagonal of the final process covariance Gamma.
     """
     values = np.asarray(values)
     if values.ndim != 3:
@@ -112,6 +145,7 @@ def plot_results(model, values, grid=None, title='Clustering results'):
 
     cluster_ids = np.asarray(model.cluster_ids_).reshape(-1)
     count = values.shape[2]
+    lds_matrices = [model_lds_arrays(model, output=output) for output in range(count)]
     colors = plt.get_cmap('tab20')
     fig = plt.figure(
         figsize=(5.0 * count, max(4.0, 2.35 * (len(cluster_ids) + 1))),
@@ -143,18 +177,26 @@ def plot_results(model, values, grid=None, title='Clustering results'):
         color = colors(position % colors.N)
         member = assignments == cluster
         prediction = model.predictive(int(cluster), grid=grid)
+        latent_states = model.posterior(int(cluster))
         x = prediction.grid.reshape(-1)
         if len(x) != values.shape[1]:
             raise ValueError('plot grid and observation point count must match')
         for output in range(count):
             axis = fig.add_subplot(layout[position + 1, output])
             for sample in values[member, :, output]:
-                axis.plot(x, sample, color=color, alpha=0.055, linewidth=0.55)
+                axis.plot(x, sample, color=color, alpha=0.09, linewidth=0.55)
             mean = prediction.mean[:, output]
             # Clip only for display; preserve the predictive covariance itself.
             sd = np.sqrt(np.maximum(np.diag(prediction.covariance[output]), 0))
             axis.fill_between(x, mean - 2 * sd, mean + 2 * sd, color=color, alpha=0.2)
-            axis.plot(x, mean, color=color, linewidth=1.8)
+            axis.plot(x, mean, color=color, linewidth=1.8, zorder=3,
+                      label='Observation mean' if position == output == 0 else None)
+            _plot_latent_process(
+                axis, latent_states[output], lds_matrices[output][int(cluster)]['Gamma'],
+                color, legend=position == output == 0,
+            )
+            if position == output == 0:
+                axis.legend(loc='best', fontsize=7, frameon=False)
             axis.set(
                 xlabel='Rescaled coordinate', ylabel='Scaled amplitude',
                 title=f'Cluster {cluster}: output {output} ({int(member.sum())} samples)',
@@ -198,6 +240,8 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
 
     predictions = {int(cluster): model.predictive(int(cluster), grid=grid)
                    for cluster in cluster_ids}
+    latent_states = {int(cluster): model.posterior(int(cluster))
+                     for cluster in cluster_ids}
     for prediction in predictions.values():
         if len(prediction.grid) != values.shape[1]:
             raise ValueError('plot grid and observation point count must match')
@@ -236,6 +280,7 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
     cluster_row_height = 3.5
     cluster_row_spacing = 0.3
     for output, channel in enumerate(channels):
+        lds_matrices = model_lds_arrays(model, output=output)
         title_margin = 1.0 if warped else 0.6
         figure_height = (title_margin + overview_height + gallery_header_height
                          + (cluster_row_height + cluster_row_spacing) * gallery_rows)
@@ -279,10 +324,10 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
                 segments = np.stack((np.broadcast_to(x, member_values.shape), member_values), axis=-1)
                 sample_colors = (
                     [to_rgba(_annotation_color(sample_label),
-                             alpha=0.06 if sample_label == label else 0.20)
+                             alpha=0.10 if sample_label == label else 0.25)
                      for sample_label in annotations[member]]
                     if annotations is not None
-                    else [to_rgba(annotation_color, alpha=0.08)] * len(member_values)
+                    else [to_rgba(annotation_color, alpha=0.12)] * len(member_values)
                 )
                 axis.add_collection(LineCollection(
                     segments, colors=sample_colors, linewidths=0.55,
@@ -292,7 +337,11 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
             sd = np.sqrt(np.maximum(np.diag(prediction.covariance[output]), 0))
             axis.fill_between(x, mean - 2 * sd, mean + 2 * sd,
                               color=annotation_color, alpha=0.22)
-            axis.plot(x, mean, color=annotation_color, linewidth=1.8)
+            axis.plot(x, mean, color=annotation_color, linewidth=1.8, zorder=3)
+            _plot_latent_process(
+                axis, latent_states[cluster][output], lds_matrices[cluster]['Gamma'],
+                annotation_color,
+            )
             axis.autoscale_view()
             axis.set(xlabel='Rescaled coordinate', ylabel='Scaled amplitude',
                      title=f'Cluster {cluster} · {member.sum()} samples' +
@@ -323,9 +372,11 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
         cluster_legend_axis.legend(handles=cluster_handles, loc='center', frameon=False,
                                    ncol=min(3, len(cluster_ids)), fontsize=8)
 
-        gallery_header.text(0, 0.5, 'Clusters · mean/band: majority annotation · '
-                            'faint lines: beat annotations · shading: ±2 SD',
-                            va='center', fontsize=12, fontweight='bold')
+        gallery_header.text(
+            0, 0.5,
+            'Clusters · solid: C f_sm (±2 SD) · dashed dark: f_sm (±2√diag Γ) · faint: beats',
+            va='center', fontsize=10, fontweight='bold',
+        )
         if annotations is not None:
             used_labels = sorted(set(annotations), key=lambda label: (ANNOTATION_CODES.get(label, 0), label))
             handles = [Line2D([0], [0], color=_annotation_color(label), linewidth=2,

@@ -39,7 +39,7 @@ class ModelState:
     The public model is HDPGPC; this class is not a compatibility constructor.
     """
     def __init__(self, config, *, schedule=None):
-        from ..config._models import _initialization_options
+        from ..config._models import _initialization_options, resolved_lds_policies
         options = _initialization_options(config, schedule=schedule)
         x_basis = options['x_basis']
         M = options['M']
@@ -80,6 +80,16 @@ class ModelState:
         self.observation_scope = options['scope']
         self.observation_C_initial = options['C']
         self.observation_Sigma_initial = options['Sigma']
+        self.lds_policies = resolved_lds_policies(config)
+        self.custom_lds_policies = any((config.observation.C_policy,
+                                        config.observation.Sigma_policy,
+                                        config.dynamics.A_policy,
+                                        config.dynamics.Gamma_policy))
+        if self.custom_lds_policies:
+            c_mode = self.lds_policies['C'].mode
+            s_mode = self.lds_policies['Sigma'].mode
+            self.observation_scope = ('shared' if c_mode == 'shared' or s_mode.startswith('shared')
+                                      else 'fixed' if c_mode == s_mode == 'fixed' else 'cluster')
         share_gp = options['share_gp']
         use_snr = options['use_snr']
         reduce_outputs = options['reduce_outputs']
@@ -272,8 +282,7 @@ class ModelState:
                     cond = gp_.GPR_dynamic(ini_gamma[m], ini_sigma[m])
                 else:
                     print("Chosen model should be dynamic or static.")
-                gp_.initial_conditions(ini_mean=None, ini_cov=None,
-                                       ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
+                self.initialize_lds_emission(gp_, cond)
                 self.gpmodels[ld].append(gp_)
 
         self.observation_policies = []
@@ -285,11 +294,29 @@ class ModelState:
                              else template.C[0])
                 initial_Sigma = (self.observation_Sigma_initial if self.observation_Sigma_initial is not None
                                  else template.Sigma[0])
-                policy = ObservationPolicy(self.observation_scope, initial_C, initial_Sigma,
-                                           self.free_deg_MNIV)
+                if self.custom_lds_policies:
+                    policy = ObservationPolicy(self.observation_scope, initial_C, initial_Sigma,
+                                               self.free_deg_MNIV,
+                                               self.lds_policies['C'], self.lds_policies['Sigma'])
+                else:
+                    policy = ObservationPolicy(self.observation_scope, initial_C, initial_Sigma,
+                                               self.free_deg_MNIV)
                 self.observation_policies.append(policy)
                 for emission in self.gpmodels[ld]:
                     policy.attach(emission)
+
+        self.transition_policies = []
+        if (self.lds_policies['A'].mode == 'shared'
+                or self.lds_policies['Gamma'].mode.startswith('shared')):
+            from ..dynamics._transition import TransitionPolicy
+            for ld in range(n_outputs):
+                template = self.gpmodels[ld][0]
+                owner = TransitionPolicy(template.A[0], template.Gamma[0],
+                                         self.free_deg_MNIV, self.lds_policies['A'],
+                                         self.lds_policies['Gamma'])
+                self.transition_policies.append(owner)
+                for emission in self.gpmodels[ld]:
+                    owner.attach(emission)
 
         self.init_global_params(len(x_basis), self.M)
         if self.cuda:
@@ -300,11 +327,30 @@ class ModelState:
         keep_last_all, set_default_options, get_default_options, create_gp_default, create_wp_sys_default, refill, reorder, new_group, remove_last_group, redefine_default, update_initial_sigma, return_model_of_sample, selected_gpmodels, gpmodel_deepcopy
     )
 
+    def initialize_lds_emission(self, emission, initial):
+        if self.custom_lds_policies:
+            emission.lds_pair_policies = {
+                'transition': (self.lds_policies['A'], self.lds_policies['Gamma']),
+                'observation': (self.lds_policies['C'], self.lds_policies['Sigma'])}
+            initial = list(initial)
+            for index, name in enumerate(('A', 'Gamma', 'C', 'Sigma')):
+                value = self.lds_policies[name].value
+                if value is not None:
+                    initial[index] = torch.as_tensor(value, dtype=torch.float64)
+                elif name in ('A', 'C') and self.lds_policies[name].mode == 'fixed':
+                    initial[index] = torch.eye(initial[index].shape[0], dtype=torch.float64)
+        emission.initial_conditions(ini_mean=None, ini_cov=None,
+                                    ini_A=initial[0], ini_Gamma=initial[1],
+                                    ini_C=initial[2], ini_Sigma=initial[3])
+
     def update_shared_observation(self, responsibilities, *, online=False):
         if self.observation_scope == 'shared':
             for ld, policy in enumerate(self.observation_policies):
                 policy.update(self.gpmodels[ld], responsibilities, online=online,
                               current_index=self.T - 1 if online else None)
+        for ld, policy in enumerate(self.transition_policies):
+            policy.update(self.gpmodels[ld], responsibilities, online=online,
+                          current_index=self.T - 1 if online else None)
 
     from ..inference._messages import (
         _safe_exp, variational_local_terms, LogLik, forward, backward, coupled_state_coef, sum_coupled_state_coef, compute_h, baum_welch, normalize_log

@@ -83,8 +83,7 @@ def create_gp_default(self, i=None, fitted_kernel=None):
             cond = gp_.GPR_dynamic(ini_gamma, ini_sigma)
         else:
             print("Chosen model should be dynamic or static.")
-        gp_.initial_conditions(ini_mean=None, ini_cov=None,
-                               ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
+        self.initialize_lds_emission(gp_, cond)
         if fitted_kernel is not None:
             gp_.fitted = True
         # self.wp_sys.append(_alignment.configured(self).create_warper(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
@@ -109,6 +108,8 @@ def create_gp_default(self, i=None, fitted_kernel=None):
             gp_.condition_observation(t, y_, 0, posterior=False)
         if self.observation_scope != 'cluster':
             self.observation_policies[0].attach(gp_)
+        if self.transition_policies:
+            self.transition_policies[0].attach(gp_)
         return gp_
     else:
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp,\
@@ -128,8 +129,7 @@ def create_gp_default(self, i=None, fitted_kernel=None):
             cond = gp_.GPR_dynamic(ini_gamma, ini_sigma)
         else:
             print("Chosen model should be dynamic or static.")
-        gp_.initial_conditions(ini_mean=None, ini_cov=None,
-                               ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
+        self.initialize_lds_emission(gp_, cond)
         if fitted_kernel is not None:
             gp_.fitted = True
         for ld in range(self.n_outputs):
@@ -154,6 +154,8 @@ def create_gp_default(self, i=None, fitted_kernel=None):
             gp_.condition_observation(t, y_, 0, posterior=False)
         if self.observation_scope != 'cluster':
             self.observation_policies[0].attach(gp_)
+        if self.transition_policies:
+            self.transition_policies[0].attach(gp_)
         return gp_
 
 
@@ -348,6 +350,7 @@ def gpmodel_deepcopy(self, gpmodel):
     gp_.C_def, gp_.Sigma_def = gpmodel.C_def, gpmodel.Sigma_def
     gp_.internal_params = deepcopy(gpmodel.internal_params)
     gp_.observation_params = deepcopy(gpmodel.observation_params)
+    gp_.lds_pair_policies = getattr(gpmodel, 'lds_pair_policies', None)
     if gpmodel.lds_scoring == 'historical':
         gp_.lds_internal_score_history = gpmodel.lds_internal_score_history.copy()
         gp_.lds_observation_score_history = gpmodel.lds_observation_score_history.copy()
@@ -355,5 +358,7 @@ def gpmodel_deepcopy(self, gpmodel):
     gp_.free_deg_MNIV = gpmodel.free_deg_MNIV
     if self.observation_scope != 'cluster':
         gpmodel.observation_policy.attach(gp_)
+    if self.transition_policies:
+        self.transition_policies[0].attach(gp_)
     return gp_
 

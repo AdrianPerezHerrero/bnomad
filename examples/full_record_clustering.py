@@ -46,6 +46,9 @@ from hdpgpc.config import (
     InferenceConfig,
     MultiOutputConfig,
     NumericalConfig,
+    MatrixPolicyConfig,
+    NoisePolicyConfig,
+    with_lds_preset,
 )
 
 
@@ -75,21 +78,36 @@ SHARE_GP_FOR_PROPOSALS = True   # Proposals/new clusters may reuse the fitted or
 SAVE_PLOTS = True               # Also save the final figures when True.
 PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
 PLOT_LDS = True                 # Plot fitted LDS matrices, spectra, and stability measures.
-PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_LDS_perpoint_offline"
+PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_presets"
 PLOT_DPI = 160
 
 # Typed configuration values; these are experiment settings, not package defaults.
 # Lengthscale is measured in the selected grid units; noise settings depend on waveform scale.
 MAX_CLUSTERS = 30
-HDP_PRESET = "balanced"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
+HDP_PRESET = "more"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
 LDS_DEGREES_OF_FREEDOM = 5  # None uses the package default: 5 offline, 20 online.
 LDS_UPDATE = "conjugate_batch"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
 LDS_SCORING = "final"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
-OBSERVATION_SCOPE = "fixed"      # "cluster" (legacy), "shared" (pooled), or "fixed".
-CUSTOM_C = None                    # Square LDS-grid matrix; None selects identity.
-CUSTOM_SIGMA = None                # Positive-definite LDS-grid covariance; None uses the initial noise.
-# Shared/fixed scope automatically selects final scoring; historical C/Sigma do not exist.
+# Set None to use the four manual modes below. Named bundles are documented in
+# agents/lds_presets.md; "only_plastic" retains this example's prior behavior.
+LDS_PRESET = "only_stable"
+# Independent LDS policies; all four choices are explicit in this script.
+# Matrix: cluster, shrinkage, shared, fixed. Noise: cluster, cluster_diagonal,
+# shared, shared_diagonal, fixed. Matched learned scopes are required within
+# each pair (A/Gamma and C/Sigma); fixed may accompany either learned scope.
+LDS_A_MODE = "cluster"
+LDS_GAMMA_MODE = "cluster"
+LDS_C_MODE = "fixed"
+LDS_SIGMA_MODE = "fixed"
+LDS_SHRINK_STRENGTH = 10.0
+LDS_A_SHRINKAGE = 10.0       # Used only if LDS_A_MODE == 'shrinkage'.
+LDS_C_SHRINKAGE = 10.0       # Used only if LDS_C_MODE == 'shrinkage'.
+CUSTOM_A = None              # Square LDS-grid matrix for a fixed/custom prior map.
+CUSTOM_GAMMA = None          # Positive-definite LDS-grid covariance.
+CUSTOM_C = None              # Square LDS-grid matrix; None selects identity.
+CUSTOM_SIGMA = None          # Positive-definite LDS-grid covariance; None uses the initial noise.
+# Model-owned shared/fixed observation parameters use final scoring.
 LDS_STEP_SIZE = 0.05            # Fraction of new LDS evidence in natural_gradient mode.
 BIRTH_LDS_KL_PER_SQRT_POINT = True  # Historical flag name; LDS KL / LDS dimension in both schedules.
 INITIAL_LENGTHSCALE = 1.0
@@ -100,9 +118,9 @@ GP_OUTPUTSCALE_BOUNDS = (0.001, 1.0e+4)
 GP_WHITE_NOISE_INITIAL = 1.0
 GP_WHITE_NOISE_BOUNDS = (0.0001, 1.0e+8)  # Lower and upper bounds for first-beat GP fitting.
 CUSTOM_GP_KERNEL = None         # Set to a sklearn kernel; with FIT_GP=False it is never optimized.
-INITIAL_OBSERVATION_NOISE = 10.0e+1
+INITIAL_OBSERVATION_NOISE = 5.0e+1
 OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)  # LDS Sigma, separate from GP white noise.
-INITIAL_PROCESS_NOISE = 10.0e+1
+INITIAL_PROCESS_NOISE = 5.0e+1
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)
 # Optional, independent identity-LDS pilot calibration before model.fit.
 # It uses random contiguous blocks from this record, so enable it only offline.
@@ -148,10 +166,14 @@ def _configuration(
                  ConstantKernel(GP_OUTPUTSCALE_INITIAL, GP_OUTPUTSCALE_BOUNDS)
                  * RBF(INITIAL_LENGTHSCALE, LENGTHSCALE_BOUNDS)
                  + WhiteKernel(GP_WHITE_NOISE_INITIAL, GP_WHITE_NOISE_BOUNDS))
-    if OBSERVATION_SCOPE != "cluster":
+    if (LDS_C_MODE == "shared"
+            or LDS_SIGMA_MODE in ("shared", "shared_diagonal")
+            or LDS_A_MODE == "shared"
+            or LDS_GAMMA_MODE in ("shared", "shared_diagonal")):
         lds_scoring = "final"
 
-    return HDPGPCConfig(
+    manual_model_type = "dynamic" if LDS_PRESET is not None else MODEL_TYPE
+    config = HDPGPCConfig(
         x_basis=basis,
         verbose=VERBOSE,
         hdp=HDPConfig(hdp_hyp=HDP_PRESET, max_models=MAX_CLUSTERS),
@@ -166,10 +188,19 @@ def _configuration(
             inducing_points=sparse_lds,
         ),
         observation=ObservationConfig(
-            scope=OBSERVATION_SCOPE, C=CUSTOM_C, Sigma=CUSTOM_SIGMA),
+            C_policy=MatrixPolicyConfig(
+                mode=LDS_C_MODE, value=CUSTOM_C,
+                strength=LDS_C_SHRINKAGE if LDS_C_MODE == 'shrinkage' else 1.0),
+            Sigma_policy=NoisePolicyConfig(
+                mode=LDS_SIGMA_MODE, value=CUSTOM_SIGMA)),
         dynamics=DynamicsConfig(
-            model_type=MODEL_TYPE,
+            model_type=manual_model_type,
             ini_gamma=initial_process_noise,
+            A_policy=(None if manual_model_type == "static" else MatrixPolicyConfig(
+                mode=LDS_A_MODE, value=CUSTOM_A,
+                strength=LDS_A_SHRINKAGE if LDS_A_MODE == 'shrinkage' else 1.0)),
+            Gamma_policy=(None if manual_model_type == "static" else NoisePolicyConfig(
+                mode=LDS_GAMMA_MODE, value=CUSTOM_GAMMA)),
             bound_gamma=PROCESS_NOISE_BOUNDS,
             annealing=False,
             bayesian_params=True,
@@ -203,6 +234,9 @@ def _configuration(
             deterministic=True,
         ),
     )
+    return (with_lds_preset(config, LDS_PRESET,
+                            shrink_strength=LDS_SHRINK_STRENGTH)
+            if LDS_PRESET is not None else config)
 
 
 def _load_record(record: str) -> tuple[np.ndarray, np.ndarray]:
@@ -296,32 +330,37 @@ def _print_confusion_matrix(classes: np.ndarray, matrix: np.ndarray) -> None:
 
 def _print_lds_priors(*, dimension: int, model_type: str,
                       observation_noise: float, process_noise: float,
-                      degrees_of_freedom: int, source: str) -> None:
-    """Log the exact identity/scalar LDS priors constructed by this recipe."""
+                      degrees_of_freedom: int, source: str, policies: dict) -> None:
+    """Log the LDS prior centers and concentrations selected by this recipe."""
+    def matrix_center(name):
+        value = policies[name].value
+        return f"I_{dimension}" if value is None else f"custom {np.asarray(value).shape} matrix"
+
+    def noise_center(name, scalar):
+        value = policies[name].value
+        return (f"{scalar:.6g} * I_{dimension}" if value is None
+                else f"custom {np.asarray(value).shape} covariance")
+
     print("------ Initial LDS parameter priors ------")
     print(f"Source={source}; waveform dimension={dimension}")
     if model_type == "dynamic":
-        print(f"A prior mean: I_{dimension}")
-        print(f"C prior mean: I_{dimension}")
-        print(f"Gamma prior covariance: {process_noise:.6g} * I_{dimension} "
-              f"(diagonal SD={np.sqrt(process_noise):.6g})")
-        print(f"Sigma prior covariance: {observation_noise:.6g} * I_{dimension} "
-              f"(diagonal SD={np.sqrt(observation_noise):.6g})")
-        print(f"MNIW excess degrees of freedom n0={degrees_of_freedom}; "
-              f"inverse-Wishart degrees nu={degrees_of_freedom + dimension + 1}")
-        print(f"Gamma inverse-Wishart scale Psi: "
-              f"{degrees_of_freedom * process_noise:.6g} * I_{dimension}")
-        print(f"Sigma inverse-Wishart scale Psi: "
-              f"{degrees_of_freedom * observation_noise:.6g} * I_{dimension}")
-        print(f"MNIW prior column precision for A and C: I_{dimension}")
+        for matrix, noise, scale in (('A', 'Gamma', process_noise),
+                                     ('C', 'Sigma', observation_noise)):
+            matrix_policy, noise_policy = policies[matrix], policies[noise]
+            n0 = degrees_of_freedom * noise_policy.strength
+            print(f"{matrix}: {matrix_policy.mode}, center={matrix_center(matrix)}, "
+                  f"column prior precision={matrix_policy.strength:g} * I_{dimension}"
+                  if matrix_policy.mode != 'fixed' else
+                  f"{matrix}: fixed at {matrix_center(matrix)}")
+            print(f"{noise}: {noise_policy.mode}, center={noise_center(noise, scale)}, "
+                  f"excess degrees n0={n0:g}" if noise_policy.mode != 'fixed' else
+                  f"{noise}: fixed at {noise_center(noise, scale)}")
     else:
-        print(f"A: fixed I_{dimension}")
-        print(f"C: fixed I_{dimension}")
+        print("A: absent (static dynamics)")
+        print(f"C: {policies['C'].mode} at {matrix_center('C')}")
         print(f"Gamma: 0_{dimension} (static model; no A/Gamma posterior KL)")
-        print(f"Sigma prior covariance: {observation_noise:.6g} * I_{dimension} "
-              f"(diagonal SD={np.sqrt(observation_noise):.6g})")
-        print(f"Sigma inverse-Wishart degrees nu={degrees_of_freedom + dimension - 1}; "
-              f"scale Psi={(degrees_of_freedom - 2) * observation_noise:.6g} * I_{dimension}")
+        print(f"Sigma: {policies['Sigma'].mode}, "
+              f"center={noise_center('Sigma', observation_noise)}")
     print("------------------------------------------")
 
 
@@ -346,7 +385,9 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     initial_observation_noise = INITIAL_OBSERVATION_NOISE
     initial_process_noise = INITIAL_PROCESS_NOISE
     if calibrate_lds_noise_priors:
-        if INFERENCE_MODE != "offline" or MODEL_TYPE != "dynamic":
+        effective_model_type = "static" if LDS_PRESET == "static_mixture" else (
+            "dynamic" if LDS_PRESET is not None else MODEL_TYPE)
+        if INFERENCE_MODE != "offline" or effective_model_type != "dynamic":
             raise ValueError(
                 "Record-based LDS noise calibration requires offline dynamic inference; "
                 "for online inference calibrate on a separate record before fitting"
@@ -393,10 +434,18 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
           f"grid range=0..{grid[-1, 0]:g}")
     print(f"Schedule={INFERENCE_MODE}, hard assignments={HARD_ASSIGNMENTS}, warp={ENABLE_WARP}, "
           f"alignment={ALIGNMENT_POLICY if ENABLE_WARP else 'none'}, verbose={VERBOSE}")
-    print(f"Model={MODEL_TYPE}, HDP preset={HDP_PRESET}, cluster cap={MAX_CLUSTERS}")
-    print(f"Observation scope={config.observation.scope}, "
-          f"custom C={config.observation.C is not None}, "
-          f"custom Sigma={config.observation.Sigma is not None}")
+    print(f"Model={config.dynamics.model_type}, Markov={config.hdp.hmm_switch}, "
+          f"LDS preset={LDS_PRESET or 'manual'}, HDP preset={HDP_PRESET}, "
+          f"cluster cap={MAX_CLUSTERS}")
+    from hdpgpc.config._models import resolved_lds_policies
+    selected = resolved_lds_policies(config)
+    print("LDS policies=" + ", ".join(
+        f"{name}:{selected[name].mode}" for name in ('A', 'Gamma', 'C', 'Sigma')))
+    print("LDS prior strengths=" + ", ".join(
+        f"{name}:{selected[name].strength:g}"
+        for name in ('A', 'Gamma', 'C', 'Sigma')))
+    print(f"Custom C={selected['C'].value is not None}, "
+          f"custom Sigma={selected['Sigma'].value is not None}")
     print(f"GP fitting={'on' if config.emission.fit_gp else 'off'}, "
           f"kernel={config.emission.kernels[0]}")
     gp_white_bounds = config.emission.kernels[0].get_params().get("k2__noise_level_bounds")
@@ -414,11 +463,12 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
           f"{birth_lds_kl_per_sqrt_point} "
           f"(divisor={birth_lds_divisor:.6g})")
     _print_lds_priors(
-        dimension=len(config.x_basis), model_type=MODEL_TYPE,
+        dimension=len(config.x_basis), model_type=config.dynamics.model_type,
         observation_noise=initial_observation_noise,
         process_noise=initial_process_noise,
         degrees_of_freedom=effective_dof,
         source="identity-LDS pilot" if calibrate_lds_noise_priors else "configured values",
+        policies=selected,
     )
 
     model = HDPGPC(config)

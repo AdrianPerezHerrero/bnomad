@@ -43,13 +43,19 @@ class ObservationHistory:
 class ObservationPolicy:
     """One C/Sigma per output, shared by every cluster in that output."""
 
-    def __init__(self, scope, initial_C, initial_Sigma, degrees_of_freedom):
+    def __init__(self, scope, initial_C, initial_Sigma, degrees_of_freedom,
+                 matrix_policy=None, noise_policy=None):
         self.scope = scope
         self.C = torch.as_tensor(initial_C, dtype=torch.float64).clone()
         self.Sigma = torch.as_tensor(initial_Sigma, dtype=torch.float64).clone()
         precision = torch.eye(self.C.shape[1], dtype=self.C.dtype, device=self.C.device)
-        self.prior = matrix_normal_inv_wishart(
-            self.C, precision, degrees_of_freedom, self.Sigma)
+        if matrix_policy is None:
+            self.prior = matrix_normal_inv_wishart(
+                self.C, precision, degrees_of_freedom, self.Sigma)
+        else:
+            from ._parameter_posterior import make_pair_prior
+            self.prior = make_pair_prior(self.C, self.Sigma, degrees_of_freedom,
+                                         matrix_policy, noise_policy)
         self.posterior = self.prior
 
     def attach(self, emission):

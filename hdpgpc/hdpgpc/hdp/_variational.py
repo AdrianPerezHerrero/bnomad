@@ -11,6 +11,8 @@ from scipy.special._ufuncs import psi as digamma
 from scipy.special._ufuncs import gammaln
 from ._optimizer import find_optimum_multiple_tries, kvec
 from ._entropy import state_entropy_terms, pair_entropy_terms
+from ._iid import (update_iid_weights, expected_log_iid_weights,
+                   iid_linear_elbo)
 
 
 class HDPVariational:
@@ -80,6 +82,16 @@ class HDPVariational:
         transStateCount = self.cond_cuda(torch.ones((M, M)))  # Cause we are on initial moment
         startStateCount = self.cond_cuda(torch.ones(M))  # Cause we are on initial moment
         self.transTheta, self.startTheta = self._calcThetaFull(transStateCount, startStateCount, M + 1)
+        if not self._state.hmm_switch:
+            self.update_iid_weights(torch.zeros((0, M), dtype=torch.float64))
+
+    update_iid_weights = update_iid_weights
+    expected_log_iid_weights = expected_log_iid_weights
+    iid_linear_elbo = iid_linear_elbo
+
+    def iid_log_transitions(self, n_states):
+        log_weights = self.expected_log_iid_weights(n_states)
+        return log_weights.repeat(n_states, 1)
 
 
     def reinit_global_params(self, M, transStateCount_, startStateCount_):
@@ -301,6 +313,8 @@ class HDPVariational:
 
     def calcELBO_NonlinearTerms(self, resp, respPair):
         """H[q(z_0)] + sum_{t>0} H[q(z_t | z_{t-1})]."""
+        if not self._state.hmm_switch:
+            return state_entropy_terms(resp).sum()
         Htable = self.calc_Htable(respPair[1:])
         Hstart = self.calc_Hstart(resp[:1])
         Lentropy = Htable.sum() + Hstart.sum()

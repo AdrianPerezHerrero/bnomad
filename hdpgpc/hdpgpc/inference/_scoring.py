@@ -46,7 +46,9 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
         q_bas = torch.where(weights > 0, weights * q, torch.zeros_like(q)).sum() * self.static_factor
         elbo_latent = torch.where(weights > 0, weights * q_lat,
                                   torch.zeros_like(q_lat)).sum() * self.dynamic_factor
-    if post:
+    if not self.hmm_switch:
+        elbo_bas = self.hdp.iid_linear_elbo(resp)
+    elif post:
         elbo_bas = self.elbo_Linears(resp, respPair, post=post,
                                      one_sample=one_sample)
     else:
@@ -79,7 +81,7 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
         components = {
             'emission': q_bas,
             'latent': elbo_latent,
-            'hdp': torch.as_tensor(elbo_bas) if self.hmm_switch else torch.zeros_like(q_bas),
+            'hdp': torch.as_tensor(elbo_bas),
             'lds': elbo_bas_LDS,
             'lds_raw': raw_lds,
             'chain_entropy': chain_entropy,
@@ -96,10 +98,7 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
                      f"Elbo_LDS: {elbo_bas_LDS.item():.2f}")
         print(f"Q_em: {q_bas.item():.2f}, Q_lat: {elbo_latent.item():.2f}, "
               f"Elbo_linear: {elbo_bas:.2f}, {lds_label}")
-    if self.hmm_switch:
-        elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
-    else:
-        elbo_bas = elbo_bas_LDS + elbo_latent
+    elbo_bas = elbo_bas + elbo_bas_LDS + elbo_latent
     elbo_bas = elbo_bas + chain_entropy
     if return_components:
         return q_bas, elbo_bas, components
@@ -116,6 +115,9 @@ def full_LDS_elbo(self, gpmodels, sum_resp, one_sample=False):
         policy = getattr(gpmodels[0], 'observation_policy', None)
         if policy is not None and policy.scope == 'shared':
             elb = elb - policy.kl()
+        transition_policy = getattr(gpmodels[0], 'transition_policy', None)
+        if transition_policy is not None:
+            elb = elb - transition_policy.kl()
     return elb
 
 

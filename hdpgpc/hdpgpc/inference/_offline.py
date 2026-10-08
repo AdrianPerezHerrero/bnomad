@@ -172,12 +172,15 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         if resp.shape[1] == 1:
             startStateCount = self.cond_cuda(resp[0])
             transStateCount = self.cond_cuda(self.hdp.transition_counts(respPair))
-            self.reinit_global_params(M, transStateCount, startStateCount)
-            nIters = 2
-            for giter in range(nIters):
-                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                       self.cond_cuda(startStateCount), M + 1)
-                self.rho, self.omega = self.find_optimum_rhoOmega()
+            if self.hmm_switch:
+                self.reinit_global_params(M, transStateCount, startStateCount)
+                nIters = 2
+                for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M + 1)
+                    self.rho, self.omega = self.find_optimum_rhoOmega()
+            else:
+                self.hdp.update_iid_weights(resp)
         if end:
             break
         self._iteration_birth_candidates = []
@@ -189,7 +192,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                                                                                                    resp, respPair,
                                                                                                    q, q_lat, snr,
                                                                                                    reallocate)
-        if self.observation_scope == 'shared':
+        if self.observation_scope == 'shared' or self.transition_policies:
             self.update_shared_observation(resp)
             for output, models in enumerate(self.gpmodels):
                 for cluster, emission in enumerate(models[:resp.shape[1]]):
@@ -198,6 +201,8 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                                         if y_trains_w.ndim == 4 else y_trains_w[:, :, [output]])
                         q[:, cluster, output] = emission.compute_sq_err_all(
                             x_trains, observations)
+                        if self.transition_policies:
+                            q_lat[:, cluster, output] = emission.compute_q_lat_all(x_trains)
         if resp.shape[1] > M:
             self.M = M + 1
             M = self.M
@@ -207,19 +212,21 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         if self.hmm_switch:
             startStateCount = self.cond_cuda(resp__[0])
             transStateCount = self.cond_cuda(self.hdp.transition_counts(respPair__))
+            self.reinit_global_params(M, transStateCount, startStateCount)
+            nIters = 2
+            for giter in range(nIters):
+                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                       self.cond_cuda(startStateCount), M + 1)
+                self.rho, self.omega = self.find_optimum_rhoOmega()
+            transPi = self.hdp.stored_log_transitions(M, self.transTheta)
         else:
-            transStateCount = self.cond_cuda(torch.ones((M + 1, M + 1)))  # Cause we are in independent observations
-            startStateCount = self.cond_cuda(torch.ones(M + 1))
+            startStateCount = resp__.sum(dim=0)
+            transStateCount = torch.zeros((M + 1, M + 1), device=resp.device,
+                                          dtype=resp.dtype)
+            self.hdp.update_iid_weights(resp__)
+            transPi = self.hdp.iid_log_transitions(M)
 
-        self.reinit_global_params(M, transStateCount, startStateCount)
-        nIters = 2
-        for giter in range(nIters):
-            self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                   self.cond_cuda(startStateCount), M + 1)
-            self.rho, self.omega = self.find_optimum_rhoOmega()
-
-        # Update transition matrix
-        transPi = self.hdp.stored_log_transitions(M, self.transTheta)
+        # Update transition matrix (identical rows in independent-mixture mode).
         self.trans_A = transPi
         resp_group = torch.sum(resp, dim=0).detach().cpu().tolist()
         if not self.verbose:
@@ -291,10 +298,12 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
         transTheta = self.transTheta
     if startTheta is None:
         startTheta = self.startTheta
-    transPi = self.hdp.batch_log_transitions(M, transTheta)
+    transPi = (self.hdp.batch_log_transitions(M, transTheta) if self.hmm_switch
+               else self.hdp.iid_log_transitions(M + 1))
     self.trans_A = transPi
     # Calculate LOG of start state prob vector
-    startPi = self.hdp.batch_log_start(M, startTheta)
+    startPi = (self.hdp.batch_log_start(M, startTheta) if self.hmm_switch
+               else self.hdp.expected_log_iid_weights(M + 1))
     i = 0
     reparam = True
     resp_per_group = torch.sum(resp, dim=0)
@@ -1064,9 +1073,11 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
         transTheta = self.transTheta
         startTheta = self.startTheta
-        transPi = self.hdp.classification_log_transitions(self.M, transTheta)
+        transPi = (self.hdp.classification_log_transitions(self.M, transTheta)
+                   if self.hmm_switch else self.hdp.iid_log_transitions(self.M))
         # Calculate LOG of start state prob vector
-        startPi = self.hdp.classification_log_start(self.M, startTheta)
+        startPi = (self.hdp.classification_log_start(self.M, startTheta)
+                   if self.hmm_switch else self.hdp.expected_log_iid_weights(self.M))
 
         q_norm, _ = self.LogLik(self.weight_mean(q, snr))
         alpha, margprob = self.forward(startPi, transPi, q_norm)
@@ -1088,9 +1099,11 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
                 snr_new[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
         transTheta = self.transTheta
         startTheta = self.startTheta
-        transPi = self.hdp.batch_log_transitions(self.M, transTheta)
+        transPi = (self.hdp.batch_log_transitions(self.M, transTheta) if self.hmm_switch
+                   else self.hdp.iid_log_transitions(self.M))
         # Calculate LOG of start state prob vector
-        startPi = self.hdp.batch_log_start(self.M, startTheta)
+        startPi = (self.hdp.batch_log_start(self.M, startTheta) if self.hmm_switch
+                   else self.hdp.expected_log_iid_weights(self.M))
 
         q_norm, _ = self.LogLik(self.weight_mean(q_new, snr_new))
         alpha, margprob = self.forward(startPi, transPi, q_norm)
@@ -1167,20 +1180,21 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
             if self.hmm_switch:
                 startStateCount = self.cond_cuda(resp__[0])
                 transStateCount = self.cond_cuda(self.hdp.transition_counts(respPair__))
+                self.reinit_global_params(M, transStateCount, startStateCount)
+                nIters = 2
+                for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M + 1)
+                    self.rho, self.omega = self.find_optimum_rhoOmega()
+                transPi = self.hdp.stored_log_transitions(M, self.transTheta)
             else:
-                transStateCount = self.cond_cuda(
-                    torch.ones((M + 1, M + 1)))  # Cause we are in independent observations
-                startStateCount = self.cond_cuda(torch.ones(M + 1))
+                startStateCount = resp__.sum(dim=0)
+                transStateCount = torch.zeros((M + 1, M + 1), device=resp.device,
+                                              dtype=resp.dtype)
+                self.hdp.update_iid_weights(resp__)
+                transPi = self.hdp.iid_log_transitions(M)
 
-            self.reinit_global_params(M, transStateCount, startStateCount)
-            nIters = 2
-            for giter in range(nIters):
-                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                       self.cond_cuda(startStateCount), M + 1)
-                self.rho, self.omega = self.find_optimum_rhoOmega()
-
-            # Update transition matrix
-            transPi = self.hdp.stored_log_transitions(M, self.transTheta)
+            # Update transition matrix (identical rows in independent-mixture mode).
             self.trans_A = transPi
             # Compute ELBO and start steps of EM
             if self.T > 1:
@@ -1260,12 +1274,14 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
                                                                  resp[:, m])
             snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
             self.gpmodels[ld][m] = gp
-    if self.observation_scope == 'shared':
+    if self.observation_scope == 'shared' or self.transition_policies:
         self.update_shared_observation(resp)
         for ld in range(self.n_outputs):
             for m in range(M):
                 q[:, m, ld] = self.gpmodels[ld][m].compute_sq_err_all(
                     x_trains, y_trains[:, :, [ld]])
+                if self.transition_policies:
+                    q_lat[:, m, ld] = self.gpmodels[ld][m].compute_q_lat_all(x_trains)
     if warp:
         q, q_lat, warp_computed, y_trains = self.compute_warp_actual_state(x_trains, y_trains, q=q,
                                                                            q_lat=q_lat)
@@ -1279,12 +1295,14 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
                                                                      resp[:, m])
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
                 self.gpmodels[ld][m] = gp
-        if self.observation_scope == 'shared':
+        if self.observation_scope == 'shared' or self.transition_policies:
             self.update_shared_observation(resp)
             for ld in range(self.n_outputs):
                 for m in range(M):
                     q[:, m, ld] = self.gpmodels[ld][m].compute_sq_err_all(
                         x_trains, y_trains[:, :, [ld]])
+                    if self.transition_policies:
+                        q_lat[:, m, ld] = self.gpmodels[ld][m].compute_q_lat_all(x_trains)
     self.q.append(q)
     resp__ = torch.clone(resp)
     respPair__ = torch.clone(respPair)
@@ -1294,15 +1312,19 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
     resp, respPair, q, q_lat, snr, end = self.refill(resp, respPair, startStateCount, transStateCount, q, q_lat,
                                                      snr)
 
-    self.reinit_global_params(M, transStateCount, startStateCount)
-    nIters = 2
-    for giter in range(nIters):
-        self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                               self.cond_cuda(startStateCount), M + 1)
-        self.rho, self.omega = self.find_optimum_rhoOmega()
+    if self.hmm_switch:
+        self.reinit_global_params(M, transStateCount, startStateCount)
+        nIters = 2
+        for giter in range(nIters):
+            self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                   self.cond_cuda(startStateCount), M + 1)
+            self.rho, self.omega = self.find_optimum_rhoOmega()
+    else:
+        self.hdp.update_iid_weights(resp)
     transTheta = self.transTheta
     startTheta = self.startTheta
-    transPi = self.hdp.batch_log_transitions(M, transTheta)
+    transPi = (self.hdp.batch_log_transitions(M, transTheta) if self.hmm_switch
+               else self.hdp.iid_log_transitions(M))
     self.trans_A = transPi
     self.resp_assigned.append(torch.argmax(resp, dim=1))
     self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr

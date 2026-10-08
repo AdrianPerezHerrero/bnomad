@@ -25,8 +25,14 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
         ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def
         if return_likelihood:
             A_, Gam_, C_, Sig_ = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1]
-    self.A = [ini_A]
-    self.Gamma = [ini_Gamma]
+    transition_policy = getattr(self, 'transition_policy', None)
+    if transition_policy is None:
+        self.A = [ini_A]
+        self.Gamma = [ini_Gamma]
+    else:
+        from ._transition import TransitionHistory
+        self.A = TransitionHistory(transition_policy, 'A')
+        self.Gamma = TransitionHistory(transition_policy, 'Gamma')
     policy = getattr(self, 'observation_policy', None)
     if policy is None:
         self.C = [ini_C]
@@ -35,9 +41,20 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
         from ._observation import ObservationHistory
         self.C = ObservationHistory(policy, 'C', self)
         self.Sigma = ObservationHistory(policy, 'Sigma', self)
-    self.internal_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
+    pair_policies = getattr(self, 'lds_pair_policies', None)
+    if pair_policies is None:
+        self.internal_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
+    else:
+        from ._parameter_posterior import make_pair_prior
+        self.internal_params = make_pair_prior(ini_A, ini_Gamma, self.free_deg_MNIV,
+                                               *pair_policies['transition'])
+    if transition_policy is not None:
+        self.internal_params = transition_policy.posterior
     if policy is not None:
         self.observation_params = policy.posterior
+    elif pair_policies is not None:
+        self.observation_params = make_pair_prior(ini_C, ini_Sigma, self.free_deg_MNIV,
+                                                  *pair_policies['observation'])
     elif torch.count_nonzero(ini_Gamma) == 0:
         self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
     else:
@@ -52,22 +69,31 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
 
 def _lds_parameter_score_components(self):
     """Negative transition and observation MNIW KLs at the current posterior."""
+    from ._parameter_posterior import make_pair_prior
     if not self.bayesian:
         zero = self.Sigma_def.new_zeros(())
         return zero, zero
 
     transition = self.Sigma_def.new_zeros(())
-    if torch.count_nonzero(self.Gamma_def) > 0:
-        prior_A = matrix_normal_inv_wishart(
-            self.A_def, torch.eye(self.A_def.shape[1], device=self.A_def.device,
-                                  dtype=self.A_def.dtype),
-            self.free_deg_MNIV, self.Gamma_def)
+    pair_policies = getattr(self, 'lds_pair_policies', None)
+    if torch.count_nonzero(self.Gamma_def) > 0 and getattr(self, 'transition_policy', None) is None:
+        if pair_policies is None:
+            prior_A = matrix_normal_inv_wishart(
+                self.A_def, torch.eye(self.A_def.shape[1], device=self.A_def.device,
+                                      dtype=self.A_def.dtype),
+                self.free_deg_MNIV, self.Gamma_def)
+        else:
+            prior_A = make_pair_prior(self.A_def, self.Gamma_def, self.free_deg_MNIV,
+                                      *pair_policies['transition'])
         transition = transition - self.internal_params.kl_divergence(prior_A)
 
     if getattr(self, 'observation_policy', None) is not None:
         return transition, transition.new_zeros(())
 
-    if isinstance(self.observation_params, inv_wishart):
+    if pair_policies is not None:
+        prior_C = make_pair_prior(self.C_def, self.Sigma_def, self.free_deg_MNIV,
+                                  *pair_policies['observation'])
+    elif isinstance(self.observation_params, inv_wishart):
         prior_C = inv_wishart(self.free_deg_MNIV, self.Sigma_def, self.C_def)
     else:
         prior_C = matrix_normal_inv_wishart(
@@ -420,7 +446,7 @@ def bayesian_batch_params(self, resp, grid_samples=None):
             observation_mass, observations, latent_observations,
             zeros, obs_cov, zeros)
     new_int = prior_int
-    if transition_y:
+    if transition_y and getattr(self, 'transition_policy', None) is None:
         new_int = prior_int.posterior(
             transition_mass, torch.cat(transition_y, dim=1),
             torch.cat(transition_f, dim=1), transition_cov_y,
@@ -437,6 +463,11 @@ def bayesian_batch_params(self, resp, grid_samples=None):
         if transition_y:
             Gamma_new = Gamma_new + self.Gamma_def / (mass ** 2)
         Sigma_new = Sigma_new + self.Sigma_def / (mass ** 2)
+    if getattr(self, 'lds_pair_policies', None) is not None:
+        if self.lds_pair_policies['transition'][1].mode == 'fixed':
+            Gamma_new = self.Gamma_def
+        if self.lds_pair_policies['observation'][1].mode == 'fixed':
+            Sigma_new = self.Sigma_def
     self.A[-1], self.Gamma[-1] = A_new, Gamma_new
     self.C[-1], self.Sigma[-1] = C_new, Sigma_new
     self.var[-1] = torch.atleast_2d(torch.sqrt(torch.diag(Gamma_new).clamp_min(0))).T
@@ -510,11 +541,14 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                             samples_A, samples_A_ = samples_A * root_h, samples_A_ * root_h
                             cov, cov_, cov_cross = cov * h, cov_ * h, cov_cross * h
                         failure_stage = 'internal MNIW posterior'
-                        new_int_dist = _lds_posterior(
-                            self, self.internal_params, N_k, samples_A, samples_A_,
-                            cov, cov_, cov_cross, annealing=self.annealing,
-                        )
-                        _require_spd_posterior(new_int_dist, 'internal')
+                        if getattr(self, 'transition_policy', None) is None:
+                            new_int_dist = _lds_posterior(
+                                self, self.internal_params, N_k, samples_A, samples_A_,
+                                cov, cov_, cov_cross, annealing=self.annealing,
+                            )
+                            _require_spd_posterior(new_int_dist, 'internal')
+                        else:
+                            new_int_dist = self.transition_policy.posterior
                     elif model_type == 'dynamic':
                         # One beat has an observation but no state transition.
                         N_k = h
@@ -618,6 +652,11 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                     factor_S = self.Sigma[0] / (self.N ** 2)
                 Gamma_ = Gamma_ + factor_G
                 Sigma_ = Sigma_ + factor_S
+            if getattr(self, 'lds_pair_policies', None) is not None:
+                if self.lds_pair_policies['transition'][1].mode == 'fixed':
+                    Gamma_ = self.Gamma_def
+                if self.lds_pair_policies['observation'][1].mode == 'fixed':
+                    Sigma_ = self.Sigma_def
             if self.N < self.estimation_limit or full_data or first_observation_update:
                 self.A.append(new_int_dist.get_mean())
                 self.Gamma.append(Gamma_)

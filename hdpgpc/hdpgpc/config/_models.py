@@ -40,6 +40,23 @@ class GPEmissionConfig:
 
 
 @dataclass(frozen=True)
+class MatrixPolicyConfig:
+    """LDS map prior/ownership. Shrinkage uses a stronger I-centred MNIW prior."""
+    mode: Literal['cluster', 'shrinkage', 'shared', 'fixed'] = 'cluster'
+    value: ndarray | None = None
+    strength: float = 1.0
+
+
+@dataclass(frozen=True)
+class NoisePolicyConfig:
+    """LDS covariance posterior/ownership and optional fixed value."""
+    mode: Literal['cluster', 'cluster_diagonal', 'shared',
+                  'shared_diagonal', 'fixed'] = 'cluster'
+    value: ndarray | None = None
+    strength: float = 1.0
+
+
+@dataclass(frozen=True)
 class ObservationConfig:
     """Observation map policy. Fixed matrices currently use the LDS grid dimension.
 
@@ -51,6 +68,8 @@ class ObservationConfig:
     scope: Literal['cluster', 'shared', 'fixed'] = 'cluster'
     C: ndarray | None = None
     Sigma: ndarray | None = None
+    C_policy: MatrixPolicyConfig | None = None
+    Sigma_policy: NoisePolicyConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +77,8 @@ class DynamicsConfig:
     """Static/LDS controls; omitted MNIW degrees of freedom follow the schedule."""
     model_type: Literal['static', 'dynamic'] | list[Literal['static', 'dynamic']] | ndarray = 'dynamic'
     ini_gamma: ScalarOption = None
+    A_policy: MatrixPolicyConfig | None = None
+    Gamma_policy: NoisePolicyConfig | None = None
     bound_gamma: Bounds = (1e-1, 1e2)
     annealing: BoolOption = True
     bayesian_params: bool = True
@@ -189,7 +210,23 @@ NON_CONSTRUCTOR = {'alignment': {'policy', 'flow_inducing', 'flow_features',
                                  'dtw_points', 'dtw_inducing',
                                  'dtw_lengthscale', 'dtw_amplitude', 'dtw_anchor_noise'},
                    'inference': {'schedule', 'warp', 'force_model', 'minibatch', 'classify', 'it_limit'},
-                   'numerics': {'seed', 'num_threads', 'dtype', 'deterministic'}}
+                   'numerics': {'seed', 'num_threads', 'dtype', 'deterministic'},
+                   'observation': {'C_policy', 'Sigma_policy'},
+                   'dynamics': {'A_policy', 'Gamma_policy'}}
+
+
+def resolved_lds_policies(config):
+    """Translate the older paired observation scope into independent policies."""
+    obs, dynamics = config.observation, config.dynamics
+    A = dynamics.A_policy or MatrixPolicyConfig()
+    Gamma = dynamics.Gamma_policy or NoisePolicyConfig()
+    if obs.C_policy is not None or obs.Sigma_policy is not None:
+        C = obs.C_policy or MatrixPolicyConfig()
+        Sigma = obs.Sigma_policy or NoisePolicyConfig()
+    else:
+        C = MatrixPolicyConfig(mode=obs.scope, value=obs.C)
+        Sigma = NoisePolicyConfig(mode=obs.scope, value=obs.Sigma)
+    return {'A': A, 'Gamma': Gamma, 'C': C, 'Sigma': Sigma}
 
 
 @dataclass(frozen=True, eq=False)
