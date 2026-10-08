@@ -387,6 +387,9 @@ def bayesian_batch_params(self, resp, grid_samples=None):
     device, dtype = self.f_star_sm[0].device, self.f_star_sm[0].dtype
     dim = self.f_star_sm[0].numel()
     obs_cov = torch.zeros((dim, dim), device=device, dtype=dtype)
+    observation_dim = prior_obs.get_mean().shape[0]
+    obs_noise_cov = torch.zeros((observation_dim, observation_dim), device=device, dtype=dtype)
+    obs_cross_cov = torch.zeros((observation_dim, dim), device=device, dtype=dtype)
     obs_y, obs_f = [], []
     transition_y, transition_f = [], []
     transition_cov_y = torch.zeros_like(obs_cov)
@@ -402,11 +405,15 @@ def bayesian_batch_params(self, resp, grid_samples=None):
         root = weight ** 0.5
         mean = self.f_star_sm[position + 1].reshape(-1, 1)
         covariance = self.cov_f_sm[position + 1]
-        if getattr(self, 'direct_observation_offset', None) is None:
-            observation = self.project_observation_to_basis(
-                self.y_train[position], self.x_train[position]).to(device=device, dtype=dtype)
+        if getattr(self, 'observation_policy', None) is None:
+            if getattr(self, 'direct_observation_offset', None) is not None:
+                observation = (self.y_train[position].reshape(-1, 1)
+                               - self.direct_observation_offset).to(device=device, dtype=dtype)
+            else:
+                observation = self.project_observation_to_basis(
+                    self.y_train[position], self.x_train[position]).to(device=device, dtype=dtype)
             if observation.shape[0] != prior_obs.get_mean().shape[0]:
-                raise ValueError('conjugate_batch observation dimension differs from the LDS grid')
+                raise ValueError('conjugate_batch observation dimension differs from the observation map')
             obs_y.append(root * observation)
             obs_f.append(root * mean)
             obs_cov = obs_cov + weight * covariance
@@ -430,8 +437,7 @@ def bayesian_batch_params(self, resp, grid_samples=None):
 
     if observation_mass <= 0:
         return
-    if (getattr(self, 'direct_observation_offset', None) is not None
-            or getattr(self, 'observation_policy', None) is not None):
+    if getattr(self, 'observation_policy', None) is not None:
         new_obs = prior_obs
     else:
         observations = torch.cat(obs_y, dim=1)
@@ -446,7 +452,7 @@ def bayesian_batch_params(self, resp, grid_samples=None):
         else:
             new_obs = prior_obs.posterior(
                 observation_mass, observations, latent_observations,
-                torch.zeros_like(obs_cov), obs_cov, torch.zeros_like(obs_cov))
+                obs_noise_cov, obs_cov, obs_cross_cov)
     new_int = prior_int
     if transition_y and getattr(self, 'transition_policy', None) is None:
         new_int = prior_int.posterior(
@@ -464,7 +470,8 @@ def bayesian_batch_params(self, resp, grid_samples=None):
         mass = max(observation_mass, 1.0)
         if transition_y:
             Gamma_new = Gamma_new + self.Gamma_def / (mass ** 2)
-        Sigma_new = Sigma_new + self.Sigma_def / (mass ** 2)
+        if getattr(self, 'direct_observation_offset', None) is None:
+            Sigma_new = Sigma_new + self.Sigma_def / (mass ** 2)
     if getattr(self, 'lds_pair_policies', None) is not None:
         if self.lds_pair_policies['transition'][1].mode == 'fixed':
             Gamma_new = self.Gamma_def
@@ -561,7 +568,28 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                     else:
                         print("Only programmed static and dynamic models.")
                         new_int_dist = self.internal_params
-                    if not full_data or getattr(self, 'direct_observation_offset', None) is not None:
+                    if getattr(self, 'direct_observation_offset', None) is not None:
+                        # PCA has a rectangular fixed decoder. Work in the
+                        # waveform grid, centered by its calibration mean.
+                        # Only latent-state uncertainty enters the noise
+                        # posterior; the observed waveform is known.
+                        if full_data:
+                            n_obs = min(len(self.y_train), int(self.estimation_limit)) if (
+                                self.estimation_limit != np.PINF) else len(self.y_train)
+                            samples_C = torch.stack(self.y_train[:n_obs])[:, :, 0].T
+                            samples_C = samples_C - self.direct_observation_offset
+                            samples_C_ = torch.stack(self.f_star_sm[1:n_obs + 1])[:, :, 0].T
+                            cov_ = torch.sum(torch.stack(self.cov_f_sm[1:n_obs + 1]), dim=0)
+                            N_k = n_obs
+                        else:
+                            samples_C = self.y_train[-1].reshape(-1, 1) - self.direct_observation_offset
+                            samples_C_ = self.f_star_sm[-1]
+                            cov_ = self.cov_f_sm[-1]
+                        obs_dim = samples_C.shape[0]
+                        latent_dim = samples_C_.shape[0]
+                        cov = torch.zeros((obs_dim, obs_dim), device=cov_.device, dtype=cov_.dtype)
+                        cov_cross = torch.zeros((obs_dim, latent_dim), device=cov_.device, dtype=cov_.dtype)
+                    elif not full_data:
                         sparse_observation = (self.inducing_points and
                                               not torch.equal(self.x_basis, self.x_train[-1]))
                         if sparse_observation:
@@ -654,7 +682,8 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                                 else self.Gamma[0] / (self.N ** 2))
                     factor_S = self.Sigma[0] / (self.N ** 2)
                 Gamma_ = Gamma_ + factor_G
-                Sigma_ = Sigma_ + factor_S
+                if getattr(self, 'direct_observation_offset', None) is None:
+                    Sigma_ = Sigma_ + factor_S
             if getattr(self, 'lds_pair_policies', None) is not None:
                 if self.lds_pair_policies['transition'][1].mode == 'fixed':
                     Gamma_ = self.Gamma_def

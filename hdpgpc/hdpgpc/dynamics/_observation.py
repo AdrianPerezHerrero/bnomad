@@ -108,7 +108,8 @@ class ObservationPolicy:
             return
         device, dtype = self.C.device, self.C.dtype
         observations, latents = [], []
-        latent_cov = torch.zeros_like(self.Sigma)
+        latent_dim = self.C.shape[1]
+        latent_cov = torch.zeros((latent_dim, latent_dim), device=device, dtype=dtype)
         mass = 0.0
         for cluster, emission in enumerate(emissions):
             positions = [len(emission.indexes) - 1] if online else range(len(emission.indexes))
@@ -122,19 +123,24 @@ class ObservationPolicy:
                 if weight <= 0:
                     continue
                 root = weight ** 0.5
-                observation = emission.project_observation_to_basis(
-                    emission.y_train[position], emission.x_train[position])
+                if getattr(emission, 'direct_observation_offset', None) is not None:
+                    observation = (emission.y_train[position].reshape(-1, 1)
+                                   - emission.direct_observation_offset)
+                else:
+                    observation = emission.project_observation_to_basis(
+                        emission.y_train[position], emission.x_train[position])
                 observations.append(root * observation.to(device=device, dtype=dtype))
                 latents.append(root * emission.f_star_sm[position + 1].reshape(-1, 1).to(device=device, dtype=dtype))
                 latent_cov = latent_cov + weight * emission.cov_f_sm[position + 1].to(device=device, dtype=dtype)
                 mass += weight
         if mass == 0:
             return
-        zero = torch.zeros_like(self.Sigma)
+        observation_cov = torch.zeros_like(self.Sigma)
+        cross_cov = torch.zeros((self.C.shape[0], latent_dim), device=device, dtype=dtype)
         base = self.posterior if online else self.prior
         self.posterior = base.posterior(
             mass, torch.cat(observations, dim=1), torch.cat(latents, dim=1),
-            zero, latent_cov, zero)
+            observation_cov, latent_cov, cross_cov)
         self.C = self.posterior.get_mean()
         self.Sigma = self.posterior.get_scale(final=True)
         for emission in emissions:

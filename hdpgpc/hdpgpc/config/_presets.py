@@ -50,7 +50,7 @@ def with_lds_preset(config: HDPGPCConfig, preset: str, *,
     if not isinstance(config, HDPGPCConfig):
         raise TypeError('config must be HDPGPCConfig')
     if config.observation.pca_grid is not None:
-        raise ValueError('PCA fixes C/Sigma and selects free A/Gamma; LDS presets do not apply')
+        raise ValueError('PCA fixes C and selects free A/Gamma; LDS presets do not apply')
     if preset not in LDS_PRESETS:
         raise ValueError('Unknown LDS preset: ' + str(preset))
     if (isinstance(shrink_strength, bool) or not isinstance(shrink_strength, Real)
@@ -93,9 +93,13 @@ def with_lds_preset(config: HDPGPCConfig, preset: str, *,
     return replace(config, observation=observation, dynamics=dynamics, hdp=hdp)
 
 
-def with_pca_emission(config: HDPGPCConfig, estimate) -> HDPGPCConfig:
-    """Install a calibrated rectangular PCA decoder as one fixed C/Sigma pair.
+def with_pca_emission(config: HDPGPCConfig, estimate, *,
+                      sigma_policy: NoisePolicyConfig | None = None) -> HDPGPCConfig:
+    """Install a calibrated rectangular PCA decoder with a fixed C.
 
+    Sigma defaults to fixed calibrated residual noise. A supplied noise policy
+    may learn full or diagonal Sigma per cluster or across all clusters; its
+    optional value replaces the calibrated covariance as the prior mean.
     A and Gamma remain learned per cluster. The latent LDS dimension is the
     PCA component count; the observation grid retains the waveform dimension.
     GP kernel fitting and warping are excluded because component indices are
@@ -109,11 +113,20 @@ def with_pca_emission(config: HDPGPCConfig, estimate) -> HDPGPCConfig:
         raise ValueError('PCA observation currently requires one output channel')
     if config.inference.warp or config.numerics.cuda:
         raise ValueError('PCA observation currently requires warp=False and CPU inference')
+    if sigma_policy is None:
+        sigma_policy = NoisePolicyConfig(mode='fixed')
+    if not isinstance(sigma_policy, NoisePolicyConfig):
+        raise TypeError('sigma_policy must be a NoisePolicyConfig')
+    if sigma_policy.mode not in ('fixed', 'cluster', 'cluster_diagonal',
+                                 'shared', 'shared_diagonal'):
+        raise ValueError('PCA Sigma policy must be fixed, cluster, cluster_diagonal, shared, or shared_diagonal')
     dimension = estimate.components.shape[1]
+    sigma_value = (estimate.residual_covariance.copy() if sigma_policy.value is None
+                   else np.asarray(sigma_policy.value).copy())
     observation = replace(
         config.observation, scope='cluster', C=None, Sigma=None,
         C_policy=MatrixPolicyConfig(mode='fixed', value=estimate.components.copy()),
-        Sigma_policy=NoisePolicyConfig(mode='fixed', value=estimate.residual_covariance.copy()),
+        Sigma_policy=replace(sigma_policy, value=sigma_value),
         pca_grid=estimate.grid.copy(), pca_mean=estimate.mean.copy(),
         pca_variances=estimate.latent_variances.copy(),
     )

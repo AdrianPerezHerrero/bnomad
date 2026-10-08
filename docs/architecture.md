@@ -8,14 +8,16 @@ imports a retired implementation class.
 | Area | Actual responsibility | Public surface |
 | --- | --- | --- |
 | `model` | Input/result adaptation, initialization, mutable state, cluster lifecycle, representation conversion | `HDPGPC`, `UpdateResult`, `Prediction`, `LatentState` |
-| `config` | Typed options, validation and data-only dictionary/YAML codec | `HDPGPCConfig`, seven section dataclasses |
+| `config` | Typed options, validation and data-only dictionary/YAML codec | `HDPGPCConfig`, eight section dataclasses |
 | `inference` | Separate standard/fast online, offline, classification and label-conditioned schedules; HMM messages and objective aggregation | `InferenceEngine`, `OnlineInference`, `OfflineInference` |
 | `hdp` | Sticks, transitions, concentration presets, expected logs, entropy, attributed bnpy optimizer | `HDPVariational` |
 | `emissions` | GP/output trajectories, priors, prediction, fitting, GPyTorch models and SNR weights | `EmissionModel`, `GaussianProcessEmission` |
 | `dynamics` | Static/LDS initialization, filtering, smoothing, learning and conjugate distributions | `DynamicsModel`, `StaticDynamics`, `LinearDynamics` |
 | `alignment` | Identity/AMTGP policies, grids, optimization, prior and caches | `NoAlignment`, `GPAlignment`, `GaussianProcessWarp` |
 | `numerics` | Shared low-level normalization | private |
-| `datasets`, `diagnostics` | Path-dependent research data utilities and plots | private |
+| `datasets` | Research dataset utilities | dataset-specific |
+| `preprocessing` | Generic waveform selection, optional scaling, common-grid preparation | `prepare_sequences` |
+| `diagnostics` | Label and prior summaries; LDS and warp inspection plots | reporting and plotting helpers |
 | `examples` | Small deterministic recipes, inputs and reference experiment | `configuration`, `waveforms`, reference command |
 
 ## Dependency direction

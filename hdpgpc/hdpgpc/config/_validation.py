@@ -75,11 +75,12 @@ def validate(c, *, for_build=False):
                            (grid, mean, variances, decoder, noise))
                 or not np.all(variances > 0)):
             raise ValueError('PCA observation dimensions/values must match the waveform and latent grids')
-        if (policies['C'].mode != 'fixed' or policies['Sigma'].mode != 'fixed'
+        if (policies['C'].mode != 'fixed' or policies['Sigma'].mode not in (
+                    'fixed', 'cluster', 'cluster_diagonal', 'shared', 'shared_diagonal')
                 or policies['A'].mode != 'cluster' or policies['Gamma'].mode != 'cluster'
                 or d.model_type != 'dynamic' or o.n_outputs != 1 or i.warp or n.cuda
-                or e.fit_gp or not e.inducing_points or i.reestimate_initial_params):
-            raise ValueError('PCA requires fixed C/Sigma, free dynamic A/Gamma, one output, '
+                 or e.fit_gp or not e.inducing_points or i.reestimate_initial_params):
+            raise ValueError('PCA requires fixed C, supported Sigma policy, free dynamic A/Gamma, one output, '
                              'fixed GP kernel, inducing mode, CPU and no warp/recalibration')
     for name in ('A', 'C'):
         policy = policies[name]

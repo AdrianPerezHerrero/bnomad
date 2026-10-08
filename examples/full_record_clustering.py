@@ -28,14 +28,15 @@ import traceback
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
-from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
 
 from tutorial_utils import plot_record_results
 from hdpgpc import HDPGPC
 from hdpgpc.dynamics import estimate_lds_noise_priors, estimate_pca_observation
 from hdpgpc.diagnostics import (
+    Tee, cluster_label_statistics, format_confusion_matrix, format_lds_priors,
     model_lds_arrays, model_warp_arrays, plot_lds_diagnostics, plot_warp_diagnostics,
 )
+from hdpgpc.preprocessing import prepare_sequences
 from hdpgpc.config import (
     AlignmentConfig,
     DynamicsConfig,
@@ -56,7 +57,7 @@ from hdpgpc.config import (
 # -----------------------------------------------------------------------------
 # Experiment controls: edit these values for the desired whole-record run.
 # -----------------------------------------------------------------------------
-# Full run: uncomment this tuple and comment out the single-record choice below.
+# Full run: use this tuple; for a single record, choose the alternative below.
 RECORDS = (
     "100", "101", "102", "103", "104", "105", "106", "107", "108", "109",
     "111", "112", "113", "114", "115", "116", "117", "118", "119",
@@ -68,16 +69,20 @@ RECORDS = (
 # RECORDS = ("102",)            # Current record selection.
 CHANNELS = (0,)                 # Choose channel 0, 1, or both: (0, 1).
 SCALE_WAVEFORMS = False          # First-beat mean/std scaling; False keeps stored amplitudes.
-UNIT_GRID = False               # True: coordinates 0..1; False: existing 0..4 grid.
+UNIT_GRID = False               # True: coordinates 0..1; False: point indices.
 INFERENCE_MODE = "offline"      # "offline", "online", or "online_fast".
 LDS_INDUCING_POINTS = None        # Reduced LDS basis size; 0 or None uses every waveform point.
 # Set a component count for a fixed PCA emission calibrated before fitting.
 # It overrides LDS_PRESET and all manual LDS matrix modes. Online calibration
 # pretrains on a record prefix, then replays that prefix during clustering;
 # use a separate calibration record for a strictly causal evaluation.
-PCA_COMPONENTS = 36
-PCA_CALIBRATION_MAX_BEATS = 128
+PCA_COMPONENTS = 24
+PCA_CALIBRATION_MAX_BEATS = 2000
 PCA_RESIDUAL_NOISE_FLOOR = 1.0e-3
+# PCA keeps C fixed. Sigma uses the existing noise modes: fixed, cluster,
+# cluster_diagonal, shared, or shared_diagonal. The calibrated residual
+# covariance is the initial value/prior mean in every mode.
+PCA_SIGMA_MODE = "cluster"
 HARD_ASSIGNMENTS = True         # False uses soft responsibility weights during inference.
 ENABLE_WARP = False              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
@@ -98,8 +103,8 @@ LDS_DEGREES_OF_FREEDOM = 10  # None uses the package default: 5 offline, 20 onli
 LDS_UPDATE = "conjugate_batch"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".
 LDS_SCORING = "final"          # "final" uses last LDS matrices; "historical" uses per-beat matrices.
 # Set None to use the four manual modes below. Named bundles are documented in
-# agents/lds_presets.md; "only_plastic" retains this example's prior behavior.
-LDS_PRESET = "all_free"
+# docs/model_choices.md; "only_plastic" retains this example's prior behavior.
+LDS_PRESET = "stable"
 # Independent LDS policies; all four choices are explicit in this script.
 # Matrix: cluster, shrinkage, shared, fixed. Noise: cluster, cluster_diagonal,
 # shared, shared_diagonal, fixed. Matched learned scopes are required within
@@ -126,9 +131,9 @@ GP_OUTPUTSCALE_BOUNDS = (0.001, 1.0e+4)
 GP_WHITE_NOISE_INITIAL = 1.0
 GP_WHITE_NOISE_BOUNDS = (0.0001, 1.0e+8)  # Lower and upper bounds for first-beat GP fitting.
 CUSTOM_GP_KERNEL = None         # Set to a sklearn kernel; with FIT_GP=False it is never optimized.
-INITIAL_OBSERVATION_NOISE = 1.0e+2
+INITIAL_OBSERVATION_NOISE = 1.0e+1
 OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)  # LDS Sigma, separate from GP white noise.
-INITIAL_PROCESS_NOISE = 1.0e+2
+INITIAL_PROCESS_NOISE = 1.0e+1
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)
 # Optional, independent identity-LDS pilot calibration before model.fit.
 # It uses random contiguous blocks from this record, so enable it only offline.
@@ -233,7 +238,7 @@ def _configuration(
             birth_lds_kl_per_sqrt_point=birth_lds_kl_per_sqrt_point,
             warp=ENABLE_WARP,
             it_limit=OFFLINE_ITERATIONS if INFERENCE_MODE == "offline" else None,
-            n_explore_steps=5,
+            n_explore_steps=10,
         ),
         multi_output=MultiOutputConfig(
             n_outputs=len(CHANNELS),
@@ -248,7 +253,9 @@ def _configuration(
         ),
     )
     if pca_estimate is not None:
-        return with_pca_emission(config, pca_estimate)
+        return with_pca_emission(
+            config, pca_estimate,
+            sigma_policy=NoisePolicyConfig(mode=PCA_SIGMA_MODE))
     return (with_lds_preset(config, LDS_PRESET,
                             shrink_strength=LDS_SHRINK_STRENGTH)
             if LDS_PRESET is not None else config)
@@ -270,114 +277,6 @@ def _load_record(record: str) -> tuple[np.ndarray, np.ndarray]:
     return signal, labels
 
 
-def _prepare_record(
-    signal: np.ndarray, *, scale_waveforms: bool = SCALE_WAVEFORMS,
-    unit_grid: bool = UNIT_GRID,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Keep every point and apply the selected waveform/grid scaling."""
-    raw = np.asarray(signal[:, :, CHANNELS], dtype=np.float64)
-    if scale_waveforms:
-        center = raw[0].mean(axis=0)
-        scale = raw[0].std(axis=0)
-        if np.any(~np.isfinite(scale)) or np.any(scale <= np.finfo(np.float64).eps):
-            raise ValueError("The first beat has a zero/invalid scale in a selected channel.")
-        values = (raw - center[None, None, :]) / scale[None, None, :]
-    else:
-        values = raw
-    grid_end = 1.0 if unit_grid else raw.shape[1] - 1.0
-    grid = np.linspace(0.0, grid_end, raw.shape[1], dtype=np.float64)[:, None]
-    return values, grid
-
-
-def _classification_statistics(
-    assignments: np.ndarray, labels: np.ndarray,
-) -> tuple[dict[str, float], np.ndarray, np.ndarray, dict[int, str]]:
-    """Score clusters after assigning each its majority ECG annotation."""
-    assignments = np.asarray(assignments).reshape(-1)
-    labels = np.asarray(labels).reshape(-1)
-    if len(assignments) != len(labels):
-        raise ValueError("Assignments and annotations must have a verified one-to-one alignment.")
-
-    clusters = np.unique(assignments)
-    classes = np.unique(labels)
-    contingency = np.zeros((len(clusters), len(classes)), dtype=np.int64)
-    for row, cluster in enumerate(clusters):
-        members = labels[assignments == cluster]
-        counts = Counter(members.tolist())
-        for column, label in enumerate(classes):
-            contingency[row, column] = counts[label]
-
-    majority_labels = classes[np.argmax(contingency, axis=1)]
-    cluster_annotations = dict(zip(clusters.tolist(), majority_labels.tolist()))
-    assigned_labels = majority_labels[np.searchsorted(clusters, assignments)]
-    confusion = np.zeros((len(classes), len(classes)), dtype=np.int64)
-    np.add.at(confusion, (np.searchsorted(classes, labels),
-                          np.searchsorted(classes, assigned_labels)), 1)
-    majority_correct = int(np.trace(confusion))
-    scores = {
-        "purity": majority_correct / len(labels),
-        "majority_label_accuracy_in_sample": majority_correct / len(labels),
-        "adjusted_rand_index": float(adjusted_rand_score(labels, assignments)),
-        "normalized_mutual_information": float(
-            normalized_mutual_info_score(labels, assignments, average_method="arithmetic")
-        ),
-    }
-    return scores, classes, confusion, cluster_annotations
-
-
-def _print_confusion_matrix(classes: np.ndarray, matrix: np.ndarray) -> None:
-    """Print true annotations against cluster-assigned annotations."""
-    row_width = max(13, *(len(str(label)) for label in classes))
-    column_names = [str(label) for label in classes]
-    cell_width = max(5, len(str(matrix.sum())), *(len(name) for name in column_names))
-    print("Confusion matrix (rows=real annotation, columns=cluster-assigned annotation; counts):")
-    print(f"  {'Real/assigned':>{row_width}} | "
-          + " ".join(f"{name:>{cell_width}}" for name in column_names)
-          + f" | {'Total':>{cell_width}}")
-    for label, row in zip(classes, matrix):
-        print(f"  {str(label):>{row_width}} | "
-              + " ".join(f"{int(count):>{cell_width}}" for count in row)
-              + f" | {int(row.sum()):>{cell_width}}")
-    print(f"  {'Total':>{row_width}} | "
-          + " ".join(f"{int(total):>{cell_width}}" for total in matrix.sum(axis=0))
-          + f" | {int(matrix.sum()):>{cell_width}}")
-
-
-def _print_lds_priors(*, dimension: int, model_type: str,
-                      observation_noise: float, process_noise: float,
-                      degrees_of_freedom: int, source: str, policies: dict) -> None:
-    """Log the LDS prior centers and concentrations selected by this recipe."""
-    def matrix_center(name):
-        value = policies[name].value
-        return f"I_{dimension}" if value is None else f"custom {np.asarray(value).shape} matrix"
-
-    def noise_center(name, scalar):
-        value = policies[name].value
-        return (f"{scalar:.6g} * I_{dimension}" if value is None
-                else f"custom {np.asarray(value).shape} covariance")
-
-    print("------ Initial LDS parameter priors ------")
-    print(f"Source={source}; LDS dimension={dimension}")
-    if model_type == "dynamic":
-        for matrix, noise, scale in (('A', 'Gamma', process_noise),
-                                     ('C', 'Sigma', observation_noise)):
-            matrix_policy, noise_policy = policies[matrix], policies[noise]
-            n0 = degrees_of_freedom * noise_policy.strength
-            print(f"{matrix}: {matrix_policy.mode}, center={matrix_center(matrix)}, "
-                  f"column prior precision={matrix_policy.strength:g} * I_{dimension}"
-                  if matrix_policy.mode != 'fixed' else
-                  f"{matrix}: fixed at {matrix_center(matrix)}")
-            print(f"{noise}: {noise_policy.mode}, center={noise_center(noise, scale)}, "
-                  f"excess degrees n0={n0:g}" if noise_policy.mode != 'fixed' else
-                  f"{noise}: fixed at {noise_center(noise, scale)}")
-    else:
-        print("A: absent (static dynamics)")
-        print(f"C: {policies['C'].mode} at {matrix_center('C')}")
-        print(f"Gamma: 0_{dimension} (static model; no A/Gamma posterior KL)")
-        print(f"Sigma: {policies['Sigma'].mode}, "
-              f"center={noise_center('Sigma', observation_noise)}")
-    print("------------------------------------------")
-
 
 def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                plot_warps: bool = PLOT_WARPS,
@@ -394,8 +293,9 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                unit_grid: bool = UNIT_GRID,
                calibrate_lds_noise_priors: bool = CALIBRATE_LDS_NOISE_PRIORS) -> None:
     signal, annotations = _load_record(record)
-    values, grid = _prepare_record(
-        signal, scale_waveforms=scale_waveforms, unit_grid=unit_grid,
+    values, grid = prepare_sequences(
+        signal, channels=CHANNELS, scale_from_first=scale_waveforms,
+        unit_grid=unit_grid,
     )
     initial_observation_noise = INITIAL_OBSERVATION_NOISE
     initial_process_noise = INITIAL_PROCESS_NOISE
@@ -496,14 +396,14 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     print("Experimental birth LDS KL / LDS dimension="
           f"{birth_lds_kl_per_sqrt_point} "
           f"(divisor={birth_lds_divisor:.6g})")
-    _print_lds_priors(
+    print(format_lds_priors(
         dimension=len(config.x_basis), model_type=config.dynamics.model_type,
         observation_noise=initial_observation_noise,
         process_noise=initial_process_noise,
         degrees_of_freedom=effective_dof,
         source="identity-LDS pilot" if calibrate_lds_noise_priors else "configured values",
         policies=selected,
-    )
+    ))
 
     model = HDPGPC(config)
     start = time.perf_counter()
@@ -525,7 +425,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
             f"got {len(assignments)} observations and {len(annotations)} annotations."
         )
     else:
-        scores, classes, confusion, cluster_annotations = _classification_statistics(
+        scores, classes, confusion, cluster_annotations = cluster_label_statistics(
             assignments, annotations
         )
         print("Label-based clustering statistics:")
@@ -536,7 +436,9 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         print("  * Cluster-to-label mapping is fitted and scored on this same record.")
         print("Cluster annotation assignments (majority vote): "
               + ", ".join(f"C{cluster}={label}" for cluster, label in cluster_annotations.items()))
-        _print_confusion_matrix(classes, confusion)
+        print(format_confusion_matrix(
+            classes, confusion, true_name='real annotation',
+            assigned_name='cluster-assigned annotation'))
 
     figures = plot_record_results(
         model,
@@ -594,26 +496,6 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
             plt.close(figure)
     else:
         plt.show()
-
-
-class _Tee:
-    """Write Python console output to the terminal and a record log."""
-
-    def __init__(self, terminal, log_file):
-        self.terminal = terminal
-        self.log_file = log_file
-
-    def write(self, message):
-        self.terminal.write(message)
-        self.log_file.write(message)
-        return len(message)
-
-    def flush(self):
-        self.terminal.flush()
-        self.log_file.flush()
-
-    def __getattr__(self, name):
-        return getattr(self.terminal, name)
 
 
 def main() -> None:
@@ -688,7 +570,7 @@ def main() -> None:
         record = str(record)
         log_path = args.plot_dir / f"record_{record}_clustering.log"
         with log_path.open("w", encoding="utf-8", buffering=1) as log_file:
-            with redirect_stdout(_Tee(sys.stdout, log_file)), redirect_stderr(_Tee(sys.stderr, log_file)):
+            with redirect_stdout(Tee(sys.stdout, log_file)), redirect_stderr(Tee(sys.stderr, log_file)):
                 print(f"Log file: {log_path}")
                 try:
                     run_record(

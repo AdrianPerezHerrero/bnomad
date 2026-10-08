@@ -5,6 +5,11 @@ Install the package first. The recipes provide explicit small-data parameters,
 not changed constructor defaults. Their five-point basis is a pedagogical fixture,
 not a recommendation for real recordings.
 
+For a larger experiment, start with [model choices](model_choices.md) and the
+[complete-record workflow](record_workflow.md). Detailed mathematics and
+limitations are in [LDS inference](lds_inference.md), [HDP presets](hdp_presets.md),
+and [alignment choices](alignment_choices.md).
+
 ## Offline dynamic clustering
 
 ```python

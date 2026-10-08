@@ -64,7 +64,8 @@ class ObservationConfig:
     one MNIW posterior per output from all cluster responsibilities. ``fixed``
     holds the supplied map and noise covariance, defaulting to identity C and
     the emission's initial observation covariance. A calibrated PCA observation
-    uses a rectangular fixed C and a separate waveform grid.
+    uses a rectangular fixed C and a separate waveform grid; Sigma can remain
+    fixed or use one of the learned noise policies.
     """
     scope: Literal['cluster', 'shared', 'fixed'] = 'cluster'
     C: ndarray | None = None

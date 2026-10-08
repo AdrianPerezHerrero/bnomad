@@ -17,7 +17,7 @@ model = HDPGPC(restored).fit(waveforms())
 | --- | --- | --- |
 | `hdp` | `HDPConfig` | `M`, concentration preset, HMM dependence, maximum models |
 | `emission` | `GPEmissionConfig` | kernels, first-beat fitting policy, lengthscale/output/noise initialization and bounds, inducing points |
-| `observation` | `ObservationConfig` | cluster-specific, shared learned, or fixed LDS observation map and covariance |
+| `observation` | `ObservationConfig` | independent C/Sigma map and covariance policies; optional fixed PCA decoder |
 | `dynamics` | `DynamicsConfig` | static/dynamic mode, process noise, ML/Bayesian updates, annealing, estimation limits |
 | `alignment` | `AlignmentConfig` | `gp`/`dtw_gp`/`gp_flow`/`none`, basis, noise/bounds, recursion, warp mode |
 | `inference` | `InferenceConfig` | online/fast/offline schedule and separate call controls |
@@ -52,31 +52,40 @@ legacy inducing-point kernel optimizes those basis locations and retains the
 learned locations. LDS observation MNIW updates use the GP projection of each
 waveform onto the basis. This projection is an approximation: it does not
 carry the full conditional projection uncertainty into the conjugate update.
-It is not a sparse variational GP ELBO.
+It is not a sparse variational GP ELBO. Offline `conjugate_batch` can also
+update a reduced-basis LDS using projected waveform moments.
 
-`ObservationConfig(scope='cluster')` preserves the per-cluster C/Sigma MNIW
-updates. `scope='shared'` owns one C/Sigma posterior at model level and pools
-responsibility-weighted smoothed latent moments from all clusters. Offline
-iterations recompute it from the prior; online updates add the newly observed
-beat once. Its KL is counted once. `scope='fixed'` holds C and Sigma at their
-initial values and contributes no observation-parameter KL. Supply `C=` and
-`Sigma=` NumPy matrices for a custom fixed map/covariance; omitted C is
-identity and omitted Sigma is the configured initial LDS observation noise.
-Both matrices currently have the LDS grid's square dimension. These policies
-require one output, Bayesian LDS updates, and `lds_scoring='final'`.
-After fitting, `model.observation_parameters_` returns one C/Sigma pair for
-shared or fixed scope, or per-cluster pairs for cluster scope.
+The current LDS setup selects **four independent policies**: `A_policy` and
+`Gamma_policy` in `DynamicsConfig`, `C_policy` and `Sigma_policy` in
+`ObservationConfig`. Map modes are `cluster`, `shrinkage`, `shared`, and
+`fixed`; noise modes are `cluster`, `cluster_diagonal`, `shared`,
+`shared_diagonal`, and `fixed`. Matched learned ownership is required within
+each map/noise pair; a fixed member can accompany a learned one. The older
+`ObservationConfig(scope=...)` is retained for compatible recipes when
+explicit policies are absent. New configurations should use the policy fields
+or [`with_lds_preset`](model_choices.md#lds-presets). A shared parameter has
+one model-level posterior and one parameter KL; a fixed parameter has no
+posterior KL. Ordinary maps are square on the LDS grid, while the PCA decoder
+is rectangular and maps latent coefficients to the complete observation grid.
+After fitting, `model.observation_parameters_` exposes the selected
+observation parameters.
 
 ```python
 from dataclasses import replace
-from hdpgpc.config import ObservationConfig
+from hdpgpc.config import MatrixPolicyConfig, NoisePolicyConfig, ObservationConfig
 
-shared = replace(config, observation=ObservationConfig(scope='shared'),
-                 dynamics=replace(config.dynamics, lds_scoring='final'))
+shared = replace(config, observation=ObservationConfig(
+    C_policy=MatrixPolicyConfig(mode='shared'),
+    Sigma_policy=NoisePolicyConfig(mode='shared')),
+    dynamics=replace(config.dynamics, lds_scoring='final'))
 fixed = replace(config, observation=ObservationConfig(
-    scope='fixed', C=my_C, Sigma=my_Sigma),
+    C_policy=MatrixPolicyConfig(mode='fixed', value=my_C),
+    Sigma_policy=NoisePolicyConfig(mode='fixed', value=my_Sigma)),
     dynamics=replace(config.dynamics, lds_scoring='final'))
 ```
+
+[LDS inference](lds_inference.md) describes posterior ownership, compatible
+combinations, the PCA option, and sequential versus batch updates.
 
 Alignment policy defaults to `gp`, replacing the serialized token `legacy` with
 the same scientific choice. Change that token explicitly in older recipes.
@@ -163,9 +172,9 @@ filter but starts the MNIW posterior from the original prior again, so it does
 not count the same record twice. The batch posterior can differ from the
 sequential result because latent states are inferred under different evolving
 parameters. `conjugate_batch` requires Bayesian LDS parameters.
-It requires observations on the LDS basis grid; GP-flow input warps are not
-supported by this conjugate update. Output-aligned waveform warps retain the
-common grid and can use it.
+With an inducing basis it projects full waveforms onto the LDS grid before
+the conjugate update. GP-flow input warps are not supported by this update;
+output-aligned waveform warps retain a common grid and can use it.
 
 `DynamicsConfig.lds_scoring` independently selects `final` (the default) or
 `historical`. In `final` mode, the observation ELBO uses the cluster's last

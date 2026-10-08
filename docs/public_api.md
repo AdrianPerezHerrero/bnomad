@@ -68,10 +68,16 @@ There is deliberately no ambiguous `predict(X)` method: assigning new curves,
 forecasting latent evolution, and querying a GP observation distribution are
 different scientific operations. `predictive` performs the last of these.
 
-The seven section dataclasses and their serialization/factory methods remain
+The eight section dataclasses and their serialization/factory methods remain
 public in `hdpgpc.config`. The previously documented component APIs remain
 available for advanced use: emission, dynamics, alignment, HDP and inference
 exports are listed in [architecture.md](architecture.md). The 0.3 engine interfaces replace the retired research entry points.
+
+For record experiments, `hdpgpc.preprocessing.prepare_sequences` selects
+channels, optional first-sequence scaling, and a common grid without assuming
+an ECG file layout. `hdpgpc.diagnostics` exports label statistics, confusion
+and LDS-prior formatting, log duplication, and fitted LDS/warp plots. See the
+[complete-record workflow](record_workflow.md) for inputs and interpretation.
 
 All names beginning with `_`, including `HDPGPC._backend`, are internal. The
 implementation modules `model._api` and `model._results` are internal; import
