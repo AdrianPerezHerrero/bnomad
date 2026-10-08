@@ -104,8 +104,21 @@ def _fit_emission(self, gp, x_trains, y_trains, resp, offsets,
         samples = [result_map[i, candidate].grid_samples
                    for i in range(len(y_trains))]
         return gp.full_pass_weighted_flow(x_trains, y_trains, resp, samples,
+                                          deterministic_warp=getattr(
+                                              self.alignment, 'supports_batch_lds_input_warp', False),
                                           **kwargs)
     return gp.full_pass_weighted(x_trains, y_trains, resp, **kwargs)
+
+
+def _point_warp_classification_scores(self, x_trains, y_trains):
+    """Score each beat against current clusters without committing its point warp."""
+    scores = y_trains.new_empty((len(y_trains), self.M, self.n_outputs))
+    for index in range(len(y_trains)):
+        _, candidate_scores = self.alignment.posterior_next(
+            self, x_trains[index], y_trains[index])
+        for candidate, parts in candidate_scores.items():
+            scores[index, candidate] = parts.to(scores.device)
+    return scores
 
 
 def fit(self, x_trains, y_trains, it_limit=None, warp=False):
@@ -145,6 +158,10 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
     x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
     self.x_train = self.cond_cuda(self.cond_to_torch(x_trains))
+    if self.warp and getattr(self.alignment, 'supports_batch_lds_input_warp', False):
+        # Input-grid alignment retains the raw waveform for later batch
+        # classification with learning; each candidate owns its warped grid.
+        self.y_train = y_trains
     iteration = 0
     reparam = True
     # Start loop of EM
@@ -194,15 +211,26 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                                                                                                    reallocate)
         if self.observation_scope == 'shared' or self.transition_policies:
             self.update_shared_observation(resp)
+            point_warp = (self.warp and getattr(
+                self.alignment, 'supports_batch_lds_input_warp', False))
+            if point_warp:
+                y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+                    x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+                    f_ind_old=self.f_ind_old)
+                self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
             for output, models in enumerate(self.gpmodels):
                 for cluster, emission in enumerate(models[:resp.shape[1]]):
                     if emission.indexes:
                         observations = (y_trains_w[:, :, [output], cluster]
                                         if y_trains_w.ndim == 4 else y_trains_w[:, :, [output]])
-                        q[:, cluster, output] = emission.compute_sq_err_all(
-                            x_trains, observations)
+                        grids = (_flow_inputs(self, x_trains, self.x_w, output, cluster)
+                                 if point_warp else x_trains)
+                        score = emission.compute_sq_err_all(grids, observations)
+                        q[:, cluster, output] = (_flow_score(
+                            self, emission, score, y_trains, output, cluster)
+                            if point_warp else score)
                         if self.transition_policies:
-                            q_lat[:, cluster, output] = emission.compute_q_lat_all(x_trains)
+                            q_lat[:, cluster, output] = emission.compute_q_lat_all(grids)
         if resp.shape[1] > M:
             self.M = M + 1
             M = self.M
@@ -1057,19 +1085,22 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
 
 
 def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp=False):
-    if warp and getattr(self.alignment, 'uses_candidate_input_warp', False):
-        raise NotImplementedError('candidate input warps are supported by offline.fit, not classify_batch')
     warp = _alignment.configured(self).enabled(warp)
+    point_warp = warp and getattr(self.alignment, 'supports_batch_lds_input_warp', False)
+    if warp and getattr(self.alignment, 'uses_candidate_input_warp', False) and not point_warp:
+        raise NotImplementedError('GP-flow input warps are supported by offline.fit, not classify_batch')
     if not learning:
         x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
         y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
-        q = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
+        q = (_point_warp_classification_scores(self, x_trains, y_trains)
+             if point_warp else torch.zeros(y_trains.shape[0], self.M, self.n_outputs))
         snr = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
         for ld in range(self.n_outputs):
             for m in range(self.M):
                 gp = self.gpmodels[ld][m]
-                for i in range(y_trains.shape[0]):
-                    q[i, m, ld] = gp.log_sq_error(x_trains[i], y_trains[i, :, [ld]], i=-1)
+                if not point_warp:
+                    for i in range(y_trains.shape[0]):
+                        q[i, m, ld] = gp.log_sq_error(x_trains[i], y_trains[i, :, [ld]], i=-1)
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
         transTheta = self.transTheta
         startTheta = self.startTheta
@@ -1089,13 +1120,15 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
     if learning:
         x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
         y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
-        q_new = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
+        q_new = (_point_warp_classification_scores(self, x_trains, y_trains)
+                 if point_warp else torch.zeros(y_trains.shape[0], self.M, self.n_outputs))
         snr_new = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
         for ld in range(self.n_outputs):
             for m in range(self.M):
                 gp = self.gpmodels[ld][m]
-                for i in range(y_trains.shape[0]):
-                    q_new[i, m, ld] = gp.log_sq_error(x_trains[i], y_trains[i, :, [ld]], i=-1)
+                if not point_warp:
+                    for i in range(y_trains.shape[0]):
+                        q_new[i, m, ld] = gp.log_sq_error(x_trains[i], y_trains[i, :, [ld]], i=-1)
                 snr_new[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
         transTheta = self.transTheta
         startTheta = self.startTheta
@@ -1119,6 +1152,12 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
         resp, respPair = torch.concatenate([self.resp_last, resp_new]), torch.concatenate(
             [self.respPair_last, respPair_new])
         self.snr_norm = torch.concatenate([self.snr_norm, self.normalize_snr(snr_new)])
+        if point_warp:
+            self.warp = True
+            y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+                x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+                f_ind_old=self.f_ind_old)
+            self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
         resp_per_group_temp = torch.sum(resp, dim=0)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
         resp = resp[:, reorder]
@@ -1138,11 +1177,34 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
                 if gp.fitted:
                     gp.reinit_LDS(save_last=False)
                     gp.reinit_GP(save_last=False)
-                q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]],
-                                                                     resp[:, m])
+                if point_warp:
+                    candidate = int(reorder[m])
+                    q[:, m, ld], q_lat[:, m, ld] = _fit_emission(
+                        self, gp, x_trains, y_trains[:, :, [ld]], resp[:, m],
+                        x_w, ld, candidate)
+                    q[:, m, ld] = _flow_score(self, gp, q[:, m, ld],
+                                               y_trains, ld, candidate)
+                else:
+                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(
+                        x_trains, y_trains[:, :, [ld]], resp[:, m])
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
                 gpmodels_temp[ld].append(gp)
         self.gpmodels = gpmodels_temp
+        if point_warp and (self.observation_scope == 'shared' or self.transition_policies):
+            self.update_shared_observation(resp)
+            y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+                x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+                f_ind_old=self.f_ind_old)
+            self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
+            for ld in range(self.n_outputs):
+                for m in range(self.M):
+                    gp = self.gpmodels[ld][m]
+                    grids = _flow_inputs(self, x_trains, x_w, ld, m)
+                    q[:, m, ld] = _flow_score(
+                        self, gp, gp.compute_sq_err_all(
+                            grids, y_trains[:, :, [ld]]), y_trains, ld, m)
+                    if self.transition_policies:
+                        q_lat[:, m, ld] = gp.compute_q_lat_all(grids)
         q_norm, _ = self.LogLik(self.weight_mean(q, snr))
         alpha, margprob = self.forward(startPi, transPi, q_norm)
         beta = self.backward(transPi, q_norm, margprob)
@@ -1238,9 +1300,11 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
 
 
 def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
-    if warp and getattr(self.alignment, 'uses_candidate_input_warp', False):
-        raise NotImplementedError('candidate input warps are supported by offline.fit, not fit_labels')
     warp = _alignment.configured(self).enabled(warp)
+    point_warp = warp and getattr(self.alignment, 'supports_batch_lds_input_warp', False)
+    if warp and getattr(self.alignment, 'uses_candidate_input_warp', False) and not point_warp:
+        raise NotImplementedError('GP-flow input warps are supported by offline.fit, not fit_labels')
+    self.warp = warp
     assert y_trains.shape[2] == self.n_outputs
     y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
     x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
@@ -1282,7 +1346,39 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
                     x_trains, y_trains[:, :, [ld]])
                 if self.transition_policies:
                     q_lat[:, m, ld] = self.gpmodels[ld][m].compute_q_lat_all(x_trains)
-    if warp:
+    if point_warp:
+        y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+            x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+            f_ind_old=getattr(self, 'f_ind_old', None))
+        self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
+        for ld in range(self.n_outputs):
+            for m in range(M):
+                gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
+                if gp.fitted:
+                    gp.reinit_LDS(save_last=False, warm_start=False)
+                    gp.reinit_GP(save_last=False)
+                q[:, m, ld], q_lat[:, m, ld] = _fit_emission(
+                    self, gp, x_trains, y_trains[:, :, [ld]], resp[:, m],
+                    x_w, ld, m)
+                q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, m)
+                snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
+                self.gpmodels[ld][m] = gp
+        if self.observation_scope == 'shared' or self.transition_policies:
+            self.update_shared_observation(resp)
+            y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+                x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+                f_ind_old=getattr(self, 'f_ind_old', None))
+            self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
+            for ld in range(self.n_outputs):
+                for m in range(M):
+                    gp = self.gpmodels[ld][m]
+                    grids = _flow_inputs(self, x_trains, x_w, ld, m)
+                    q[:, m, ld] = _flow_score(
+                        self, gp, gp.compute_sq_err_all(
+                            grids, y_trains[:, :, [ld]]), y_trains, ld, m)
+                    if self.transition_policies:
+                        q_lat[:, m, ld] = gp.compute_q_lat_all(grids)
+    elif warp:
         q, q_lat, warp_computed, y_trains = self.compute_warp_actual_state(x_trains, y_trains, q=q,
                                                                            q_lat=q_lat)
         for ld in range(self.n_outputs):

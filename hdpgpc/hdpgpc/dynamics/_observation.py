@@ -128,7 +128,8 @@ class ObservationPolicy:
                                    - emission.direct_observation_offset)
                 else:
                     observation = emission.project_observation_to_basis(
-                        emission.y_train[position], emission.x_train[position])
+                        emission.y_train[position], emission.x_train[position],
+                        allow_warped=getattr(emission, 'deterministic_input_warp', False))
                 observations.append(root * observation.to(device=device, dtype=dtype))
                 latents.append(root * emission.f_star_sm[position + 1].reshape(-1, 1).to(device=device, dtype=dtype))
                 latent_cov = latent_cov + weight * emission.cov_f_sm[position + 1].to(device=device, dtype=dtype)

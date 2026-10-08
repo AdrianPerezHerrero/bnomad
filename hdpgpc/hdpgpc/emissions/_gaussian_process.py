@@ -589,15 +589,19 @@ class GaussianProcessEmission:
         return torch.sort(retained).values
 
     def full_pass_weighted_flow(self, x_trains, y_trains, resp, grid_samples,
-                                q=None, q_lat=None, snr=None):
-        """Offline pass using one MC warp posterior per observation."""
-        if self.lds_update == 'conjugate_batch':
-            raise NotImplementedError('conjugate_batch does not support GP-flow input warps')
+                                q=None, q_lat=None, snr=None,
+                                deterministic_warp=False):
+        """Offline pass using sampled grids or one deterministic grid per beat."""
+        batch_lds = self.lds_update == 'conjugate_batch'
+        if batch_lds and not deterministic_warp:
+            raise NotImplementedError('conjugate_batch does not support uncertain GP-flow input warps')
+        if batch_lds and any(len(samples) != 1 for samples in grid_samples):
+            raise ValueError('conjugate_batch requires one deterministic input grid per beat')
+        self.deterministic_input_warp = bool(deterministic_warp)
         active = self._active_weighted_indices(resp)
         if active.numel() == 0:
             return q, q_lat
         dynamic = bool(torch.count_nonzero(self.Gamma[-1]))
-        batch_lds = self.lds_update == 'conjugate_batch'
         for index in active.tolist():
             h = float(resp[index].item())
             self.include_weighted_sample_flow(index, x_trains[index],
@@ -611,13 +615,15 @@ class GaussianProcessEmission:
         if dynamic:
             self.backwards()
         if batch_lds:
-            self.bayesian_batch_params(resp, grid_samples=grid_samples)
+            self.bayesian_batch_params(resp, grid_samples=grid_samples,
+                                       deterministic_warp=True)
         mean_grids = torch.stack([samples.mean(0) for samples in grid_samples])
         return (self.compute_sq_err_all(mean_grids, y_trains),
                 self.compute_q_lat_all(mean_grids))
 
     def full_pass_weighted(self, x_trains, y_trains, resp, q=None, q_lat=None, snr=None):
         """Full forward pass method used in the offline scheme."""
+        self.deterministic_input_warp = False
         if len(torch.nonzero(self.Gamma[-1])) < 1:
             model_type = 'static'
         else:
@@ -699,9 +705,11 @@ class GaussianProcessEmission:
             return _trajectory.reinit_LDS(self, False, save_last_diag, return_likelihood)
         return _trajectory.reinit_LDS(self, save_last, save_last_diag, return_likelihood)
 
-    def bayesian_batch_params(self, resp, grid_samples=None):
+    def bayesian_batch_params(self, resp, grid_samples=None,
+                              deterministic_warp=False):
         """Update the cluster LDS once from its offline smoothed trajectory."""
-        return _trajectory.bayesian_batch_params(self, resp, grid_samples)
+        return _trajectory.bayesian_batch_params(
+            self, resp, grid_samples, deterministic_warp=deterministic_warp)
 
     def return_LDS_param_likelihood(self, first=False):
         """ Method to compute the likelihood of LDS parameters over the prior.
@@ -1083,8 +1091,12 @@ class GaussianProcessEmission:
     def reduce_noise_matrix(self, x_basis=None, x_train=None):
         return self.gp.projection_matrix(x_basis, x_train)
 
-    def project_observation_to_basis(self, y, x_train):
-        """Map a waveform to the inducing grid for the LDS observation update."""
+    def project_observation_to_basis(self, y, x_train, *, allow_warped=False):
+        """Map a waveform to the LDS basis for its observation update.
+
+        ``allow_warped`` permits a deterministic input warp even when the
+        basis has the same point count as the original waveform.
+        """
         observation = self.cond_to_cuda(self.cond_to_torch(y)).reshape(-1, 1)
         if getattr(self, 'direct_observation_offset', None) is not None:
             if not torch.equal(self.cond_to_torch(x_train).reshape(-1, 1),
@@ -1093,7 +1105,7 @@ class GaussianProcessEmission:
             return self.C[-1].T @ (observation - self.direct_observation_offset)
         if torch.equal(self.x_basis, x_train):
             return observation
-        if not self.inducing_points:
+        if not self.inducing_points and not allow_warped:
             raise NotImplementedError('LDS observation projection requires inducing_points=True')
         projection = self.reduce_noise_matrix(self.x_basis, x_train)
         return projection.to(device=observation.device, dtype=observation.dtype) @ observation

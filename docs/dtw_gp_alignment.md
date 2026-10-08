@@ -3,6 +3,11 @@
 `AlignmentConfig(policy='dtw_gp')` selects a deterministic input warp. Set
 `warp=True` for online or offline inference. The GP warp controls live in
 `AlignmentConfig`; the full-record example uses their package defaults.
+The point-warp policy runs with `online`, `online_fast`, and `offline`, including
+offline `conjugate_batch` LDS updates. It also supports offline batch
+classification, classification with learning, and labelled fitting. The
+PCA observation preset still excludes warping because its latent component
+indices are not waveform time coordinates.
 
 ```python
 from dataclasses import replace
@@ -62,6 +67,18 @@ and no distribution over warps is inferred. A new cluster is encouraged only
 when its improvement in this overall objective outweighs the existing HDP
 birth costs. Every candidate still receives a warp, including a discordant
 beat. `gp_flow` remains the policy for a variational warp posterior.
+
+With offline `conjugate_batch`, each deterministic warp is fixed during a
+cluster fit. Filtering uses its warped observation grid. The LDS observation
+update projects that beat's waveform from the warped grid onto the common
+LDS basis, then pools the responsibility-weighted projected observations and
+smoothed states. This is the same sort of projection approximation used for
+an inducing LDS basis: uncertainty and covariance changes caused by the
+projection are omitted. The batch MNIW update is conjugate for these
+projected pseudo-observations, **not** the exact posterior under the original
+candidate-dependent warped-grid likelihood. `gp_flow` still cannot use this
+batch update because it supplies a distribution over grids rather than one
+deterministic map per beat.
 
 The nonnegative `P(g)` is **subtracted** from the observation score, so a
 larger penalty makes the objective smaller. Online verbose output prints this

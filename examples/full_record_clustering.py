@@ -76,7 +76,7 @@ LDS_INDUCING_POINTS = None        # Reduced LDS basis size; 0 or None uses every
 # It overrides LDS_PRESET and all manual LDS matrix modes. Online calibration
 # pretrains on a record prefix, then replays that prefix during clustering;
 # use a separate calibration record for a strictly causal evaluation.
-PCA_COMPONENTS = 24
+PCA_COMPONENTS = None
 PCA_CALIBRATION_MAX_BEATS = 2000
 PCA_RESIDUAL_NOISE_FLOOR = 1.0e-3
 # PCA keeps C fixed. Sigma uses the existing noise modes: fixed, cluster,
@@ -84,7 +84,7 @@ PCA_RESIDUAL_NOISE_FLOOR = 1.0e-3
 # covariance is the initial value/prior mean in every mode.
 PCA_SIGMA_MODE = "cluster"
 HARD_ASSIGNMENTS = True         # False uses soft responsibility weights during inference.
-ENABLE_WARP = False              # Whether to request alignment during fitting.
+ENABLE_WARP = True              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
 VERBOSE = True                 # False: progress/summary; True: per-sample/iteration detail.
 SHARE_GP_FOR_PROPOSALS = True   # Proposals/new clusters may reuse the fitted or fixed GP kernel.

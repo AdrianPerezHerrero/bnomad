@@ -33,6 +33,8 @@ def _include_with_alignment(self, gp, index, candidate, original, observation, h
     if getattr(self.alignment, 'uses_candidate_input_warp', False):
         samples = self.alignment.samples_for_candidate(self, int(candidate))
         if samples is not None:
+            gp.deterministic_input_warp = not getattr(
+                self.alignment, 'uses_posterior_flow', False)
             observation = _flow_observation(self, observation, output)
             return gp.include_weighted_sample_flow(
                 index, original, samples, observation, h)

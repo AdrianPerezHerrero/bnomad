@@ -363,20 +363,26 @@ def hold_lds_params(self):
     record_lds_parameter_score(self)
 
 
-def bayesian_batch_params(self, resp, grid_samples=None):
+def bayesian_batch_params(self, resp, grid_samples=None, *,
+                          deterministic_warp=False):
     """One responsibility-weighted MNIW update from the smoothed cluster path.
 
     The first included state has an observation but no LDS transition. A
     transition receives the responsibility of its destination observation.
     The distributions on entry are the original cluster priors, even when
-    filtering was warm-started from a previous offline iteration.
+    filtering was warm-started from a previous offline iteration. A fixed
+    point warp is projected onto the LDS basis before pooling its observation
+    statistic, like the existing inducing-basis approximation. Projection
+    uncertainty is not part of this conjugate surrogate.
     """
     if not self.indexes:
         return
     if not self.bayesian:
         raise ValueError('conjugate_batch requires Bayesian LDS parameters')
-    if grid_samples is not None:
-        raise NotImplementedError('conjugate_batch does not support GP-flow input warps')
+    if grid_samples is not None and not deterministic_warp:
+        raise NotImplementedError('conjugate_batch does not support uncertain GP-flow input warps')
+    if grid_samples is not None and any(len(samples) != 1 for samples in grid_samples):
+        raise ValueError('conjugate_batch requires one deterministic input grid per beat')
 
     count = len(self.indexes)
     limit = count if np.isinf(self.estimation_limit) else min(count, int(self.estimation_limit))
@@ -411,7 +417,8 @@ def bayesian_batch_params(self, resp, grid_samples=None):
                                - self.direct_observation_offset).to(device=device, dtype=dtype)
             else:
                 observation = self.project_observation_to_basis(
-                    self.y_train[position], self.x_train[position]).to(device=device, dtype=dtype)
+                    self.y_train[position], self.x_train[position],
+                    allow_warped=deterministic_warp).to(device=device, dtype=dtype)
             if observation.shape[0] != prior_obs.get_mean().shape[0]:
                 raise ValueError('conjugate_batch observation dimension differs from the observation map')
             obs_y.append(root * observation)

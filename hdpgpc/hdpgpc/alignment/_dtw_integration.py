@@ -9,6 +9,7 @@ class DTWGPAlignment(GPFlowAlignment):
 
     supports_warp_posterior = False
     uses_posterior_flow = False
+    supports_batch_lds_input_warp = True
 
     def create_warper(self, *args, **kwargs):
         cfg = self.config

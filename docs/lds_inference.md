@@ -81,6 +81,10 @@ once from the original prior. Later offline iterations may filter with the
 previous final matrices, but their conjugate update starts again from the
 configured prior so the same record is not counted twice. `conjugate_batch`
 is unavailable online. Both methods weight statistics by responsibilities.
+With `dtw_gp`, the offline batch method first projects each beat from its
+fixed warped grid to the common LDS basis; this adds the approximation
+described in [DTW–GP alignment](dtw_gp_alignment.md). Sampled `gp_flow`
+input warps remain unsupported by batch LDS updates.
 
 For a matrix/noise pair mapping input `x_t` to output `u_t`, its conjugate
 statistics are

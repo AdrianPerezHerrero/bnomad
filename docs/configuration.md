@@ -173,8 +173,12 @@ not count the same record twice. The batch posterior can differ from the
 sequential result because latent states are inferred under different evolving
 parameters. `conjugate_batch` requires Bayesian LDS parameters.
 With an inducing basis it projects full waveforms onto the LDS grid before
-the conjugate update. GP-flow input warps are not supported by this update;
-output-aligned waveform warps retain a common grid and can use it.
+the conjugate update. Deterministic `dtw_gp` input warps use that same
+projection, one fixed grid per beat; the resulting batch observation
+posterior is conjugate for projected pseudo-observations and is approximate
+for the original warped-grid likelihood. GP-flow input warps are not
+supported by this update; output-aligned waveform warps retain a common
+grid and can use it.
 
 `DynamicsConfig.lds_scoring` independently selects `final` (the default) or
 `historical`. In `final` mode, the observation ELBO uses the cluster's last
