@@ -315,8 +315,9 @@ class GaussianProcessEmission:
         if self.lds_scoring == 'historical':
             _trajectory.record_lds_parameter_score(self, replace_last=True)
         self.fitted = True
-        print("---Kernel estimated---")
-        print(self.gp.kernel)
+        if self.verbose:
+            print("---Kernel estimated---")
+            print(self.gp.kernel)
         return self.x_basis, ini_cov
 
     def log_lik_sample(self, y):
@@ -773,7 +774,7 @@ class GaussianProcessEmission:
         i_vals_cpu = i_vals.cpu().tolist()
         first_mask_cpu = first_mask.cpu().tolist()
 
-        for index in trange(n_samps, desc="Compute_sq_error", disable=self.disable):
+        for index in range(n_samps):
             sq_err[index] = self.log_sq_error(
                 x_trains[index],
                 y_trains[index],

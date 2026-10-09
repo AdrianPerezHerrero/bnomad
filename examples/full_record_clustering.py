@@ -86,7 +86,7 @@ PCA_SIGMA_MODE = "cluster"
 HARD_ASSIGNMENTS = True         # False uses soft responsibility weights during inference.
 ENABLE_WARP = True              # Whether to request alignment during fitting.
 ALIGNMENT_POLICY = "dtw_gp"    # "gp", (gp-based alignment), "dtw_gp" (cheap point warp), or "gp_flow".
-VERBOSE = True                 # False: progress/summary; True: per-sample/iteration detail.
+VERBOSE = "progress"           # "silent", "progress", or "debug"; False/True remain aliases.
 SHARE_GP_FOR_PROPOSALS = True   # Proposals/new clusters may reuse the fitted or fixed GP kernel.
 SAVE_PLOTS = True               # Also save the final figures when True.
 PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
@@ -292,6 +292,13 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                scale_waveforms: bool = SCALE_WAVEFORMS,
                unit_grid: bool = UNIT_GRID,
                calibrate_lds_noise_priors: bool = CALIBRATE_LDS_NOISE_PRIORS) -> None:
+    from hdpgpc.config._verbosity import normalize_verbosity
+    verbosity = normalize_verbosity(VERBOSE)
+
+    def detail_print(*args, **kwargs):
+        if verbosity == 'debug':
+            print(*args, **kwargs)
+
     signal, annotations = _load_record(record)
     values, grid = prepare_sequences(
         signal, channels=CHANNELS, scale_from_first=scale_waveforms,
@@ -311,7 +318,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
             sampling='uniform' if INFERENCE_MODE == 'offline' else 'prefix',
             noise_floor=PCA_RESIDUAL_NOISE_FLOOR,
         )
-        print(f'PCA calibration: {len(pca_estimate.beat_indices)} beats, '
+        detail_print(f'PCA calibration: {len(pca_estimate.beat_indices)} beats, '
               f'{PCA_COMPONENTS} components, explained variance '
               f'{pca_estimate.explained_variance_ratio:.1%}, '
               f'mean residual variance={np.diag(pca_estimate.residual_covariance).mean():.6g}')
@@ -338,7 +345,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
             )
         initial_observation_noise = shared_noise_prior
         initial_process_noise = shared_noise_prior
-        print(
+        detail_print(
             "Identity-LDS pilot noise scales: "
             f"estimated Sigma={estimate.observation:.6g}, "
             f"estimated Gamma={estimate.process:.6g}, "
@@ -358,45 +365,47 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         pca_estimate=pca_estimate,
     )
 
-    print(f"\nRecord {record}: waveform shape={signal.shape}, annotations={len(annotations)}")
-    print(f"Input shape={values.shape} (beats, points, outputs), channels={CHANNELS}")
-    print(f"LDS basis points={len(config.x_basis)} of {len(grid)}, "
+    if verbosity != 'silent':
+        print(f"Record {record}: {len(values)} samples; schedule={INFERENCE_MODE}")
+    detail_print(f"Waveform shape={signal.shape}, annotations={len(annotations)}")
+    detail_print(f"Input shape={values.shape} (beats, points, outputs), channels={CHANNELS}")
+    detail_print(f"LDS basis points={len(config.x_basis)} of {len(grid)}, "
           f"inducing mode={config.emission.inducing_points}")
-    print(f"Waveform scaling={'first-beat mean/std' if scale_waveforms else 'off'}, "
+    detail_print(f"Waveform scaling={'first-beat mean/std' if scale_waveforms else 'off'}, "
           f"grid range=0..{grid[-1, 0]:g}")
-    print(f"Schedule={INFERENCE_MODE}, hard assignments={HARD_ASSIGNMENTS}, warp={ENABLE_WARP}, "
+    detail_print(f"Schedule={INFERENCE_MODE}, hard assignments={HARD_ASSIGNMENTS}, warp={ENABLE_WARP}, "
           f"alignment={ALIGNMENT_POLICY if ENABLE_WARP else 'none'}, verbose={VERBOSE}")
-    print(f"Model={config.dynamics.model_type}, Markov={config.hdp.hmm_switch}, "
+    detail_print(f"Model={config.dynamics.model_type}, Markov={config.hdp.hmm_switch}, "
           f"LDS preset={'PCA' if pca_estimate is not None else (LDS_PRESET or 'manual')}, "
           f"HDP preset={HDP_PRESET}, "
           f"cluster cap={MAX_CLUSTERS}")
     from hdpgpc.config._models import resolved_lds_policies
     selected = resolved_lds_policies(config)
-    print("LDS policies=" + ", ".join(
+    detail_print("LDS policies=" + ", ".join(
         f"{name}:{selected[name].mode}" for name in ('A', 'Gamma', 'C', 'Sigma')))
-    print("LDS prior strengths=" + ", ".join(
+    detail_print("LDS prior strengths=" + ", ".join(
         f"{name}:{selected[name].strength:g}"
         for name in ('A', 'Gamma', 'C', 'Sigma')))
-    print(f"Custom C={selected['C'].value is not None}, "
+    detail_print(f"Custom C={selected['C'].value is not None}, "
           f"custom Sigma={selected['Sigma'].value is not None}")
-    print(f"GP fitting={'on' if config.emission.fit_gp else 'off'}, "
+    detail_print(f"GP fitting={'on' if config.emission.fit_gp else 'off'}, "
           f"kernel={config.emission.kernels[0]}")
     gp_white_bounds = config.emission.kernels[0].get_params().get("k2__noise_level_bounds")
     if gp_white_bounds is not None:
-        print(f"GP white-noise bounds={gp_white_bounds}")
+        detail_print(f"GP white-noise bounds={gp_white_bounds}")
     effective_dof = (lds_degrees_of_freedom if lds_degrees_of_freedom is not None
                      else (5 if INFERENCE_MODE == "offline" else 20))
-    print(f"LDS MNIW degrees of freedom={effective_dof}"
+    detail_print(f"LDS MNIW degrees of freedom={effective_dof}"
           + (" (schedule default)" if lds_degrees_of_freedom is None else ""))
-    print(f"LDS update={config.dynamics.lds_update}"
+    detail_print(f"LDS update={config.dynamics.lds_update}"
           + (f", step size={lds_step_size:g}"
              if config.dynamics.lds_update == "natural_gradient" else ""))
-    print(f"LDS scoring={config.dynamics.lds_scoring}")
+    detail_print(f"LDS scoring={config.dynamics.lds_scoring}")
     birth_lds_divisor = len(config.x_basis) if birth_lds_kl_per_sqrt_point else 1
-    print("Experimental birth LDS KL / LDS dimension="
+    detail_print("Experimental birth LDS KL / LDS dimension="
           f"{birth_lds_kl_per_sqrt_point} "
           f"(divisor={birth_lds_divisor:.6g})")
-    print(format_lds_priors(
+    detail_print(format_lds_priors(
         dimension=len(config.x_basis), model_type=config.dynamics.model_type,
         observation_noise=initial_observation_noise,
         process_noise=initial_process_noise,
@@ -571,7 +580,6 @@ def main() -> None:
         log_path = args.plot_dir / f"record_{record}_clustering.log"
         with log_path.open("w", encoding="utf-8", buffering=1) as log_file:
             with redirect_stdout(Tee(sys.stdout, log_file)), redirect_stderr(Tee(sys.stderr, log_file)):
-                print(f"Log file: {log_path}")
                 try:
                     run_record(
                         record, save_plots=args.save_plots, plot_warps=args.plot_warps,
@@ -585,6 +593,7 @@ def main() -> None:
                         scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,
                         calibrate_lds_noise_priors=args.calibrate_lds_noise_priors,
                     )
+                    print(f"Log file: {log_path}")
                 except BaseException:
                     traceback.print_exc(file=log_file)
                     raise

@@ -53,11 +53,10 @@ def _force_soft_step(resp, resp_pair, state):
 
 
 def _report_assignment(self, sample_index, model, birth):
-    if not self.verbose:
+    if not self.progress:
         return
-    if birth:
-        print(f"Sample {sample_index + 1}: created cluster {model + 1}.", flush=True)
-    print(f"Sample {sample_index + 1}: assigned to cluster {model + 1}.", flush=True)
+    suffix = ' (new cluster)' if birth else ''
+    print(f"Sample {sample_index + 1}: cluster {model + 1}{suffix}", flush=True)
 
 
 def _refresh_shared_point_scores(self, q, weights, reorder, observations, sample_index,

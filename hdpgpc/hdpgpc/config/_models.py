@@ -246,7 +246,7 @@ class HDPGPCConfig:
     initialization values stay None until supplied, and fail clearly at build.
     """
     x_basis: ndarray | list[ndarray] | None = None
-    verbose: bool = False
+    verbose: Literal['silent', 'progress', 'debug'] | bool = False
     hdp: HDPConfig = field(default_factory=HDPConfig)
     emission: GPEmissionConfig = field(default_factory=GPEmissionConfig)
     observation: ObservationConfig = field(default_factory=ObservationConfig)

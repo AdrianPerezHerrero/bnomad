@@ -170,9 +170,6 @@ def refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr
     """ Redistribute the responsibility for not letting empty clusters and generate a new model if needed.
     """
     resp_per_group = torch.sum(resp, axis=0)
-    if self.verbose:
-        print("Group responsibility estimated: " + str(resp_per_group.detach().cpu().numpy().astype(np.int64)),
-              flush=True)
     if self.hard_assignments:
         occupied = resp_per_group >= 1.0
     else:

@@ -102,7 +102,10 @@ class ModelState:
         if M is None:
             M = 1
         self.M = M
-        self.verbose = verbose
+        from ..config._verbosity import normalize_verbosity
+        self.verbosity = normalize_verbosity(verbose)
+        self.progress = self.verbosity in ('progress', 'debug')
+        self.verbose = self.verbosity == 'debug'
         self.hard_assignments = options['hard_assignments']
         self.fit_gp = options['fit_gp']
         self.birth_lds_kl_per_sqrt_point = options.get('birth_lds_kl_per_sqrt_point', False)

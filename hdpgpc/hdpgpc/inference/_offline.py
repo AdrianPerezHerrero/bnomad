@@ -231,7 +231,8 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                             if point_warp else score)
                         if self.transition_policies:
                             q_lat[:, cluster, output] = emission.compute_q_lat_all(grids)
-        if resp.shape[1] > M:
+        birth_accepted = resp.shape[1] > M
+        if birth_accepted:
             self.M = M + 1
             M = self.M
         resp__ = torch.clone(resp)
@@ -257,16 +258,16 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         # Update transition matrix (identical rows in independent-mixture mode).
         self.trans_A = transPi
         resp_group = torch.sum(resp, dim=0).detach().cpu().tolist()
-        if not self.verbose:
-            print(f"Iteration {iteration + 1}: responsibility sums={resp_group}", flush=True)
+        if self.progress and not self.verbose:
+            print(f"Iteration {iteration + 1}: responsibilities="
+                  f"{[round(float(value), 2) for value in resp_group]}", flush=True)
+            if birth_accepted:
+                print(f"Iteration {iteration + 1}: created cluster {self.M}", flush=True)
         # Compute ELBO and start steps of EM
         # TODO: adapt this option to full cuda implementation.
         if self.T > 1:
             elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                  respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
-            _log(self, '\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
-            if iteration == 14:
-                _log(self, "STOP")
             q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                   self.gpmodels, self.M, snr='saved', post=False,
                                                   birth_score=False)
@@ -277,6 +278,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                 print(f"Iteration {iteration + 1}: clusters={self.M}, "
                       f"responsibility sums={resp_group}, "
                       f"proposed birth samples (1-based)={[i + 1 for i in proposed]}, "
+                      f"birth_accepted={birth_accepted}, "
                       f"ELBO={elbo_.item():.6g}, delta_ELBO={delta}", flush=True)
             previous_elbo = elbo_
             del self._iteration_birth_candidates

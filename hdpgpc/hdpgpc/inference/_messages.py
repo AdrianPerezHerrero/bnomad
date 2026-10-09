@@ -164,7 +164,7 @@ def variational_local_terms(self, q, transTheta=None, startTheta=None, liks=None
     respPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_, margprob), axis=1)
     if m_ != m_resp and self.verbose:
         print("Mismatch between SSE (" + str(m_ + 1) + ") and Resp (" + str(m_resp + 1) + ").")
-    if torch.any(torch.isnan(resp)):
+    if self.verbose and torch.any(torch.isnan(resp)):
         print("Error")
     assignments = self._safe_exp(resp, hard=hard_assignments)
     pair_assignments = self._safe_exp(respPair, hard=hard_assignments)

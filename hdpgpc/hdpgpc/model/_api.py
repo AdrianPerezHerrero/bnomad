@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from tqdm.auto import tqdm
 from copy import deepcopy
 from numbers import Integral
 
@@ -103,10 +102,7 @@ class HDPGPC:
             if self._mode == 'offline':
                 backend.offline.fit(coordinates, values, it_limit=inference.it_limit, warp=inference.warp)
             else:
-                samples = zip(coordinates, values)
-                if not backend.verbose:
-                    samples = tqdm(samples, total=len(values), desc='Online fit', unit='sample')
-                for x, y in samples:
+                for x, y in zip(coordinates, values):
                     self._include(x, y)
         except BaseException:
             # The original implementation may already have mutated its state.

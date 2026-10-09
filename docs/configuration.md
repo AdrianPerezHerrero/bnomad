@@ -122,7 +122,15 @@ full transition-parameter update from their own expected counts.
 `dtw_gp` estimates a cheaper monotone point warp with unrestricted DTW and a smooth
 GP displacement prior; see [DTW–GP alignment](dtw_gp_alignment.md).
 
-For either online schedule, `verbose=True` prints the baseline objective and
+Set the root `verbose` field to `"silent"`, `"progress"`, or `"debug"`.
+`"silent"` suppresses inference output; the calling script can still print its
+final results. `"progress"` prints each online sample's chosen cluster (marking
+births), or each offline iteration's responsibility sums and accepted births.
+`"debug"` adds ELBO changes, birth proposals, and component diagnostics. There
+are no progress bars. For older configurations, `False` means `"progress"` and
+`True` means `"debug"`.
+
+For either online schedule, `verbose="debug"` prints the baseline objective and
 the birth and absorb proposals for each subsequent sample. Each proposal shows
 its emission, latent, HDP, and LDS terms, total ELBO, change from the baseline,
 and the signed warp objective contribution when available. The emission term

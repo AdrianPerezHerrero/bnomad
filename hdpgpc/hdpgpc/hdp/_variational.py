@@ -451,13 +451,13 @@ class HDPVariational:
 
         except ValueError as error:
             if hasattr(self, 'rho') and self.rho.size()[0] == self.M:
-                print(
-                    '***** Optim failed. Remain at cur val. ' +
-                    str(error))
+                if self.verbose:
+                    print('***** Optim failed. Remain at cur val. ' + str(error))
                 rho = self.rho
                 omega = self.omega
             else:
-                print('***** Optim failed. Set to prior. ' + str(error))
+                if self.verbose:
+                    print('***** Optim failed. Set to prior. ' + str(error))
                 omega = (self.gamma + 1) * self.cond_cuda(torch.ones(self.M))
                 rho = 1 / float(1 + self.gamma) * self.cond_cuda(torch.ones(self.M))
 

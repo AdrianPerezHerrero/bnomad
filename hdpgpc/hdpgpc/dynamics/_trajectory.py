@@ -203,7 +203,8 @@ def new_params(self, batch=None, reestimate=True, model_type='dynamic', verbose=
             lik_pre = self.gp.log_likelihood(N - batch, batch - 1, means[N - batch:], covs[N - batch:], A_prior,
                                              Gamma_prior, y_samples[N - batch:], C_prior, Sigma_prior)
         except RuntimeWarning:
-            print("Starting parameters are divergent, using initials.")
+            if verbose:
+                print("Starting parameters are divergent, using initials.")
             converged = True
         lik_best = lik_pre
         trials = 0
@@ -662,7 +663,7 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                 except torch.linalg.LinAlgError as exc:
                     failures = getattr(self, '_lds_update_failures', 0) + 1
                     self._lds_update_failures = failures
-                    if failures == 1 or failures & (failures - 1) == 0:
+                    if self.verbose and (failures == 1 or failures & (failures - 1) == 0):
                         print(f"LDS update skipped at {failure_stage}: "
                               f"responsibility={h:.3g}, included={self.N}, "
                               f"failures={failures}; {exc}", flush=True)

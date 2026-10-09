@@ -166,7 +166,9 @@ def validate(c, *, for_build=False):
         raise ValueError('shared/fixed observation parameters currently require one output')
     if (obs.scope != 'cluster' or any(p.mode.startswith('shared') for p in policies.values())) and n.cuda:
         raise ValueError('shared/fixed observation parameters currently require CPU inference')
-    for obj, names in ((c, ('verbose',)), (h, ('hmm_switch',)),
+    from ._verbosity import normalize_verbosity
+    normalize_verbosity(c.verbose)
+    for obj, names in ((h, ('hmm_switch',)),
                        (e, ('check_var', 'fit_gp')), (d, ('bayesian_params',)),
                        (o, ('share_gp', 'use_snr', 'reduce_outputs')), (n, ('cuda',))):
         for name in names:
