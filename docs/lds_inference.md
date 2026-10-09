@@ -159,6 +159,8 @@ PCA preset requires one output, a fixed observation grid, CPU, no warp, no
 GP hyperparameter fitting, and final LDS scoring. Its `A,Gamma` remain
 cluster-learned. Fixed or shared `A,Gamma` are mathematically possible but
 are not currently implemented for this PCA preset.
+The same fixed affine observation path also accepts a supplied pretrained
+linear decoder; see [fixed observation models](fixed_observation_models.md).
 
 ## Inducing LDS basis
 

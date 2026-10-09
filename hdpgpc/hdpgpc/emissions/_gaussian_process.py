@@ -345,6 +345,23 @@ class GaussianProcessEmission:
         else:
             params = [mean, cov, C, Sigma]
 
+        fixed_model = getattr(self, 'fixed_observation_model', None)
+        if fixed_model is not None:
+            if not torch.equal(self.cond_to_torch(x_train).reshape(-1, 1),
+                               self.direct_observation_grid):
+                raise ValueError('Fixed observation requires its configured waveform grid')
+            state = -1 if i is None or i < 0 or i >= len(self.f_star_sm) else i
+            score_sigma = (params[3] if params is not None else
+                           self.Sigma[-1] if self.lds_scoring == 'final' else self.Sigma[state])
+            if first:
+                small = torch.mean(torch.diag(score_sigma)) * 1e-2
+                score_sigma = score_sigma + small * torch.eye(
+                    len(score_sigma), device=score_sigma.device, dtype=score_sigma.dtype)
+            return fixed_model.expected_log_likelihood(
+                y, params[0] if params is not None else self.f_star_sm[state],
+                params[1] if params is not None else self.cov_f_sm[state],
+                noise=score_sigma)
+
         if i is not None:
             f_star, cov_f = self.observe(x_train, i, params, proj=proj,
                                          final_lds=params is None and self.lds_scoring == 'final',
@@ -755,6 +772,20 @@ class GaussianProcessEmission:
                 i_cur = int((code // 2).item())
                 first_cur = bool((code % 2).item())
 
+                fixed_model = getattr(self, 'fixed_observation_model', None)
+                if fixed_model is not None:
+                    if not torch.equal(x0.reshape(-1, 1), self.direct_observation_grid):
+                        raise ValueError('Fixed observation requires its configured waveform grid')
+                    score_sigma = self.Sigma[-1] if self.lds_scoring == 'final' else self.Sigma[i_cur]
+                    if first_cur:
+                        small = torch.mean(torch.diag(score_sigma)) * 1e-2
+                        score_sigma = score_sigma + small * torch.eye(
+                            len(score_sigma), device=score_sigma.device, dtype=score_sigma.dtype)
+                    sq_err[ids] = fixed_model.expected_log_likelihood_batch(
+                        y_trains[ids], self.f_star_sm[i_cur], self.cov_f_sm[i_cur],
+                        noise=score_sigma)
+                    continue
+
                 f_star, cov_f = self.observe(x0, i_cur, params=None, proj=False,
                                              final_lds=self.lds_scoring == 'final',
                                              smoothed=True)
@@ -856,13 +887,13 @@ class GaussianProcessEmission:
         return self._observation_distribution(x_post, x_basis, mean, Sigma)
 
     def _observation_distribution(self, x_post, x_basis, mean, Sigma):
-        """Use the direct PCA decoder or the original GP grid projection."""
+        """Use a fixed direct decoder or the original GP grid projection."""
         offset = getattr(self, 'direct_observation_offset', None)
         if offset is None:
             return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
         x_post = self.cond_to_torch(x_post).reshape(-1, 1)
         if not torch.equal(x_post, self.direct_observation_grid):
-            raise ValueError('PCA emission requires its calibrated observation grid')
+            raise ValueError('Fixed observation requires its configured waveform grid')
         return mean.reshape(-1, 1) + offset, Sigma
 
     def _project_process_noise(self, Gamma, C):
@@ -875,6 +906,13 @@ class GaussianProcessEmission:
         """
         C = self.C[-1]
         Sigma = self.Sigma[-1]
+        fixed_model = getattr(self, 'fixed_observation_model', None)
+        if fixed_model is not None:
+            if not torch.equal(self.cond_to_torch(x_post).reshape(-1, 1),
+                               self.direct_observation_grid):
+                raise ValueError('Fixed observation requires its configured waveform grid')
+            return fixed_model.predictive_moments(
+                self.f_star_sm[-1], self.cov_f_sm[-1], noise=Sigma)
         mean = torch.matmul(C, self.f_star_sm[-1])
         x_basis = self.x_basis
         return self._observation_distribution(x_post, x_basis, mean, Sigma)
@@ -1074,10 +1112,16 @@ class GaussianProcessEmission:
         """ Method to resample last GP as a distribution.
         """
         if getattr(self, 'direct_observation_offset', None) is not None:
-            mean = ((self.C[-1] @ self.f_star_sm[-1]).reshape(-1, 1)
-                    + self.direct_observation_offset).reshape(-1)
-            covariance = (self.C[-1] @ self.cov_f_sm[-1] @ self.C[-1].T
-                          + self.Sigma[-1])
+            fixed_model = getattr(self, 'fixed_observation_model', None)
+            if fixed_model is not None:
+                mean, covariance = fixed_model.predictive_moments(
+                    self.f_star_sm[-1], self.cov_f_sm[-1], noise=self.Sigma[-1])
+                mean = mean.reshape(-1)
+            else:
+                mean = ((self.C[-1] @ self.f_star_sm[-1]).reshape(-1, 1)
+                        + self.direct_observation_offset).reshape(-1)
+                covariance = (self.C[-1] @ self.cov_f_sm[-1] @ self.C[-1].T
+                              + self.Sigma[-1])
             draws = np.random.default_rng(random_state).multivariate_normal(
                 mean.detach().cpu().numpy(), covariance.detach().cpu().numpy(),
                 size=num_samples)
@@ -1102,7 +1146,7 @@ class GaussianProcessEmission:
         if getattr(self, 'direct_observation_offset', None) is not None:
             if not torch.equal(self.cond_to_torch(x_train).reshape(-1, 1),
                                self.direct_observation_grid):
-                raise ValueError('PCA emission requires its calibrated observation grid')
+                raise ValueError('Fixed observation requires its configured waveform grid')
             return self.C[-1].T @ (observation - self.direct_observation_offset)
         if torch.equal(self.x_basis, x_train):
             return observation

@@ -9,6 +9,7 @@ __all__ = (
     "DynamicsModel", "StaticDynamics", "LinearDynamics",
     "LDSNoisePriorEstimate", "estimate_lds_noise_priors",
     "PCAObservationEstimate", "estimate_pca_observation",
+    "FixedObservationModel", "AffineGaussianObservation",
 )
 
 
@@ -35,4 +36,9 @@ def __getattr__(name):
             "PCAObservationEstimate": PCAObservationEstimate,
             "estimate_pca_observation": estimate_pca_observation,
         }[name]
+    if name in ("FixedObservationModel", "AffineGaussianObservation"):
+        from ._fixed_observation import FixedObservationModel, AffineGaussianObservation
+
+        return {"FixedObservationModel": FixedObservationModel,
+                "AffineGaussianObservation": AffineGaussianObservation}[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

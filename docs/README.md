@@ -5,6 +5,7 @@
 - [Choose a model setup](model_choices.md)
 - [Complete-record workflow and reusable helpers](record_workflow.md)
 - [LDS inference, PCA, inducing points, and prior calibration](lds_inference.md)
+- [Fixed observation models and decoder contract](fixed_observation_models.md)
 - [HDP presets and gamma/transAlpha sensitivity](hdp_presets.md)
 - [Alignment choices and computational tradeoffs](alignment_choices.md)
 - [Real-record Colab notebook suite](../tutorials/README.md)

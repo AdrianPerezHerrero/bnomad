@@ -131,7 +131,7 @@ GP_OUTPUTSCALE_BOUNDS = (0.001, 1.0e+4)
 GP_WHITE_NOISE_INITIAL = 1.0
 GP_WHITE_NOISE_BOUNDS = (0.0001, 1.0e+8)  # Lower and upper bounds for first-beat GP fitting.
 CUSTOM_GP_KERNEL = None         # Set to a sklearn kernel; with FIT_GP=False it is never optimized.
-INITIAL_OBSERVATION_NOISE = 1.0e+1
+INITIAL_OBSERVATION_NOISE = 5.0e+1
 OBSERVATION_NOISE_BOUNDS = (0.001, 1.0e+8)  # LDS Sigma, separate from GP white noise.
 INITIAL_PROCESS_NOISE = 1.0e+1
 PROCESS_NOISE_BOUNDS = (0.001, 1.0e+8)

@@ -40,7 +40,7 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
     x_basis_cov = cov_prior
     x_basis_ = backend.x_basis
 
-    # A calibrated PCA decoder acts directly on the observation grid. The
+    # A fixed affine decoder acts directly on the observation grid. The
     # latent coordinates are component indices, so GP interpolation between
     # those indices and waveform times has no mathematical meaning here.
     offset = getattr(backend, 'direct_observation_offset', None)
@@ -51,14 +51,18 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
         if x_train is not None and not torch.equal(
                 torch.as_tensor(x_train, dtype=expected_grid.dtype).reshape(-1, 1),
                 expected_grid):
-            raise ValueError('PCA emission requires its calibrated observation grid')
+            raise ValueError('Fixed observation requires its configured waveform grid')
         if x_warped is not None and not torch.equal(
                 torch.as_tensor(x_warped, dtype=expected_grid.dtype).reshape(-1, 1),
                 expected_grid):
-            raise ValueError('PCA emission does not support warped grids')
+            raise ValueError('Fixed observation does not support warped grids')
         initial_cov = backend.direct_initial_covariance
         P_t = (cov_prior if torch.equal(cov_prior, initial_cov)
                else A @ cov_prior @ A.T + Gamma)
+        fixed_model = getattr(backend, 'fixed_observation_model', None)
+        if fixed_model is not None:
+            return fixed_model.condition(x_basis_mean, P_t, y,
+                                         responsibility=h, noise=Sigma)
         # Information form factors only the latent covariance. PCA calibration
         # supplies diagonal Sigma, so waveform length does not drive a cubic
         # solve at every beat.

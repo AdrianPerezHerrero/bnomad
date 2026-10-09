@@ -577,7 +577,7 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                         print("Only programmed static and dynamic models.")
                         new_int_dist = self.internal_params
                     if getattr(self, 'direct_observation_offset', None) is not None:
-                        # PCA has a rectangular fixed decoder. Work in the
+                        # A direct fixed decoder may be rectangular. Work in the
                         # waveform grid, centered by its calibration mean.
                         # Only latent-state uncertainty enters the noise
                         # posterior; the observed waveform is known.

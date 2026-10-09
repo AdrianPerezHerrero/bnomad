@@ -58,29 +58,42 @@ def validate(c, *, for_build=False):
         raise ValueError('Custom C/Sigma values belong in their independent policies')
     policies = resolved_lds_policies(c)
     pca_fields = (obs.pca_grid, obs.pca_mean, obs.pca_variances)
-    pca_observation = any(value is not None for value in pca_fields)
+    fixed_fields = (obs.fixed_grid, obs.fixed_offset, obs.fixed_latent_covariance)
+    if any(value is not None for value in pca_fields) and any(
+            value is not None for value in fixed_fields):
+        raise ValueError('Use either legacy PCA fields or fixed observation fields')
+    pca_observation = any(value is not None for value in pca_fields + fixed_fields)
+    direct_observation_dimension = None
     if pca_observation:
-        if any(value is None for value in pca_fields):
-            raise ValueError('PCA observation requires grid, mean and latent variances')
-        grid = np.asarray(obs.pca_grid)
-        mean = np.asarray(obs.pca_mean)
-        variances = np.asarray(obs.pca_variances)
+        direct_fields = fixed_fields if any(value is not None for value in fixed_fields) else pca_fields
+        if any(value is None for value in direct_fields):
+            raise ValueError('Fixed observation requires grid, offset and latent covariance')
+        grid = np.asarray(direct_fields[0])
+        direct_observation_dimension = grid.shape[0] if grid.ndim else 0
+        mean = np.asarray(direct_fields[1])
+        variances = np.asarray(direct_fields[2])
         decoder = np.asarray(policies['C'].value)
         noise = np.asarray(policies['Sigma'].value)
+        latent_valid = decoder.ndim == 2 and (
+            (variances.shape == (decoder.shape[1],)
+             and np.all(variances > 0)) or
+            (variances.shape == (decoder.shape[1], decoder.shape[1])
+             and np.all(np.isfinite(variances))
+             and np.allclose(variances, variances.T)
+             and np.linalg.eigvalsh(variances).min() > 0))
         if (grid.ndim != 2 or grid.shape[1] != 1 or mean.shape != (len(grid),)
                 or decoder.ndim != 2 or decoder.shape[0] != len(grid)
-                or variances.shape != (decoder.shape[1],)
+                or not latent_valid
                 or noise.shape != (len(grid), len(grid))
                 or not all(np.isfinite(value).all() for value in
-                           (grid, mean, variances, decoder, noise))
-                or not np.all(variances > 0)):
-            raise ValueError('PCA observation dimensions/values must match the waveform and latent grids')
+                           (grid, mean, variances, decoder, noise))):
+            raise ValueError('Fixed observation dimensions/values must match the waveform and latent grids')
         if (policies['C'].mode != 'fixed' or policies['Sigma'].mode not in (
                     'fixed', 'cluster', 'cluster_diagonal', 'shared', 'shared_diagonal')
                 or policies['A'].mode != 'cluster' or policies['Gamma'].mode != 'cluster'
                 or d.model_type != 'dynamic' or o.n_outputs != 1 or i.warp or n.cuda
                  or e.fit_gp or not e.inducing_points or i.reestimate_initial_params):
-            raise ValueError('PCA requires fixed C, supported Sigma policy, free dynamic A/Gamma, one output, '
+            raise ValueError('Fixed affine observation requires fixed C, supported Sigma policy, free dynamic A/Gamma, one output, '
                              'fixed GP kernel, inducing mode, CPU and no warp/recalibration')
     for name in ('A', 'C'):
         policy = policies[name]
@@ -300,8 +313,8 @@ def validate(c, *, for_build=False):
                 raise ValueError('Shared LDS parameters require a common LDS grid')
             dimension = len(grids_all[0])
             for name, policy in policies.items():
-                required_shape = ((len(obs.pca_grid), dimension) if pca_observation and name == 'C'
-                                  else (len(obs.pca_grid), len(obs.pca_grid))
+                required_shape = ((direct_observation_dimension, dimension) if pca_observation and name == 'C'
+                                  else (direct_observation_dimension, direct_observation_dimension)
                                   if pca_observation and name == 'Sigma'
                                   else (dimension, dimension))
                 if policy.value is not None and np.asarray(policy.value).shape != required_shape:

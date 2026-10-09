@@ -80,7 +80,7 @@ def _plot_cluster_latent(axis, state, gamma, color, *, pca=False, legend=False):
     # inset avoids presenting their coefficients on the observation x-axis.
     inset = axis.inset_axes((0.62, 0.57, 0.35, 0.36))
     _plot_latent_process(inset, state, gamma, color)
-    inset.set_title('PCA state ±2√diag Γ', fontsize=7)
+    inset.set_title('Latent state ±2√diag Γ', fontsize=7)
     inset.tick_params(labelsize=6)
 
 
@@ -157,7 +157,8 @@ def plot_results(model, values, grid=None, title='Clustering results'):
 
     cluster_ids = np.asarray(model.cluster_ids_).reshape(-1)
     count = values.shape[2]
-    pca = model.config.observation.pca_grid is not None
+    pca = (model.config.observation.pca_grid is not None or
+           model.config.observation.fixed_grid is not None)
     lds_matrices = [model_lds_arrays(model, output=output) for output in range(count)]
     colors = plt.get_cmap('tab20')
     fig = plt.figure(
@@ -237,7 +238,8 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
     cluster_ids = np.asarray(model.cluster_ids_).reshape(-1)
     if not len(cluster_ids):
         raise ValueError('model must contain at least one assigned cluster')
-    pca = model.config.observation.pca_grid is not None
+    pca = (model.config.observation.pca_grid is not None or
+           model.config.observation.fixed_grid is not None)
 
     if annotations is not None:
         annotations = np.asarray(annotations).reshape(-1)

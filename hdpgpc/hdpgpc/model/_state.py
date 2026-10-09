@@ -80,9 +80,15 @@ class ModelState:
         self.observation_scope = options['scope']
         self.observation_C_initial = options['C']
         self.observation_Sigma_initial = options['Sigma']
-        self.pca_observation_grid = config.observation.pca_grid
-        self.pca_observation_mean = config.observation.pca_mean
-        self.pca_latent_variances = config.observation.pca_variances
+        self.fixed_observation_grid = (config.observation.fixed_grid if
+                                     config.observation.fixed_grid is not None else
+                                     config.observation.pca_grid)
+        self.fixed_observation_offset = (config.observation.fixed_offset if
+                                     config.observation.fixed_offset is not None else
+                                     config.observation.pca_mean)
+        self.fixed_latent_covariance = (config.observation.fixed_latent_covariance if
+                                     config.observation.fixed_latent_covariance is not None else
+                                     config.observation.pca_variances)
         self.lds_policies = resolved_lds_policies(config)
         self.custom_lds_policies = any((config.observation.C_policy,
                                         config.observation.Sigma_policy,
@@ -346,15 +352,27 @@ class ModelState:
                 elif name in ('A', 'C') and self.lds_policies[name].mode == 'fixed':
                     initial[index] = torch.eye(initial[index].shape[0], dtype=torch.float64)
         initial_covariance = None
-        if self.pca_observation_grid is not None:
+        if self.fixed_observation_grid is not None:
+            from ..dynamics._fixed_observation import AffineGaussianObservation
+            latent_covariance = np.asarray(self.fixed_latent_covariance)
+            if latent_covariance.ndim == 1:
+                latent_covariance = np.diag(latent_covariance)
+            if not hasattr(self, 'fixed_observation_model'):
+                self.fixed_observation_model = AffineGaussianObservation(
+                    torch.as_tensor(initial[2]).detach().cpu().numpy(),
+                    torch.as_tensor(initial[3]).detach().cpu().numpy(),
+                    np.asarray(self.fixed_observation_grid),
+                    np.asarray(self.fixed_observation_offset),
+                    latent_covariance)
+            emission.fixed_observation_model = self.fixed_observation_model
+            emission.gp.fixed_observation_model = self.fixed_observation_model
             emission.direct_observation_grid = torch.as_tensor(
-                self.pca_observation_grid, dtype=torch.float64)
+                self.fixed_observation_grid, dtype=torch.float64)
             emission.direct_observation_offset = torch.as_tensor(
-                self.pca_observation_mean, dtype=torch.float64).reshape(-1, 1)
+                self.fixed_observation_offset, dtype=torch.float64).reshape(-1, 1)
             emission.gp.direct_observation_grid = emission.direct_observation_grid
             emission.gp.direct_observation_offset = emission.direct_observation_offset
-            initial_covariance = torch.diag(torch.as_tensor(
-                self.pca_latent_variances, dtype=torch.float64))
+            initial_covariance = torch.as_tensor(latent_covariance, dtype=torch.float64)
             emission.gp.direct_initial_covariance = initial_covariance
         emission.initial_conditions(ini_mean=None, ini_cov=initial_covariance,
                                     ini_A=initial[0], ini_Gamma=initial[1],

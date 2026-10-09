@@ -65,7 +65,9 @@ class ObservationConfig:
     holds the supplied map and noise covariance, defaulting to identity C and
     the emission's initial observation covariance. A calibrated PCA observation
     uses a rectangular fixed C and a separate waveform grid; Sigma can remain
-    fixed or use one of the learned noise policies.
+    fixed or use one of the learned noise policies. A direct fixed affine
+    decoder uses the generic `fixed_*` fields; the older `pca_*` fields remain
+    readable for existing recipes.
     """
     scope: Literal['cluster', 'shared', 'fixed'] = 'cluster'
     C: ndarray | None = None
@@ -77,6 +79,10 @@ class ObservationConfig:
     pca_grid: ndarray | None = None
     pca_mean: ndarray | None = None
     pca_variances: ndarray | None = None
+    # Generic fixed affine decoder metadata; PCA fields remain readable aliases.
+    fixed_grid: ndarray | None = None
+    fixed_offset: ndarray | None = None
+    fixed_latent_covariance: ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -219,7 +225,8 @@ NON_CONSTRUCTOR = {'alignment': {'policy', 'flow_inducing', 'flow_features',
                    'inference': {'schedule', 'warp', 'force_model', 'minibatch', 'classify', 'it_limit'},
                    'numerics': {'seed', 'num_threads', 'dtype', 'deterministic'},
                    'observation': {'C_policy', 'Sigma_policy',
-                                   'pca_grid', 'pca_mean', 'pca_variances'},
+                                   'pca_grid', 'pca_mean', 'pca_variances',
+                                   'fixed_grid', 'fixed_offset', 'fixed_latent_covariance'},
                    'dynamics': {'A_policy', 'Gamma_policy'}}
 
 

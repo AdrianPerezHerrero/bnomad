@@ -1,0 +1,305 @@
+"""Fixed observation models for Gaussian LDS trajectories.
+
+An encoder is an optional initializer, not an observation likelihood. A future
+nonlinear decoder must supply its own Gaussian state update and expected log
+likelihood; projecting observations through an encoder alone is insufficient.
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+import numpy as np
+import torch
+
+
+def _chol_cov(value):
+    matrix = 0.5 * (value + value.T)
+    eye = torch.eye(len(matrix), dtype=matrix.dtype, device=matrix.device)
+    scale = torch.diag(matrix).abs().mean().clamp_min(torch.finfo(matrix.dtype).eps)
+    for relative in (1e-8, 1e-7, 1e-6, 1e-5, 1e-4):
+        factor, info = torch.linalg.cholesky_ex(matrix + relative * scale * eye)
+        if not bool(info.item()):
+            return factor
+    raise torch.linalg.LinAlgError('Fixed observation covariance is not positive definite')
+
+
+class FixedObservationModel(ABC):
+    """Observation contract for one output on a fixed waveform grid.
+
+    Methods use column means and full covariance matrices in float64. `condition`
+    returns Gaussian posterior moments after a responsibility-weighted likelihood
+    update. `expected_log_likelihood` must evaluate E_q(f)[log p(y|f)] in waveform
+    space, including normalization and uncertainty; an encoder reconstruction
+    error alone is not a valid implementation. Nonconjugate implementations must
+    document their approximation and must not claim an exact LDS ELBO.
+    """
+
+    @property
+    @abstractmethod
+    def grid(self) -> np.ndarray: ...
+
+    @property
+    @abstractmethod
+    def latent_dim(self) -> int: ...
+
+    @property
+    @abstractmethod
+    def observation_dim(self) -> int: ...
+
+    @abstractmethod
+    def encode(self, observation):
+        """Return an initial Gaussian latent approximation (mean, covariance)."""
+        ...
+
+    def encode_likelihood(self, observation, *, noise=None):
+        """Return latent precision and information supplied by one observation.
+
+        This exact information-form encoding is available for affine Gaussian
+        decoders. A nonlinear decoder can instead implement its own `condition`
+        approximation without pretending its encoded output is a Gaussian
+        likelihood factor.
+        """
+        raise NotImplementedError('This observation model has no exact latent likelihood encoding')
+
+    @abstractmethod
+    def decode(self, latent):
+        """Return the decoder's waveform-space conditional mean."""
+        ...
+
+    @abstractmethod
+    def condition(self, prior_mean, prior_covariance, observation, *,
+                  responsibility=1.0, noise=None): ...
+
+    @abstractmethod
+    def expected_log_likelihood(self, observation, latent_mean,
+                                latent_covariance, *, noise=None): ...
+
+    def expected_log_likelihood_batch(self, observations, latent_mean,
+                                      latent_covariance, *, noise=None):
+        values = torch.as_tensor(observations)
+        return torch.stack([
+            self.expected_log_likelihood(value, latent_mean, latent_covariance,
+                                         noise=noise)
+            for value in values])
+
+    @abstractmethod
+    def predictive_moments(self, latent_mean, latent_covariance, *, noise=None): ...
+
+    @abstractmethod
+    def state_dict(self) -> dict: ...
+
+    @classmethod
+    @abstractmethod
+    def from_state_dict(cls, state): ...
+
+
+@dataclass(frozen=True)
+class AffineGaussianObservation(FixedObservationModel):
+    """Exact fixed decoder `y | f ~ N(offset + C f, Sigma)`.
+
+    A learned Sigma policy may pass its current covariance to the three methods;
+    the decoder and offset remain fixed. `latent_covariance` is a separate LDS
+    prior on f, not an encoder covariance.
+    """
+
+    C: np.ndarray
+    Sigma: np.ndarray
+    observation_grid: np.ndarray
+    offset: np.ndarray
+    latent_covariance: np.ndarray
+
+    def __post_init__(self):
+        C = np.asarray(self.C, dtype=np.float64)
+        Sigma = np.asarray(self.Sigma, dtype=np.float64)
+        grid = np.asarray(self.observation_grid, dtype=np.float64)
+        offset = np.asarray(self.offset, dtype=np.float64).reshape(-1)
+        latent_cov = np.asarray(self.latent_covariance, dtype=np.float64)
+        if (C.ndim != 2 or grid.shape != (C.shape[0], 1)
+                or offset.shape != (C.shape[0],)
+                or Sigma.shape != (C.shape[0], C.shape[0])
+                or latent_cov.shape != (C.shape[1], C.shape[1])
+                or not all(np.isfinite(x).all() for x in (C, Sigma, grid, offset, latent_cov))
+                or not np.allclose(Sigma, Sigma.T)
+                or not np.allclose(latent_cov, latent_cov.T)
+                or np.linalg.eigvalsh(Sigma).min() <= 0
+                or np.linalg.eigvalsh(latent_cov).min() <= 0):
+            raise ValueError('Affine observation requires finite dimensions and positive definite covariances')
+        for name, value in (('C', C), ('Sigma', Sigma), ('observation_grid', grid),
+                            ('offset', offset), ('latent_covariance', latent_cov)):
+            copy = value.copy()
+            copy.setflags(write=False)
+            object.__setattr__(self, name, copy)
+
+    @property
+    def grid(self):
+        return self.observation_grid
+
+    @property
+    def latent_dim(self):
+        return self.C.shape[1]
+
+    @property
+    def observation_dim(self):
+        return self.C.shape[0]
+
+    def _tensors(self, reference, noise):
+        ref = torch.as_tensor(reference)
+        C = torch.as_tensor(self.C.copy(), dtype=ref.dtype, device=ref.device)
+        Sigma = torch.as_tensor(self.Sigma.copy() if noise is None else noise,
+                                dtype=ref.dtype, device=ref.device)
+        offset = torch.as_tensor(self.offset.copy(), dtype=ref.dtype,
+                                 device=ref.device).reshape(-1, 1)
+        if Sigma.shape != (self.observation_dim, self.observation_dim):
+            raise ValueError('Observation noise has the wrong shape')
+        if not torch.isfinite(Sigma).all():
+            raise ValueError('Observation noise must be finite')
+        if torch.equal(Sigma, torch.diag(torch.diag(Sigma))) and not torch.all(torch.diag(Sigma) > 0):
+            raise torch.linalg.LinAlgError('Observation noise diagonal must be positive')
+        return C, Sigma, offset
+
+    def decode(self, latent):
+        value = torch.as_tensor(latent).reshape(-1, 1)
+        if value.shape != (self.latent_dim, 1):
+            raise ValueError('Latent mean has the wrong dimension')
+        C, _, offset = self._tensors(value, None)
+        return offset + C @ value
+
+    def encode(self, observation):
+        """Gaussian posterior from the calibrated zero-mean latent prior."""
+        value = torch.as_tensor(observation, dtype=torch.float64)
+        prior_mean = torch.zeros((self.latent_dim, 1), dtype=value.dtype, device=value.device)
+        prior_cov = torch.as_tensor(self.latent_covariance.copy(), dtype=value.dtype,
+                                    device=value.device)
+        return self.condition(prior_mean, prior_cov, value)
+
+    def encode_likelihood(self, observation, *, noise=None):
+        """Encode one waveform as its exact latent Gaussian likelihood factor.
+
+        For y|f ~ N(offset + C f, Sigma), the factor has precision
+        H = C.T Sigma^-1 C and information h = C.T Sigma^-1 (y-offset).
+        Information form also supports a rank-deficient C, where a finite
+        standalone latent measurement covariance does not exist.
+        """
+        y = torch.as_tensor(observation).reshape(-1, 1)
+        C, Sigma, offset = self._tensors(y, noise)
+        if y.shape != (self.observation_dim, 1):
+            raise ValueError('Observation has the wrong dimension')
+        if torch.equal(Sigma, torch.diag(torch.diag(Sigma))):
+            inverse_variance = 1.0 / torch.diag(Sigma)
+            weighted_C = inverse_variance[:, None] * C
+            weighted_y = inverse_variance[:, None] * (y - offset)
+        else:
+            noise_chol = _chol_cov(Sigma)
+            weighted_C = torch.cholesky_solve(C, noise_chol)
+            weighted_y = torch.cholesky_solve(y - offset, noise_chol)
+        precision = C.T @ weighted_C
+        information = C.T @ weighted_y
+        return 0.5 * (precision + precision.T), information
+
+    def encode_measurement(self, observation, *, noise=None):
+        """Return the latent measurement (mean, covariance) when C has full rank.
+
+        The LDS filter uses `encode_likelihood`, so its update also works when
+        a decoder is rank deficient. For an orthonormal tied linear
+        autoencoder with isotropic Sigma, this mean is its trained encoder.
+        """
+        precision, information = self.encode_likelihood(observation, noise=noise)
+        chol, status = torch.linalg.cholesky_ex(precision)
+        if bool(status.item()):
+            raise ValueError('A standalone latent measurement requires full-column-rank C')
+        covariance = torch.cholesky_inverse(chol)
+        return covariance @ information, 0.5 * (covariance + covariance.T)
+
+    def condition(self, prior_mean, prior_covariance, observation, *,
+                  responsibility=1.0, noise=None):
+        mean = torch.as_tensor(prior_mean).reshape(-1, 1)
+        covariance = torch.as_tensor(prior_covariance, dtype=mean.dtype, device=mean.device)
+        y = torch.as_tensor(observation, dtype=mean.dtype, device=mean.device).reshape(-1, 1)
+        _, Sigma, _ = self._tensors(mean, noise)
+        if y.shape != (self.observation_dim, 1) or mean.shape != (self.latent_dim, 1):
+            raise ValueError('Observation or latent mean has the wrong dimension')
+        weight = float(responsibility)
+        if not np.isfinite(weight) or weight < 0:
+            raise ValueError('responsibility must be finite and nonnegative')
+        if weight == 0:
+            return mean, covariance
+        prior_chol = _chol_cov(covariance)
+        prior_precision = torch.cholesky_inverse(prior_chol)
+        encoded_precision, encoded_information = self.encode_likelihood(y, noise=Sigma)
+        precision = prior_precision + weight * encoded_precision
+        posterior_cov = torch.cholesky_inverse(_chol_cov(precision))
+        posterior_mean = posterior_cov @ (prior_precision @ mean + weight * encoded_information)
+        return posterior_mean, 0.5 * (posterior_cov + posterior_cov.T)
+
+    def expected_log_likelihood(self, observation, latent_mean,
+                                latent_covariance, *, noise=None):
+        mean = torch.as_tensor(latent_mean).reshape(-1, 1)
+        covariance = torch.as_tensor(latent_covariance, dtype=mean.dtype, device=mean.device)
+        y = torch.as_tensor(observation, dtype=mean.dtype, device=mean.device).reshape(-1, 1)
+        C, Sigma, offset = self._tensors(mean, noise)
+        if y.shape != (self.observation_dim, 1):
+            raise ValueError('Observation has the wrong dimension')
+        residual = y - offset - C @ mean
+        if torch.equal(Sigma, torch.diag(torch.diag(Sigma))):
+            variance = torch.diag(Sigma)
+            quadratic = torch.sum(residual.reshape(-1).square() / variance)
+            trace = torch.sum(torch.sum((C @ covariance) * C, dim=1) / variance)
+            logdet = torch.log(variance).sum()
+        else:
+            chol = _chol_cov(Sigma)
+            quadratic = torch.sum(residual * torch.cholesky_solve(residual, chol))
+            trace = torch.trace(torch.cholesky_solve(C @ covariance @ C.T, chol))
+            logdet = 2 * torch.log(torch.diag(chol)).sum()
+        return -0.5 * (quadratic + trace + logdet
+                       + self.observation_dim * np.log(2 * np.pi))
+
+    def expected_log_likelihood_batch(self, observations, latent_mean,
+                                      latent_covariance, *, noise=None):
+        """Score many observations with one latent posterior and one factorization."""
+        mean = torch.as_tensor(latent_mean).reshape(-1, 1)
+        covariance = torch.as_tensor(latent_covariance, dtype=mean.dtype, device=mean.device)
+        values = torch.as_tensor(observations, dtype=mean.dtype, device=mean.device)
+        if values.ndim == 3 and values.shape[-1] == 1:
+            values = values[..., 0]
+        if values.ndim != 2 or values.shape[1] != self.observation_dim:
+            raise ValueError('Batch observations have the wrong dimension')
+        C, Sigma, offset = self._tensors(mean, noise)
+        residual = values.T - offset - C @ mean
+        if torch.equal(Sigma, torch.diag(torch.diag(Sigma))):
+            variance = torch.diag(Sigma)
+            quadratic = torch.sum(residual.square() / variance[:, None], dim=0)
+            trace = torch.sum(torch.sum((C @ covariance) * C, dim=1) / variance)
+            logdet = torch.log(variance).sum()
+        else:
+            chol = _chol_cov(Sigma)
+            quadratic = torch.sum(residual * torch.cholesky_solve(residual, chol), dim=0)
+            trace = torch.trace(torch.cholesky_solve(C @ covariance @ C.T, chol))
+            logdet = 2 * torch.log(torch.diag(chol)).sum()
+        return -0.5 * (quadratic + trace + logdet
+                       + self.observation_dim * np.log(2 * np.pi))
+
+    def predictive_moments(self, latent_mean, latent_covariance, *, noise=None):
+        mean = torch.as_tensor(latent_mean).reshape(-1, 1)
+        covariance = torch.as_tensor(latent_covariance, dtype=mean.dtype, device=mean.device)
+        C, Sigma, offset = self._tensors(mean, noise)
+        return offset + C @ mean, C @ covariance @ C.T + Sigma
+
+    def state_dict(self):
+        return {'type': 'affine_gaussian', 'C': self.C.copy(),
+                'Sigma': self.Sigma.copy(), 'grid': self.grid.copy(),
+                'offset': self.offset.copy(),
+                'latent_covariance': self.latent_covariance.copy()}
+
+    def __deepcopy__(self, memo):
+        # Immutable calibration belongs to the model, including proposal copies.
+        return self
+
+    @classmethod
+    def from_state_dict(cls, state):
+        if not isinstance(state, dict) or set(state) != {
+                'type', 'C', 'Sigma', 'grid', 'offset', 'latent_covariance'} or state['type'] != 'affine_gaussian':
+            raise ValueError('Unknown or malformed affine observation state')
+        return cls(state['C'], state['Sigma'], state['grid'],
+                   state['offset'], state['latent_covariance'])

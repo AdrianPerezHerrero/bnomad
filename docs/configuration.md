@@ -17,7 +17,7 @@ model = HDPGPC(restored).fit(waveforms())
 | --- | --- | --- |
 | `hdp` | `HDPConfig` | `M`, concentration preset, HMM dependence, maximum models |
 | `emission` | `GPEmissionConfig` | kernels, first-beat fitting policy, lengthscale/output/noise initialization and bounds, inducing points |
-| `observation` | `ObservationConfig` | independent C/Sigma map and covariance policies; optional fixed PCA decoder |
+| `observation` | `ObservationConfig` | independent C/Sigma policies; optional fixed affine decoder, including PCA |
 | `dynamics` | `DynamicsConfig` | static/dynamic mode, process noise, ML/Bayesian updates, annealing, estimation limits |
 | `alignment` | `AlignmentConfig` | `gp`/`dtw_gp`/`gp_flow`/`none`, basis, noise/bounds, recursion, warp mode |
 | `inference` | `InferenceConfig` | online/fast/offline schedule and separate call controls |

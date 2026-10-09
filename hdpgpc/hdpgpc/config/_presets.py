@@ -49,8 +49,9 @@ def with_lds_preset(config: HDPGPCConfig, preset: str, *,
     """
     if not isinstance(config, HDPGPCConfig):
         raise TypeError('config must be HDPGPCConfig')
-    if config.observation.pca_grid is not None:
-        raise ValueError('PCA fixes C and selects free A/Gamma; LDS presets do not apply')
+    if (config.observation.pca_grid is not None or
+            config.observation.fixed_grid is not None):
+        raise ValueError('Fixed decoder selects C and A/Gamma; LDS presets do not apply')
     if preset not in LDS_PRESETS:
         raise ValueError('Unknown LDS preset: ' + str(preset))
     if (isinstance(shrink_strength, bool) or not isinstance(shrink_strength, Real)
@@ -129,6 +130,7 @@ def with_pca_emission(config: HDPGPCConfig, estimate, *,
         Sigma_policy=replace(sigma_policy, value=sigma_value),
         pca_grid=estimate.grid.copy(), pca_mean=estimate.mean.copy(),
         pca_variances=estimate.latent_variances.copy(),
+        fixed_grid=None, fixed_offset=None, fixed_latent_covariance=None,
     )
     dynamics = replace(
         config.dynamics, model_type='dynamic', bayesian_params=True,
@@ -144,3 +146,50 @@ def with_pca_emission(config: HDPGPCConfig, estimate, *,
     return replace(config, x_basis=np.arange(dimension, dtype=np.float64)[:, None],
                    observation=observation, dynamics=dynamics, emission=emission,
                    multi_output=replace(config.multi_output, use_snr=False))
+
+
+def with_fixed_observation_model(config: HDPGPCConfig, model, *,
+                                 sigma_policy: NoisePolicyConfig | None = None) -> HDPGPCConfig:
+    """Install an exact fixed affine Gaussian decoder in the existing LDS.
+
+    The full `FixedObservationModel` contract also specifies what an external
+    nonlinear decoder must provide. The current conjugate LDS engine accepts
+    only `AffineGaussianObservation`; a nonlinear implementation needs its own
+    posterior and ELBO integration before it can be used for fitting.
+    """
+    from ..dynamics._fixed_observation import AffineGaussianObservation
+
+    if not isinstance(config, HDPGPCConfig) or not isinstance(model, AffineGaussianObservation):
+        raise TypeError('Current LDS inference requires HDPGPCConfig and AffineGaussianObservation')
+    if config.multi_output.n_outputs != 1 or config.inference.warp or config.numerics.cuda:
+        raise ValueError('Fixed affine decoder requires one output, warp=False and CPU inference')
+    sigma_policy = NoisePolicyConfig(mode='fixed') if sigma_policy is None else sigma_policy
+    if not isinstance(sigma_policy, NoisePolicyConfig) or sigma_policy.mode not in (
+            'fixed', 'cluster', 'cluster_diagonal', 'shared', 'shared_diagonal'):
+        raise ValueError('Unsupported fixed affine Sigma policy')
+    sigma = (model.Sigma.copy() if sigma_policy.value is None
+             else np.asarray(sigma_policy.value, dtype=np.float64).copy())
+    observation = replace(
+        config.observation, scope='cluster', C=None, Sigma=None,
+        C_policy=MatrixPolicyConfig(mode='fixed', value=model.C.copy()),
+        Sigma_policy=replace(sigma_policy, value=sigma),
+        pca_grid=None, pca_mean=None, pca_variances=None,
+        fixed_grid=model.grid.copy(), fixed_offset=model.offset.copy(),
+        fixed_latent_covariance=model.latent_covariance.copy(),
+    )
+    dynamics = replace(
+        config.dynamics, model_type='dynamic', bayesian_params=True,
+        A_policy=MatrixPolicyConfig(mode='cluster'),
+        Gamma_policy=NoisePolicyConfig(mode='cluster'), lds_scoring='final',
+        lds_update=('conjugate_sequential' if (
+            config.dynamics.lds_update == 'legacy' or
+            (config.dynamics.lds_update == 'conjugate_batch' and
+             config.inference.schedule != 'offline'))
+                    else config.dynamics.lds_update),
+    )
+    return replace(
+        config, x_basis=np.arange(model.latent_dim, dtype=np.float64)[:, None],
+        observation=observation, dynamics=dynamics,
+        emission=replace(config.emission, inducing_points=True, fit_gp=False),
+        multi_output=replace(config.multi_output, use_snr=False),
+    )

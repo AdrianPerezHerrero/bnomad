@@ -175,14 +175,16 @@ For example, the small static streaming fixture records assignments
 
 `Prediction.mean` has shape `(points, outputs)` and `covariance` has shape
 `(outputs, points, points)`. `grid` has shape `(points, 1)`. Every output calls the
-unchanged `GaussianProcessEmission.observe_last` on the same query grid. The
-default query grid is the selected cluster's first-output GP basis. There is no
+`GaussianProcessEmission.observe_last` on the same query grid. The default
+query grid is the fixed decoder's waveform grid when configured, otherwise
+the selected cluster's first-output GP basis. There is no
 cross-output covariance matrix or mixture average.
 
 This is a **current component observation distribution**, not a one-step future
 LDS forecast or pre-update predictive assessment. At the native basis, the
-implementation returns `C[-1] @ f_star_sm[-1]` and `Sigma[-1]`. The facade does not
-add latent/process covariance terms that the original formula omits. At another
+legacy GP implementation returns `C[-1] @ f_star_sm[-1]` and `Sigma[-1]`.
+The fixed affine decoder returns `offset + C @ f_star_sm[-1]` and
+`C @ cov_f_sm[-1] @ C.T + Sigma`. At another
 grid, the existing GP interpolation and stabilization formulas are used. With
 alignment, coordinates are the model/aligned domain; no inverse warp back to raw
 observation coordinates is performed.
