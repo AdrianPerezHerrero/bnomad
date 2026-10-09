@@ -51,7 +51,15 @@ from hdpgpc.preprocessing import prepare_sequences
 
 
 # Experiment controls. The decoder and encoder always use one waveform channel.
-RECORDS = ('100',)
+# RECORDS = ('100',)
+RECORDS = (
+    "100", "101", "102", "103", "104", "105", "106", "107", "108", "109",
+    "111", "112", "113", "114", "115", "116", "117", "118", "119",
+    "121", "122", "123", "124",
+    "200", "201", "202", "203", "205", "207", "208", "209", "210",
+    "212", "213", "214", "215", "217", "219", "220", "221", "222", "223",
+    "228", "230", "231", "232", "233", "234",
+)
 CHANNEL = 0
 SCALE_WAVEFORMS = False
 UNIT_GRID = False
@@ -59,7 +67,7 @@ INFERENCE_MODE = 'offline'       # 'offline', 'online', 'online_fast'
 VERBOSE = 'debug'             # 'silent', 'progress', 'debug'
 HARD_ASSIGNMENTS = True
 OFFLINE_ITERATIONS = 25
-HDP_PRESET = 'more'           # 'less', 'balanced', 'more'
+HDP_PRESET = 'less'           # 'less', 'balanced', 'more'
 MAX_CLUSTERS = 12
 LDS_UPDATE = 'conjugate_batch'    # offline; online uses conjugate_sequential
 LDS_DEGREES_OF_FREEDOM = 10
@@ -195,7 +203,7 @@ def make_config(decoder: AffineGaussianObservation, schedule: str) -> HDPGPCConf
         inference=InferenceConfig(
             schedule=schedule, warp=False, hard_assignments=HARD_ASSIGNMENTS,
             birth_lds_kl_per_sqrt_point=BIRTH_LDS_KL_PER_POINT,
-            n_explore_steps=5,
+            n_explore_steps=5, offline_representer_selection='fixed',
             it_limit=OFFLINE_ITERATIONS if schedule == 'offline' else None,
         ),
         multi_output=MultiOutputConfig(n_outputs=1, share_gp=True, use_snr=False),

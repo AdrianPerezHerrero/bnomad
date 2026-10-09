@@ -26,6 +26,50 @@ def _owned_scores(scores, resp):
     return scores[rows, torch.argmax(resp, dim=1)]
 
 
+def _fixed_representers(resp, scores, previous, source_order, *, birth_source=None):
+    """Keep cluster seeds through a reorder, resolving duplicate seeds by score.
+
+    ``source_order`` maps each destination cluster to its source slot. An
+    accepted newborn gets first claim on the beat that seeded its split.
+    Existing seeds are deliberately retained even if responsibilities shift;
+    this is the experimental fixed-representer policy.
+    """
+    result = previous.new_full((len(source_order),), -1)
+    used = set()
+    priority = list(range(len(source_order)))
+    if birth_source is not None:
+        newborn = torch.where(source_order == birth_source)[0]
+        if newborn.numel() != 1:
+            raise RuntimeError('Birth representative has no unique cluster slot')
+        position = int(newborn.item())
+        priority.remove(position)
+        priority.insert(0, position)
+    for cluster in priority:
+        source = int(source_order[cluster].item())
+        preferred = int(previous[source].item())
+        if 0 <= preferred < len(resp) and preferred not in used:
+            chosen = preferred
+        else:
+            included = _owned_indices(resp, cluster)
+            if included.numel() == 0:
+                raise RuntimeError('Cannot select a representative for an empty cluster')
+            ranking = included[torch.argsort(scores[included, cluster], descending=True)]
+            chosen = next((int(index.item()) for index in ranking
+                           if int(index.item()) not in used), None)
+            if chosen is None:
+                # Soft responsibilities can give several clusters the same
+                # fallback owner. Use their next best supported beat.
+                supported = torch.where(resp[:, cluster] > 0)[0]
+                ranking = supported[torch.argsort(scores[supported, cluster], descending=True)]
+                chosen = next((int(index.item()) for index in ranking
+                               if int(index.item()) not in used), None)
+            if chosen is None:
+                raise RuntimeError('No distinct representative remains for this cluster')
+        result[cluster] = chosen
+        used.add(chosen)
+    return result
+
+
 def _cluster_occupied(self, resp):
     """Use concrete MAP ownership only for cluster lifecycle decisions."""
     if self.hard_assignments:
@@ -559,32 +603,37 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 y_trains_w = y_trains_w[:, :, :, reorder]
                 self.y_w = y_trains_w
                 self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
-                f_ind_old_new = torch.full_like(f_ind_old, -1)
-                used_representers = set()
+                if self.offline_representer_selection == 'fixed':
+                    self.f_ind_old = _fixed_representers(
+                        resp_temp, self.weight_mean(q_simple, snr_aux),
+                        f_ind_old, reorder)
+                else:
+                    f_ind_old_new = torch.full_like(f_ind_old, -1)
+                    used_representers = set()
 
-                for k in range(M):
-                    # Samples assigned to cluster k
-                    indexes_k = _owned_indices(resp_temp, k)
+                    for k in range(M):
+                        # Samples assigned to cluster k
+                        indexes_k = _owned_indices(resp_temp, k)
 
-                    # Rank candidates by weight, best first
-                    order = torch.argsort(self.weight_mean(q_simple, snr_aux)[indexes_k, k],
-                                          descending=True)
-                    sorted_candidates = indexes_k[order]
+                        # Rank candidates by weight, best first
+                        order = torch.argsort(self.weight_mean(q_simple, snr_aux)[indexes_k, k],
+                                              descending=True)
+                        sorted_candidates = indexes_k[order]
 
-                    candidate = None
-                    for idx in sorted_candidates:
-                        idx_val = int(idx.item())
-                        if idx_val not in used_representers:
-                            candidate = idx_val
-                            break
+                        candidate = None
+                        for idx in sorted_candidates:
+                            idx_val = int(idx.item())
+                            if idx_val not in used_representers:
+                                candidate = idx_val
+                                break
 
-                    # Fallback if all candidates were already used
-                    if candidate is None:
-                        candidate = int(sorted_candidates[0].item())
+                        # Fallback if all candidates were already used
+                        if candidate is None:
+                            candidate = int(sorted_candidates[0].item())
 
-                    f_ind_old_new[k] = candidate
-                    used_representers.add(candidate)
-                self.f_ind_old = torch.clone(f_ind_old_new)
+                        f_ind_old_new[k] = candidate
+                        used_representers.add(candidate)
+                    self.f_ind_old = torch.clone(f_ind_old_new)
 
                 if update_snr:
                     self.snr_norm = self.normalize_snr(snr_aux)
@@ -709,15 +758,15 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 attempted_beats.add(beat)
                 if hasattr(self, '_iteration_birth_candidates'):
                     self._iteration_birth_candidates.append(beat)
+                f_ind_old_temp = f_ind_old.clone()
+                f_ind_old_temp[-1] = f_ind_new
+                q_simple_ = torch.clone(q_def)
                 if not empty_estimation:
-                    f_ind_old_temp = f_ind_old.clone()
-                    f_ind_old_temp[-1] = f_ind_new
                     y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
                         x_trains=x_trains,
                         y_trains=y_trains,
                         resp_temp=resp_,
                         f_ind_old=f_ind_old_temp)
-                    q_simple_ = torch.clone(q_def)
                     q, q_lat, snr_aux = torch.clone(q_def), torch.clone(q_lat_def), torch.clone(snr_aux_def)
                     q__, q_lat__, snr__ = torch.clone(q__def), torch.clone(q_lat__def), torch.clone(snr__def)
                     _log(self, "Step " + str(step + 1) + "/" + str(n_steps) + "- Trying to divide: " + str(
@@ -912,32 +961,37 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                         y_trains_w = y_trains_w[:,:,:,reorder]
                         self.y_w = y_trains_w
                         self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
-                        f_ind_old_new = torch.full_like(f_ind_old, -1)
-                        used_representers = set()
+                        if self.offline_representer_selection == 'fixed':
+                            self.f_ind_old = _fixed_representers(
+                                resp_temp, self.weight_mean(q_simple_, snr_aux),
+                                f_ind_old_temp, reorder, birth_source=M - 1)
+                        else:
+                            f_ind_old_new = torch.full_like(f_ind_old, -1)
+                            used_representers = set()
 
-                        for k in range(M):
-                            # Samples assigned to cluster k
-                            indexes_k = _owned_indices(resp_temp, k)
+                            for k in range(M):
+                                # Samples assigned to cluster k
+                                indexes_k = _owned_indices(resp_temp, k)
 
-                            # Rank candidates by weight, best first
-                            order = torch.argsort(self.weight_mean(q_simple_, snr_aux)[indexes_k, k],
-                                                  descending=True)
-                            sorted_candidates = indexes_k[order]
+                                # Rank candidates by weight, best first
+                                order = torch.argsort(self.weight_mean(q_simple_, snr_aux)[indexes_k, k],
+                                                      descending=True)
+                                sorted_candidates = indexes_k[order]
 
-                            candidate = None
-                            for idx in sorted_candidates:
-                                idx_val = int(idx.item())
-                                if idx_val not in used_representers:
-                                    candidate = idx_val
-                                    break
+                                candidate = None
+                                for idx in sorted_candidates:
+                                    idx_val = int(idx.item())
+                                    if idx_val not in used_representers:
+                                        candidate = idx_val
+                                        break
 
-                            # Fallback if all candidates were already used
-                            if candidate is None:
-                                candidate = int(sorted_candidates[0].item())
+                                # Fallback if all candidates were already used
+                                if candidate is None:
+                                    candidate = int(sorted_candidates[0].item())
 
-                            f_ind_old_new[k] = candidate
-                            used_representers.add(candidate)
-                        self.f_ind_old = torch.clone(f_ind_old_new)
+                                f_ind_old_new[k] = candidate
+                                used_representers.add(candidate)
+                            self.f_ind_old = torch.clone(f_ind_old_new)
                         if update_snr:
                             self.snr_norm = self.normalize_snr(snr_aux)
                         else:

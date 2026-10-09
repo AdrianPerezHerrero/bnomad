@@ -73,6 +73,7 @@ class ModelState:
         estimation_limit = options['estimation_limit']
         reestimate_initial_params = options['reestimate_initial_params']
         n_explore_steps = options['n_explore_steps']
+        self.offline_representer_selection = options['offline_representer_selection']
         free_deg_MNIV = options['free_deg_MNIV']
         self.lds_update = options['lds_update']
         self.lds_scoring = options['lds_scoring']

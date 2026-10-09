@@ -26,6 +26,8 @@ def validate_inference(c):
         integer(getattr(c, name), name, optional=True)
     integer(c.minibatch, 'minibatch')
     integer(c.n_explore_steps, 'n_explore_steps')
+    if c.offline_representer_selection not in ('sorted', 'fixed'):
+        raise ValueError('offline_representer_selection must be sorted or fixed')
     integer(c.it_limit, 'it_limit', 1, optional=True)
     if c.schedule == 'offline' and (c.force_model is not None or c.minibatch != 0 or c.classify):
         raise ValueError('force_model/minibatch/classify apply only to online inference')

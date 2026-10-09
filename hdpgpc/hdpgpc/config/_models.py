@@ -143,6 +143,7 @@ class InferenceConfig:
     batch: int | None = None
     reestimate_initial_params: bool = False
     n_explore_steps: int = 10
+    offline_representer_selection: Literal['sorted', 'fixed'] = 'sorted'
     schedule: Literal['online', 'online_fast', 'offline'] | None = None
     hard_assignments: bool = True
     warp: bool = False

@@ -123,6 +123,7 @@ CUSTOM_SIGMA = None          # Positive-definite LDS-grid covariance; None uses 
 # Model-owned shared/fixed observation parameters use final scoring.
 LDS_STEP_SIZE = 0.05            # Fraction of new LDS evidence in natural_gradient mode.
 BIRTH_LDS_KL_PER_SQRT_POINT = True  # Historical flag name; LDS KL / LDS dimension in both schedules.
+OFFLINE_REPRESENTER_SELECTION = "sorted"  # "sorted" reranks by q_simple; "fixed" keeps split seeds.
 INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 10.0)
 FIT_GP = True                  # False keeps the supplied GP kernel fixed for every cluster.
@@ -155,6 +156,7 @@ def _configuration(
     lds_inducing_points: int | None = LDS_INDUCING_POINTS,
     fit_gp: bool = FIT_GP,
     birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
+    offline_representer_selection: str = OFFLINE_REPRESENTER_SELECTION,
     initial_observation_noise: float = INITIAL_OBSERVATION_NOISE,
     initial_process_noise: float = INITIAL_PROCESS_NOISE,
     pca_estimate=None,
@@ -239,6 +241,7 @@ def _configuration(
             warp=ENABLE_WARP,
             it_limit=OFFLINE_ITERATIONS if INFERENCE_MODE == "offline" else None,
             n_explore_steps=10,
+            offline_representer_selection=offline_representer_selection,
         ),
         multi_output=MultiOutputConfig(
             n_outputs=len(CHANNELS),
@@ -288,6 +291,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                lds_step_size: float = LDS_STEP_SIZE,
                lds_inducing_points: int | None = LDS_INDUCING_POINTS,
                birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
+               offline_representer_selection: str = OFFLINE_REPRESENTER_SELECTION,
                plot_directory: Path = PLOT_DIRECTORY,
                scale_waveforms: bool = SCALE_WAVEFORMS,
                unit_grid: bool = UNIT_GRID,
@@ -360,13 +364,16 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         lds_inducing_points=lds_inducing_points,
         fit_gp=fit_gp,
         birth_lds_kl_per_sqrt_point=birth_lds_kl_per_sqrt_point,
+        offline_representer_selection=offline_representer_selection,
         initial_observation_noise=initial_observation_noise,
         initial_process_noise=initial_process_noise,
         pca_estimate=pca_estimate,
     )
 
     if verbosity != 'silent':
-        print(f"Record {record}: {len(values)} samples; schedule={INFERENCE_MODE}")
+        print(f"Record {record}: {len(values)} samples; schedule={INFERENCE_MODE}"
+              + (f", representative selection={config.inference.offline_representer_selection}"
+                 if INFERENCE_MODE == "offline" else ""))
     detail_print(f"Waveform shape={signal.shape}, annotations={len(annotations)}")
     detail_print(f"Input shape={values.shape} (beats, points, outputs), channels={CHANNELS}")
     detail_print(f"LDS basis points={len(config.x_basis)} of {len(grid)}, "
@@ -565,6 +572,11 @@ def main() -> None:
         help="Scale proposal LDS KL by LDS state dimension in either inference schedule.",
     )
     parser.add_argument(
+        "--offline-representer-selection", choices=("sorted", "fixed"),
+        default=OFFLINE_REPRESENTER_SELECTION,
+        help="How offline inference selects cluster representatives after reallocation or birth.",
+    )
+    parser.add_argument(
         "--calibrate-lds-noise-priors", action=argparse.BooleanOptionalAction,
         default=CALIBRATE_LDS_NOISE_PRIORS,
         help="Estimate initial Sigma/Gamma scales from contiguous record blocks before offline fitting.",
@@ -589,6 +601,7 @@ def main() -> None:
                         lds_step_size=args.lds_step_size,
                         lds_inducing_points=args.lds_inducing_points,
                         birth_lds_kl_per_sqrt_point=args.birth_lds_kl_per_sqrt_point,
+                        offline_representer_selection=args.offline_representer_selection,
                         plot_directory=args.plot_dir,
                         scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,
                         calibrate_lds_noise_priors=args.calibrate_lds_noise_priors,

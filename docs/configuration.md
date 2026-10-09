@@ -110,6 +110,15 @@ the MNIW posterior updates remain unchanged. Offline iteration summaries
 still report the raw ELBO, while proposal logs report the adjusted LDS score
 and its unscaled value. The full-record example enables the experiment and
 provides `--no-birth-lds-kl-per-sqrt-point` to restore ordinary proposal scoring.
+`InferenceConfig.offline_representer_selection` controls the representative
+beat indices in `f_ind_old`. The default `"sorted"` retains the existing
+behavior: after an accepted reallocation or birth, each cluster selects its
+best included beat by the simple emission score. Experimental `"fixed"`
+keeps each cluster's previous representative through reordering and gives a
+newborn cluster the beat that seeded its split. If a beat would represent two
+clusters, the later cluster selects its best available beat using that same
+simple score. The setting has no effect on online inference. The full-record
+example exposes `--offline-representer-selection sorted|fixed`.
 Offline emission fitting drops only fractional weights whose combined mass is
 at most `1e-8` of that cluster's responsibility total. A cluster with less
 than `1e-8` total mass is skipped during that fitting pass. This avoids
