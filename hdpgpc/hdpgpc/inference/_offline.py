@@ -626,53 +626,52 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0]
         potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0].shape[0]
         potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
-    n_steps = self.n_explore_steps
-    f_ind_new_potential_def = torch.zeros(n_steps).long()
-    last_indexes = torch.tensor([-1])
-    j_ = 0
-    for j, f_ind_new in enumerate(f_ind_new_potential):
-        if j_ == np.max([n_steps // 2.0, 1]):
-            # if j_ == n_steps:
-            break
+    n_steps = min(self.n_explore_steps, len(f_ind_new_potential))
+    selected_candidates = []
+    selected_beats = set()
+
+    def eligible_birth_seed(beat):
+        if beat in selected_beats:
+            return False
         m_chosen = -1
         for m in range(M - 1):
-            if f_ind_new in indexes_[m]:
+            if beat in indexes_[m]:
                 m_chosen = m
                 break
         if m_chosen == -1:
-            m_chosen = torch.argmax(resp[f_ind_new])
-        f_ind_old_chosen = f_ind_old[m_chosen]
-        if f_ind_new != f_ind_old_chosen:
-            for l_ in last_indexes:
-                if not l_ in potential_ind[f_ind_new.item()]:
-                    last_indexes = potential_ind[f_ind_new.item()]
-                    f_ind_new_potential_def[j_] = f_ind_new
-                    j_ = j_ + 1
-                    break
+            m_chosen = int(torch.argmax(resp[beat]).item())
+        return beat != int(f_ind_old[m_chosen].item())
 
-    # Potential compared with accumulated q -------------------------
+    def add_ranked_candidates(ranking, target, *, distinct_score_groups=True):
+        last_indexes = torch.tensor([-1], device=resp.device)
+        for candidate in ranking:
+            if len(selected_candidates) >= target:
+                break
+            beat = int(candidate.item())
+            if not eligible_birth_seed(beat):
+                continue
+            group = potential_ind[beat]
+            if distinct_score_groups and not any(old not in group for old in last_indexes):
+                continue
+            selected_candidates.append(beat)
+            selected_beats.add(beat)
+            last_indexes = group
+
+    # Give each criterion its historical half of the pool, then fill unused
+    # positions from the other ranking. A beat selected earlier cannot recur.
+    first_quota = min(n_steps, max(n_steps // 2, 1))
+    add_ranked_candidates(f_ind_new_potential, first_quota)
     q_aux = torch.clone(q_simple)
     f_ind_new_q = torch.argsort(q_s + q_lat_s)
-    last_indexes = torch.tensor([-1])
-    j_ = int(np.max([n_steps // 2.0, 1]))
-    for j, f_ind_new in enumerate(f_ind_new_q):
-        if j_ == n_steps:
-            break
-        m_chosen = -1
-        for m in range(M - 1):
-            if f_ind_new in indexes_[m]:
-                m_chosen = m
-                break
-        if m_chosen == -1:
-            m_chosen = torch.argmax(resp[f_ind_new])
-        f_ind_old_chosen = f_ind_old[m_chosen]
-        if f_ind_new != f_ind_old_chosen:
-            for l_ in last_indexes:
-                if not l_ in potential_ind[f_ind_new.item()]:
-                    last_indexes = potential_ind[f_ind_new.item()]
-                    f_ind_new_potential_def[j_] = f_ind_new
-                    j_ = j_ + 1
-                    break
+    add_ranked_candidates(f_ind_new_q, n_steps)
+    if len(selected_candidates) < n_steps:
+        # Near-equal-score groups may exhaust both diverse lists. Fill the
+        # remaining slots with distinct eligible beats, never zero padding.
+        add_ranked_candidates(f_ind_new_potential, n_steps, distinct_score_groups=False)
+        add_ranked_candidates(f_ind_new_q, n_steps, distinct_score_groups=False)
+    f_ind_new_potential_def = torch.tensor(
+        selected_candidates, dtype=torch.long, device=resp.device)
+    n_steps = len(selected_candidates)
     # -----------------------------------------
     # ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
     # f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
@@ -680,7 +679,6 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
     # f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def,f_ind_new_q_def])
     # n_steps = n_steps + 5
     step = 0
-    last_indexes = torch.tensor([-1])
     q = torch.clone(q_aux)
     q_lat = torch.clone(q_lat_)
     snr_aux = torch.clone(snr_)
@@ -691,6 +689,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
     M = M + 1
     f_ind_old = torch.zeros(M, device=resp.device).long()
     f_ind_old[:self.f_ind_old.shape[0]] = torch.clone(self.f_ind_old)
+    attempted_beats = set()
     for j, f_ind_new in enumerate(f_ind_new_potential_def):
         if step == n_steps:
             break
@@ -704,14 +703,12 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         f_ind_old_chosen = f_ind_old[m_chosen]
         ld_belong = torch.argmax(self.snr_norm[f_ind_new])
         if f_ind_new != f_ind_old_chosen:
-            some_new_index = False
-            for l_ in last_indexes:
-                if not l_ in potential_ind[f_ind_new.item()]:
-                    some_new_index = True
-                    break
+            beat = int(f_ind_new.item())
+            some_new_index = beat not in attempted_beats
             if some_new_index:
+                attempted_beats.add(beat)
                 if hasattr(self, '_iteration_birth_candidates'):
-                    self._iteration_birth_candidates.append(int(f_ind_new.item()))
+                    self._iteration_birth_candidates.append(beat)
                 if not empty_estimation:
                     f_ind_old_temp = f_ind_old.clone()
                     f_ind_old_temp[-1] = f_ind_new
@@ -723,7 +720,6 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q_simple_ = torch.clone(q_def)
                     q, q_lat, snr_aux = torch.clone(q_def), torch.clone(q_lat_def), torch.clone(snr_aux_def)
                     q__, q_lat__, snr__ = torch.clone(q__def), torch.clone(q_lat__def), torch.clone(snr__def)
-                    last_indexes = potential_ind[f_ind_new.item()]
                     _log(self, "Step " + str(step + 1) + "/" + str(n_steps) + "- Trying to divide: " + str(
                         m_chosen) + " with beat " + str(f_ind_new.item()))
                     step = step + 1

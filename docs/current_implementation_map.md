@@ -162,7 +162,7 @@ The first pair table produced by `coupled_state_coef` is zero before taking logs
 
 There is no separately encapsulated general merge/death algorithm.
 
-Offline birth proposals rank samples using normalized representative-fit, accumulated emission, and latent scores. They group approximately equal candidate scores using `rtol=0.01`, explore up to `n_explore_steps`, and accept according to the implemented objective.
+Offline birth proposals rank samples using normalized representative-fit, accumulated emission, and latent scores. They group approximately equal candidate scores using `rtol=0.01` and fill one ordered pool of up to `n_explore_steps` distinct beats. The second criterion skips beats selected by the first; if score grouping leaves slots unused, the rankings fill them with other distinct eligible beats. Each pool member is evaluated at most once and acceptance uses the implemented objective.
 
 Online absorption candidates are ordered by emission fit. The provisional birth copies the **worst-ranked** existing model as its template. The first absorption candidate beating the birth comparison is accepted; the algorithm does not necessarily find the best absorption candidate.
 
