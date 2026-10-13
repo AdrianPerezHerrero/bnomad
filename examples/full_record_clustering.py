@@ -10,8 +10,9 @@ Run from the repository root after installing the package::
     python examples/full_record_clustering.py --records 100 --no-fit-gp
 
 Edit the experiment controls below to choose records, channels, inference schedule,
-alignment policy, warping, and model hyperparameters. If there is one extra trailing annotation,
-the script crops the annotation vector to the number of fitted observations.
+alignment policy, warping, and model hyperparameters. The MIT-BIH loader aligns
+the legacy arrays, removing a single trailing annotation when the last beat
+window was omitted during extraction.
 Console output is also saved to one log file per record in the plot directory.
 """
 
@@ -34,9 +35,12 @@ from hdpgpc import HDPGPC
 from hdpgpc.dynamics import estimate_lds_noise_priors, estimate_pca_observation
 from hdpgpc.diagnostics import (
     Tee, cluster_label_statistics, format_confusion_matrix, format_lds_priors,
-    model_lds_arrays, model_warp_arrays, plot_lds_diagnostics, plot_warp_diagnostics,
+    model_lds_arrays, model_lds_dynamics, model_warp_arrays,
+    plot_lds_diagnostics, plot_lds_dynamics as create_lds_dynamics_figure,
+    plot_warp_diagnostics,
 )
 from hdpgpc.preprocessing import prepare_sequences
+from hdpgpc.datasets import load_mitbih_record
 from hdpgpc.config import (
     AlignmentConfig,
     DynamicsConfig,
@@ -91,6 +95,7 @@ SHARE_GP_FOR_PROPOSALS = True   # Proposals/new clusters may reuse the fitted or
 SAVE_PLOTS = True               # Also save the final figures when True.
 PLOT_WARPS = True               # Plot fitted warp maps, record heatmap, and cluster summaries.
 PLOT_LDS = True                 # Plot fitted LDS matrices, spectra, and stability measures.
+PLOT_LDS_DYNAMICS = True        # One-step LDS changes on the waveform grid, per cluster.
 PLOT_DIRECTORY = Path(__file__).resolve().parents[1] / "agents" / "plots_presets"
 PLOT_DPI = 160
 
@@ -264,26 +269,21 @@ def _configuration(
             if LDS_PRESET is not None else config)
 
 
-def _load_record(record: str) -> tuple[np.ndarray, np.ndarray]:
-    signal_path = DATA_DIRECTORY / f"{record}.npy"
-    label_path = DATA_DIRECTORY / f"{record}_labels.npy"
-    if not signal_path.is_file() or not label_path.is_file():
-        raise FileNotFoundError(
-            f"Record {record} needs both {signal_path.name} and {label_path.name} in {DATA_DIRECTORY}"
-        )
-    signal = np.load(signal_path, allow_pickle=False)
-    labels = np.load(label_path, allow_pickle=False).reshape(-1)
+def _load_record(record: str) -> tuple[np.ndarray, np.ndarray, int]:
+    loaded = load_mitbih_record(DATA_DIRECTORY, record)
+    signal, labels = loaded.waveforms, loaded.annotations
     if signal.ndim != 3 or signal.shape[-1] < 1:
-        raise ValueError(f"Expected {signal_path.name} shaped (beats, points, channels), got {signal.shape}")
+        raise ValueError(f"Expected record {record} shaped (beats, points, channels), got {signal.shape}")
     if min(CHANNELS) < 0 or max(CHANNELS) >= signal.shape[-1]:
-        raise ValueError(f"Selected channels {CHANNELS} are invalid for {signal_path.name} {signal.shape}")
-    return signal, labels
+        raise ValueError(f"Selected channels {CHANNELS} are invalid for record {record} {signal.shape}")
+    return signal, labels, loaded.omitted_trailing_annotations
 
 
 
 def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                plot_warps: bool = PLOT_WARPS,
                plot_lds: bool = PLOT_LDS,
+               plot_lds_dynamics: bool = PLOT_LDS_DYNAMICS,
                fit_gp: bool = FIT_GP,
                lds_degrees_of_freedom: int | None = LDS_DEGREES_OF_FREEDOM,
                lds_update: str = LDS_UPDATE,
@@ -303,7 +303,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         if verbosity == 'debug':
             print(*args, **kwargs)
 
-    signal, annotations = _load_record(record)
+    signal, annotations, omitted_annotation = _load_record(record)
     values, grid = prepare_sequences(
         signal, channels=CHANNELS, scale_from_first=scale_waveforms,
         unit_grid=unit_grid,
@@ -374,6 +374,9 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         print(f"Record {record}: {len(values)} samples; schedule={INFERENCE_MODE}"
               + (f", representative selection={config.inference.offline_representer_selection}"
                  if INFERENCE_MODE == "offline" else ""))
+        if omitted_annotation:
+            print("Legacy extraction omitted the last waveform window; "
+                  "its trailing annotation was excluded before fitting.")
     detail_print(f"Waveform shape={signal.shape}, annotations={len(annotations)}")
     detail_print(f"Input shape={values.shape} (beats, points, outputs), channels={CHANNELS}")
     detail_print(f"LDS basis points={len(config.x_basis)} of {len(grid)}, "
@@ -430,14 +433,11 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
     print(f"Elapsed: {elapsed:.1f} s; clusters found: {model.n_clusters_}")
     print("Cluster sizes:", Counter(assignments.tolist()))
 
-    if len(annotations) == len(assignments) + 1:
-        print("Dropping the trailing annotation without a stored waveform observation.")
-        annotations = annotations[:len(assignments)]
     print("Annotation counts:", Counter(annotations.tolist()))
     scores = None
     if len(annotations) != len(assignments):
         print(
-            "Classification statistics skipped: expected equal lengths or one extra trailing annotation; "
+            "Classification statistics skipped: annotations and fitted observations differ; "
             f"got {len(assignments)} observations and {len(annotations)} annotations."
         )
     else:
@@ -498,6 +498,20 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                     plt.close(figure)
                 else:
                     lds_figures.append(figure)
+    if plot_lds_dynamics:
+        for output, channel in enumerate(CHANNELS):
+            dynamics = model_lds_dynamics(model, grid=grid, output=output)
+            figure = create_lds_dynamics_figure(
+                dynamics, title=f'Record {record}, channel {channel}: LDS dynamics',
+            )
+            if save_plots:
+                plot_directory.mkdir(parents=True, exist_ok=True)
+                path = plot_directory / f'record_{record}_channel_{channel}_lds_dynamics.png'
+                figure.savefig(path, dpi=PLOT_DPI)
+                print(f'Saved LDS dynamics plot: {path}')
+                plt.close(figure)
+            else:
+                lds_figures.append(figure)
     if save_plots:
         plot_directory.mkdir(parents=True, exist_ok=True)
         for channel, figure in zip(CHANNELS, figures):
@@ -541,6 +555,11 @@ def main() -> None:
     parser.add_argument(
         "--plot-lds", action=argparse.BooleanOptionalAction, default=PLOT_LDS,
         help="Include fitted LDS matrix and stability diagnostics (default: PLOT_LDS).",
+    )
+    parser.add_argument(
+        "--plot-lds-dynamics", action=argparse.BooleanOptionalAction,
+        default=PLOT_LDS_DYNAMICS,
+        help="Include one-step waveform-space LDS dynamics for each cluster.",
     )
     parser.add_argument(
         "--fit-gp", action=argparse.BooleanOptionalAction, default=FIT_GP,
@@ -596,6 +615,7 @@ def main() -> None:
                     run_record(
                         record, save_plots=args.save_plots, plot_warps=args.plot_warps,
                         plot_lds=args.plot_lds, fit_gp=args.fit_gp,
+                        plot_lds_dynamics=args.plot_lds_dynamics,
                         lds_degrees_of_freedom=args.lds_degrees_of_freedom,
                         lds_update=args.lds_update, lds_scoring=args.lds_scoring,
                         lds_step_size=args.lds_step_size,

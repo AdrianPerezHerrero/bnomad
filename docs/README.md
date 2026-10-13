@@ -4,6 +4,7 @@
 - [Runnable tutorials](tutorials.md)
 - [Choose a model setup](model_choices.md)
 - [Complete-record workflow and reusable helpers](record_workflow.md)
+- [MIT-BIH beat and annotation alignment](mitbih_annotations.md)
 - [LDS inference, PCA, inducing points, and prior calibration](lds_inference.md)
 - [Fixed observation models and decoder contract](fixed_observation_models.md)
 - [HDP presets and gamma/transAlpha sensitivity](hdp_presets.md)

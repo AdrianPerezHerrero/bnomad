@@ -35,14 +35,28 @@ Rand index, normalized mutual information, class labels, and a confusion
 matrix whose rows are true labels and columns are the cluster-majority
 assigned labels. The majority mapping is fitted and scored on the same
 labels; it is descriptive clustering evaluation, not held-out classification.
-The ECG script reads annotation labels from its record files and, when there
-is one extra annotation, crops the annotation vector to the number of
-waveforms before using this helper.
+The ECG script uses the [MIT-BIH loader](mitbih_annotations.md) to align the
+archived annotation labels with waveform windows before fitting. The loader
+removes one extra trailing annotation when the legacy extractor omitted its
+waveform window.
 
 `hdpgpc.diagnostics.format_lds_priors` formats selected LDS prior centers and
 strengths for a run log; `Tee` duplicates output into a log stream. Plotting
-helpers such as `plot_lds_diagnostics`, `plot_warp_diagnostics`, and
-`model_lds_arrays` are also available from `hdpgpc.diagnostics`. The
+helpers such as `plot_lds_diagnostics`, `plot_warp_diagnostics`,
+`model_lds_dynamics`, and `plot_lds_dynamics` are also available from
+`hdpgpc.diagnostics`. The
 record-specific composite report remains a plotting example. It is useful
 to save the model configuration and label mapping with each figure, because
 several reported scores depend on the evaluation choices.
+
+`model_lds_dynamics(model, grid=waveform_grid)` projects each cluster's
+latest smoothed latent state and one-step LDS transition to the requested
+observation grid. `plot_lds_dynamics(...)` returns one vertically stacked
+figure with a six-panel section for each cluster: current and forecast
+waveforms, expected change, separate uncertainty
+components, the observation-space transition, process covariance, and leading
+process-change modes. Each section keeps the same panel dimensions as the
+former individual cluster plot. Pass the full waveform grid for an inducing-point LDS;
+fixed PCA and autoencoder decoders use their calibrated waveform grid. See
+the [LDS dynamics interpretation](lds_inference.md#observation-space-lds-dynamics)
+for the formulas and limits.

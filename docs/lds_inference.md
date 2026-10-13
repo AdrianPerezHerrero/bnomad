@@ -219,3 +219,42 @@ original ELBO. The ordinary iteration report still uses the raw LDS KL.
 The [configuration guide](configuration.md) gives the complete fields and
 validation rules. The [record workflow](record_workflow.md) shows how to log
 and inspect the fitted parameters.
+
+## Observation-space LDS dynamics
+
+The read-only `model_lds_dynamics` diagnostic uses the latest smoothed state
+`f ~ N(m, P)` and the final cluster matrices `A, Gamma, C, Sigma` to show a
+**one-step forecast**, not a previously observed beat. On the selected
+observation grid, write the emission map as `y = b + H f + epsilon`. For a
+fixed affine PCA or autoencoder decoder, `H = C` and `b` is its fixed offset.
+For the ordinary LDS on its native grid, `H = C` and `b = 0`. With inducing
+points, `H = L C`, where `L` is the fitted GP's basis-to-observation-grid
+interpolation matrix; the offset is the GP prior-mean correction. The
+observation covariance follows the same native/interpolated GP prediction
+rule as the fitted emission.
+
+```text
+current mean       = b + H m
+next mean          = b + H A m
+expected change    = H (A - I) m
+process covariance = H Gamma H.T
+forecast covariance = H A P A.T H.T + H Gamma H.T + R
+```
+
+`R` is observation noise on the requested grid (and the GP interpolation
+residual where the existing prediction rule includes it). The plot separates
+propagated state, process, and observation/interpolation standard deviations;
+the forecast band uses their **sum as covariances** before taking its square
+root. The current-state band uses `H P H.T + R`. Process-change modes are the
+leading eigenvectors of `H Gamma H.T`, scaled by two standard deviations.
+
+The displayed observation-space transition `H A pinv(H)` is a visualization
+of the learned dynamics only on the image of `H`. It is not a transition
+model for noisy observed waveforms: a rectangular decoder leaves directions
+outside its latent subspace undefined, and observation noise is not a latent
+state. If `H` is rank deficient, the displayed matrix is only a least-squares
+extension. With a tied orthonormal autoencoder `C = scale * Q`, this transition
+is `Q A Q.T`, while the projected process covariance is
+`scale^2 * Q Gamma Q.T`. These are diagnostic transforms, not extra fitted
+parameters. For warped records, the requested grid is the model's aligned
+coordinate system; the diagnostic does not invert per-beat warps.

@@ -45,9 +45,11 @@ from hdpgpc.config import (
 from hdpgpc.dynamics import AffineGaussianObservation
 from hdpgpc.diagnostics import (
     Tee, cluster_label_statistics, format_confusion_matrix,
-    model_lds_arrays, plot_lds_diagnostics,
+    model_lds_arrays, model_lds_dynamics,
+    plot_lds_diagnostics, plot_lds_dynamics,
 )
 from hdpgpc.preprocessing import prepare_sequences
+from hdpgpc.datasets import load_mitbih_record
 
 
 # Experiment controls. The decoder and encoder always use one waveform channel.
@@ -66,9 +68,9 @@ UNIT_GRID = False
 INFERENCE_MODE = 'offline'       # 'offline', 'online', 'online_fast'
 VERBOSE = 'debug'             # 'silent', 'progress', 'debug'
 HARD_ASSIGNMENTS = True
-OFFLINE_ITERATIONS = 25
-HDP_PRESET = 'less'           # 'less', 'balanced', 'more'
-MAX_CLUSTERS = 12
+OFFLINE_ITERATIONS = 50
+HDP_PRESET = 'more'           # 'less', 'balanced', 'more'
+MAX_CLUSTERS = 35
 LDS_UPDATE = 'conjugate_batch'    # offline; online uses conjugate_sequential
 LDS_DEGREES_OF_FREEDOM = 10
 INITIAL_PROCESS_NOISE = 0.1      # Latent-coordinate variance, not waveform variance.
@@ -77,7 +79,7 @@ BIRTH_LDS_KL_PER_POINT = True
 
 AE_BEATS = 1000
 AE_SAMPLING = 'uniform'           # 'uniform' or 'prefix'; online requires prefix.
-LATENT_DIM = 5
+LATENT_DIM = 15
 AE_EPOCHS = 500
 AE_LEARNING_RATE = 0.02
 AE_NOISE_STRUCTURE = 'isotropic'  # 'isotropic' keeps encoder coordinates exact; or 'diagonal'.
@@ -86,8 +88,9 @@ AE_RANDOM_SEED = 42
 
 SAVE_PLOTS = True                # When True, save and close instead of showing.
 PLOT_LDS = True
+PLOT_LDS_DYNAMICS = True
 PLOT_DPI = 160
-OUTPUT_DIRECTORY = Path(__file__).resolve().parents[1] / 'agents' / 'plots_autoencoder'
+OUTPUT_DIRECTORY = Path(__file__).resolve().parents[1] / 'agents' / 'plots_autoencoder_more'
 DATA_DIRECTORY = Path(__file__).resolve().parents[1] / 'hdpgpc' / 'data' / 'mitbih'
 
 
@@ -203,7 +206,7 @@ def make_config(decoder: AffineGaussianObservation, schedule: str) -> HDPGPCConf
         inference=InferenceConfig(
             schedule=schedule, warp=False, hard_assignments=HARD_ASSIGNMENTS,
             birth_lds_kl_per_sqrt_point=BIRTH_LDS_KL_PER_POINT,
-            n_explore_steps=5, offline_representer_selection='fixed',
+            n_explore_steps=10, offline_representer_selection='fixed',
             it_limit=OFFLINE_ITERATIONS if schedule == 'offline' else None,
         ),
         multi_output=MultiOutputConfig(n_outputs=1, share_gp=True, use_snr=False),
@@ -247,12 +250,8 @@ def plot_autoencoder(values, network, indices, losses, assignments, *, record):
 
 def run_record(record: str, *, schedule: str, sampling: str,
                save_plots: bool, output_directory: Path) -> None:
-    waveform_path = DATA_DIRECTORY / f'{record}.npy'
-    annotation_path = DATA_DIRECTORY / f'{record}_labels.npy'
-    if not waveform_path.is_file() or not annotation_path.is_file():
-        raise FileNotFoundError(f'Record {record} requires {waveform_path} and {annotation_path}')
-    signal = np.load(waveform_path, allow_pickle=False)
-    annotations = np.load(annotation_path, allow_pickle=False).reshape(-1)
+    loaded = load_mitbih_record(DATA_DIRECTORY, record)
+    signal, annotations = loaded.waveforms, loaded.annotations
     values, grid = prepare_sequences(
         signal, channels=(CHANNEL,), scale_from_first=SCALE_WAVEFORMS,
         unit_grid=UNIT_GRID)
@@ -260,6 +259,9 @@ def run_record(record: str, *, schedule: str, sampling: str,
         raise ValueError('Online AE calibration must use a record prefix')
 
     print(f'Record {record}: {len(values)} beats; AE calibration={AE_BEATS} {sampling} beats')
+    if loaded.omitted_trailing_annotations:
+        print('Legacy extraction omitted the last waveform window; '
+              'its trailing annotation was excluded before fitting.')
     start = time.perf_counter()
     network, decoder, indices, losses, residual = train_autoencoder(values, grid, sampling=sampling)
     calibration_seconds = time.perf_counter() - start
@@ -290,9 +292,6 @@ def run_record(record: str, *, schedule: str, sampling: str,
     assignments = model.labels_
     print(f'HDP-GPC fitting: {fitting_seconds:.1f} s; clusters={model.n_clusters_}')
     print('Cluster sizes:', dict(sorted(Counter(assignments.tolist()).items())))
-    if len(annotations) == len(assignments) + 1:
-        annotations = annotations[:len(assignments)]
-        print('Cropped one trailing annotation to match the observations.')
     scores = None
     if len(annotations) == len(assignments):
         scores, classes, confusion, mapping = cluster_label_statistics(assignments, annotations)
@@ -315,6 +314,10 @@ def run_record(record: str, *, schedule: str, sampling: str,
     lds_figures = (plot_lds_diagnostics(
         model_lds_arrays(model), title=f'Record {record}: latent LDS and fixed decoder')
         if PLOT_LDS else [])
+    dynamics_figure = (plot_lds_dynamics(
+        model_lds_dynamics(model, grid=grid),
+        title=f'Record {record}: decoded LDS dynamics')
+        if PLOT_LDS_DYNAMICS else None)
     if save_plots:
         output_directory.mkdir(parents=True, exist_ok=True)
         calibration_path = output_directory / f'record_{record}_autoencoder.png'
@@ -331,6 +334,11 @@ def run_record(record: str, *, schedule: str, sampling: str,
             figure.savefig(path, dpi=PLOT_DPI)
             plt.close(figure)
             print(f'Saved LDS plot: {path}')
+        if dynamics_figure is not None:
+            path = output_directory / f'record_{record}_lds_dynamics.png'
+            dynamics_figure.savefig(path, dpi=PLOT_DPI)
+            plt.close(dynamics_figure)
+            print(f'Saved LDS dynamics plot: {path}')
         parameter_path = output_directory / f'record_{record}_autoencoder.npz'
         with torch.no_grad():
             encoder_matrix = network.basis().numpy() / network.scale

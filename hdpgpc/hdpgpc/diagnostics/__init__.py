@@ -2,6 +2,7 @@
 
 __all__ = ('plot_warp_diagnostics', 'model_warp_arrays',
            'plot_lds_diagnostics', 'model_lds_arrays',
+           'plot_lds_dynamics', 'model_lds_dynamics',
            'cluster_label_statistics', 'format_confusion_matrix',
            'format_lds_priors', 'Tee')
 
@@ -15,6 +16,9 @@ def __getattr__(name):
         if name in ('plot_warp_diagnostics', 'model_warp_arrays'):
             from . import _warp_plots
             return getattr(_warp_plots, name)
+        if name in ('plot_lds_dynamics', 'model_lds_dynamics'):
+            from . import _lds_dynamics
+            return getattr(_lds_dynamics, name)
         from . import _lds_plots
         return getattr(_lds_plots, name)
     raise AttributeError(name)

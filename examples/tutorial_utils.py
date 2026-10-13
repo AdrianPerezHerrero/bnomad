@@ -16,6 +16,7 @@ from matplotlib.colors import to_rgb, to_rgba
 from matplotlib.lines import Line2D
 
 from hdpgpc.diagnostics import model_lds_arrays
+from hdpgpc.datasets import align_legacy_annotations
 
 DATA_REVISION = '615109a9e474d37626abaff6c51f1c159b26124a'
 DATA_HASHES = {
@@ -114,10 +115,12 @@ def load_record(record_name="100"):
             
     data = np.load(directory / data_file, allow_pickle=False)
     annotations = np.load(directory / labels_file, allow_pickle=False)
-    
-    print('Waveforms:', data.shape, data.dtype, '; annotations:', annotations.shape)
-    print('Annotation lengths differ: no ground-truth pairing or accuracy claim.')
-    return data, annotations
+    aligned, omitted = align_legacy_annotations(data, annotations)
+
+    print('Waveforms:', data.shape, data.dtype, '; aligned annotations:', aligned.shape)
+    if omitted:
+        print('Excluded one trailing annotation whose waveform window was omitted by legacy extraction.')
+    return data, aligned
 
 
 def environment():
