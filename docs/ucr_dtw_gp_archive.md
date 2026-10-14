@@ -69,8 +69,20 @@ dataset gets a summary PNG showing a two-dimensional PCA view of its input
 waveforms colored by fitted cluster and true label, plus a within-cluster
 class-composition panel. The CSV, PNGs, and error logs go under the ignored
 `agents/ucr_dtw_gp_results` directory. `--resume` uses the archive hash and
-model settings, and skips only completed runs whose requested PNG still
-exists. `--no-plots` avoids PNG generation.
+model settings, and skips only completed runs whose requested summary and
+cluster PNGs still exist. `--no-plots` avoids PNG generation.
+
+The final clusters also get `plots/<dataset>_<run-id>_clusters_output_0.png`,
+using the same `plot_record_results` function as MIT-BIH. Its first row shows
+assignments in fit order, all fitted observation means, and true-class
+composition. The gallery below has three columns with one panel per final
+cluster: member waveforms coloured by their true class, the fitted mean
+coloured by the cluster's majority class, and the predictive +/-2 SD band.
+Panel sizes stay fixed as additional cluster rows increase the figure height.
+The CSV's `cluster_plot` field points to this figure. No temporal transition
+matrix or latent/Gamma overlay is shown for UCR. With alignment active, member
+curves show original inputs and model bands use aligned coordinates, as the
+figure heading states. Plots are saved and closed, without opening a window.
 
 GP kernel fitting uses the package's first-series optimizer, which can cost
 much more than the DTW-GP alignment itself. The cheap setting is

@@ -47,6 +47,7 @@ from hdpgpc.config import (
 )
 from hdpgpc.dynamics import AffineGaussianObservation
 from hdpgpc.diagnostics import cluster_label_statistics, plot_embedding_summary
+from tutorial_utils import plot_record_results
 
 
 ARCHIVE_URL = 'https://www.cs.ucr.edu/~eamonn/time_series_data_2018/UCRArchive_2018.zip'
@@ -54,7 +55,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARCHIVE = ROOT / 'agents' / 'data' / 'ucr' / 'UCRArchive_2018.zip'
 DEFAULT_OUTPUT = ROOT / 'agents' / 'ucr_autoencoder_results'
 ARCHIVE_PASSWORD = b'someone'  # Provided by the archive briefing document.
-MODEL_REVISION = 'zero_A_cluster_Gamma_v1'
+MODEL_REVISION = 'zero_A_cluster_Gamma_cluster_plots_v2'
 
 
 @dataclass(frozen=True)
@@ -248,6 +249,7 @@ def run_dataset(archive: ZipFile, name: str, pair: tuple[str, str],
     assignments = model.labels_
     scores, _, _, _ = cluster_label_statistics(assignments, all_labels)
     plot_path = ''
+    cluster_plot_path = ''
     if args.plots:
         codes = ((all_series - decoder.offset) @ np.linalg.pinv(decoder.C).T)
         figure = plot_embedding_summary(
@@ -260,6 +262,18 @@ def run_dataset(archive: ZipFile, name: str, pair: tuple[str, str],
         finally:
             plt.close(figure)
         plot_path = str(plot_file.resolve())
+        cluster_figures = plot_record_results(
+            model, all_series[:, :, None], all_labels, grid=grid,
+            record=f'UCR {name}', metrics=scores, ordered=False, show_latent=False)
+        for output, cluster_figure in enumerate(cluster_figures):
+            cluster_file = destination / f'{name}_{run_id}_clusters_output_{output}.png'
+            try:
+                cluster_figure.savefig(cluster_file, dpi=160)
+            finally:
+                plt.close(cluster_figure)
+            if output == 0:
+                cluster_plot_path = str(cluster_file.resolve())
+            print(f'  final cluster plot: {cluster_file}', flush=True)
     test_mask = selected >= len(data.train)
     return {
         'status': 'ok', 'train': len(data.train), 'test': len(data.test),
@@ -273,14 +287,14 @@ def run_dataset(archive: ZipFile, name: str, pair: tuple[str, str],
         'ari_test_transductive': (float(adjusted_rand_score(
             all_labels[test_mask], assignments[test_mask])) if test_mask.any() else ''),
         'seconds': round(time.perf_counter() - started, 3),
-        'plot': plot_path, 'error': '',
+        'plot': plot_path, 'cluster_plot': cluster_plot_path, 'error': '',
     }
 
 
 FIELDS = ('run_id', 'dataset', 'status', 'train', 'test', 'fitted', 'raw_points',
           'model_points', 'missing_rows', 'classes', 'clusters', 'latent_dim',
           'ae_calibration_train', 'ae_scaled_mse', 'purity_in_sample',
-          'ari_all', 'nmi_all', 'ari_test_transductive', 'seconds', 'plot', 'error')
+          'ari_all', 'nmi_all', 'ari_test_transductive', 'seconds', 'plot', 'cluster_plot', 'error')
 
 
 def main() -> None:
@@ -292,7 +306,7 @@ def main() -> None:
                         help='Dataset folder names; omit to run all 128.')
     parser.add_argument('--output-dir', type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument('--no-plots', action='store_false', dest='plots',
-                        help='Skip the per-dataset latent projection and cluster summary PNG.')
+                        help='Skip per-dataset projection and final cluster curve PNGs.')
     parser.add_argument('--resume', action='store_true',
                         help='Skip datasets already recorded as successful.')
     parser.add_argument('--max-series', type=int,
@@ -346,7 +360,8 @@ def main() -> None:
         with results_path.open(newline='', encoding='utf-8') as stream:
             completed = {row['dataset'] for row in csv.DictReader(stream)
                          if row['status'] == 'ok' and row.get('run_id') == run_id
-                         and (not args.plots or Path(row.get('plot', '')).is_file())}
+                         and (not args.plots or (Path(row.get('plot', '')).is_file()
+                              and Path(row.get('cluster_plot', '')).is_file()))}
     with ZipFile(args.archive) as archive:
         pairs = archive_datasets(archive)
         chosen = args.datasets or sorted(pairs)

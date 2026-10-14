@@ -36,7 +36,16 @@ view of its autoencoder code, coloured first by fitted cluster and then by
 UCR class. A third panel shows the true-class composition within each fitted
 cluster. The figure header includes the number of series and clusters, purity,
 ARI, and NMI. No LDS or transition matrix is plotted. Use `--no-plots` to skip
-PNG generation; `--resume` also checks that a requested PNG exists.
+PNG generation; `--resume` checks that both requested PNGs exist.
+
+`plots/<dataset>_<run-id>_clusters_output_0.png` additionally shows the final
+cluster curves through MIT-BIH's `plot_record_results` function. Each cluster
+panel contains the member waveforms coloured by true UCR class, the decoded
+observation mean coloured by majority class, and its predictive +/-2 SD band.
+The first row shows assignments, all decoded means, and class composition.
+The gallery uses three columns and grows vertically with the cluster count.
+No latent/Gamma overlays are added. The CSV records the path in `cluster_plot`;
+figures are saved and closed without an interactive window.
 
 The ZIP is about 316 MB; a complete model fit is substantially more expensive
 than downloading it. `results.csv` and error logs are saved under the ignored

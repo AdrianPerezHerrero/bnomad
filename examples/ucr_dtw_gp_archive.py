@@ -42,6 +42,7 @@ from hdpgpc.config import (
 )
 from hdpgpc.diagnostics import (cluster_label_statistics, plot_embedding_summary,
                                 plot_birth_warp_diagnostic)
+from tutorial_utils import plot_record_results
 
 
 ARCHIVE_URL = 'https://www.cs.ucr.edu/~eamonn/time_series_data_2018/UCRArchive_2018.zip'
@@ -49,7 +50,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ARCHIVE = ROOT / 'agents' / 'data' / 'ucr' / 'UCRArchive_2018.zip'
 DEFAULT_OUTPUT = ROOT / 'agents' / 'ucr_dtw_gp_results'
 ARCHIVE_PASSWORD = b'someone'
-MODEL_REVISION = 'dtw_gp_observation_seeds_LDS_KL_per_dimension_v7'
+MODEL_REVISION = 'dtw_gp_observation_seeds_LDS_KL_per_dimension_clusters_v8'
 
 
 @dataclass(frozen=True)
@@ -169,7 +170,7 @@ def make_config(grid: np.ndarray, args) -> HDPGPCConfig:
             dtw_amplitude=args.dtw_amplitude,
             dtw_anchor_noise=args.dtw_anchor_noise),
         inference=InferenceConfig(
-            schedule=args.schedule, warp=args.alignment != 'none', hard_assignments=False,
+            schedule=args.schedule, warp=args.alignment != 'none', hard_assignments=True,
             birth_lds_kl_per_dimension=args.birth_lds_kl_per_dimension,
             n_explore_steps=args.exploration_steps,
             it_limit=args.iterations if args.schedule == 'offline' else None),
@@ -206,6 +207,7 @@ def run_dataset(archive: ZipFile, name: str, pair: tuple[str, str],
     assignments = model.labels_
     scores, _, _, _ = cluster_label_statistics(assignments, labels)
     plot_path = ''
+    cluster_plot_path = ''
     if args.plots:
         figure = plot_embedding_summary(
             values, assignments, labels, scores,
@@ -218,6 +220,19 @@ def run_dataset(archive: ZipFile, name: str, pair: tuple[str, str],
         finally:
             plt.close(figure)
         plot_path = str(plot_file.resolve())
+        cluster_figures = plot_record_results(
+            model, values[:, :, None], labels, grid=grid, record=f'UCR {name}',
+            metrics=scores, ordered=False, show_latent=False,
+            warped=args.alignment != 'none')
+        for output, cluster_figure in enumerate(cluster_figures):
+            cluster_file = destination / f'{name}_{run_id}_clusters_output_{output}.png'
+            try:
+                cluster_figure.savefig(cluster_file, dpi=160)
+            finally:
+                plt.close(cluster_figure)
+            if output == 0:
+                cluster_plot_path = str(cluster_file.resolve())
+            print(f'  final cluster plot: {cluster_file}', flush=True)
         for attempt, record in enumerate(model.birth_diagnostics_, start=1):
             if not record.get('rows'):
                 print(f'  birth warp plot {attempt}: {record.get("diagnostic_error", "no curves")}',
@@ -243,14 +258,14 @@ def run_dataset(archive: ZipFile, name: str, pair: tuple[str, str],
         'ari_test_transductive': (float(adjusted_rand_score(
             labels[test_mask], assignments[test_mask])) if test_mask.any() else ''),
         'seconds': round(time.perf_counter() - started, 3),
-        'plot': plot_path, 'error': '',
+        'plot': plot_path, 'cluster_plot': cluster_plot_path, 'error': '',
     }
 
 
 FIELDS = ('run_id', 'dataset', 'status', 'train', 'test', 'fitted', 'raw_points',
           'model_points', 'missing_rows', 'classes', 'clusters',
           'purity_in_sample', 'ari_all', 'nmi_all', 'ari_test_transductive',
-          'seconds', 'plot', 'error')
+          'seconds', 'plot', 'cluster_plot', 'error')
 
 
 def main() -> None:
@@ -275,7 +290,7 @@ def main() -> None:
                         default='more')
     parser.add_argument('--gamma', type=float, default=0.1,
                         help='Fixed Gamma = gamma times identity.')
-    parser.add_argument('--sigma-prior', type=float, default=0.5,
+    parser.add_argument('--sigma-prior', type=float, default=2.0,
                         help='Initial Sigma covariance scale.')
     parser.add_argument('--sigma-mode', choices=('cluster', 'cluster_diagonal'),
                         default='cluster')
@@ -335,7 +350,8 @@ def main() -> None:
         with results_path.open(newline='', encoding='utf-8') as stream:
             completed = {row['dataset'] for row in csv.DictReader(stream)
                          if row['status'] == 'ok' and row.get('run_id') == run_id
-                         and (not args.plots or Path(row.get('plot', '')).is_file())}
+                         and (not args.plots or (Path(row.get('plot', '')).is_file()
+                              and Path(row.get('cluster_plot', '')).is_file()))}
     with ZipFile(args.archive) as archive:
         pairs = archive_datasets(archive)
         chosen = args.datasets or sorted(pairs)
