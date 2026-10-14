@@ -4,6 +4,7 @@ Keep the global/local alternation and mutation order unchanged."""
 import numpy as np
 import torch
 from ..alignment import _components as _alignment
+from ._birth_diagnostics import capture_seed, capture_refit
 
 
 def _log(self, *args, **kwargs):
@@ -245,6 +246,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         if end:
             break
         self._iteration_birth_candidates = []
+        self._birth_iteration = iteration + 1
         resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains,
                                                                                                    y_trains,
                                                                                                    y_trains_w,
@@ -327,6 +329,12 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
             previous_elbo = elbo_
             del self._iteration_birth_candidates
             iteration = iteration + 1
+            # Keep classification/continuation state even when a configured
+            # iteration or cluster limit ends this fit immediately.
+            self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
+            self.startStateCount_last, self.transStateCount_last = startStateCount, transStateCount
+            self.resp_last, self.respPair_last = resp, respPair
+            self.elbo_last = elbo_
             if it_limit is not None and iteration >= it_limit:
                 self.train_elbo.append(elbo_)
                 self.resp_assigned.append(torch.argmax(resp, dim=1))
@@ -339,10 +347,6 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
             self.train_elbo.append(elbo_)
             self.resp_assigned.append(torch.argmax(resp, axis=1))
             self.q.append(q)
-            self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
-            self.startStateCount_last, self.transStateCount_last = startStateCount, transStateCount
-            self.resp_last, self.respPair_last = resp, respPair
-            self.elbo_last = elbo_
             if (torch.where(resp_group == 0.0)[0].shape[0] > 1.0 or
                     (len(self.resp_assigned) > 1 and (
                             self.resp_assigned[-2].shape[0] == self.resp_assigned[-1].shape[0])
@@ -417,7 +421,7 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
                 q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
                                                         self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
                                                         post=False)
-            score_name = "birth_score_change" if self.birth_lds_kl_per_sqrt_point else "ELBO_reduction"
+            score_name = "birth_score_change" if self.birth_lds_kl_per_dimension else "ELBO_reduction"
             _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
             if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post, rtol=1e-5) and i > 0) or i == 10:  # or reparam:
                 if not reparam:
@@ -570,7 +574,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux,
                                                     post=False)
-            score_name = "birth_score_change" if self.birth_lds_kl_per_sqrt_point else "ELBO_reduction"
+            score_name = "birth_score_change" if self.birth_lds_kl_per_dimension else "ELBO_reduction"
             _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
             if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                               rtol=1e-5) and i__ > 0) or i__ == 20:  # or reparam:
@@ -720,6 +724,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         add_ranked_candidates(f_ind_new_q, n_steps, distinct_score_groups=False)
     f_ind_new_potential_def = torch.tensor(
         selected_candidates, dtype=torch.long, device=resp.device)
+    baseline_warp_results = (dict(getattr(self, '_flow_offline_posteriors', {}))
+                             if getattr(self, '_birth_diagnostic_limit', 0) else {})
     n_steps = len(selected_candidates)
     # -----------------------------------------
     # ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
@@ -761,6 +767,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 f_ind_old_temp = f_ind_old.clone()
                 f_ind_old_temp[-1] = f_ind_new
                 q_simple_ = torch.clone(q_def)
+                birth_record = None
                 if not empty_estimation:
                     y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
                         x_trains=x_trains,
@@ -783,6 +790,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                         q_simple_[:, -1, ld] = _flow_score(self, gp, q_simple_[:, -1, ld], y_trains, ld, -1)
                         q_simple_[:, -1, ld] = q_simple_[:, -1, ld] + liks[:, -1, ld]
                         snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld, -1], gp)
+                        if ld == 0:
+                            provisional_birth_gp = gp
                     # Compute resp
                     q_mean = self.weight_mean(q_simple_, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
@@ -793,6 +802,11 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
                     resp_temp = self._safe_exp(resplog_temp)
                     respPair_temp = self._safe_exp(respPairlog_temp)
+                    if getattr(self, '_birth_diagnostic_limit', 0):
+                        birth_record = capture_seed(
+                            self, x_trains, y_trains, beat, int(m_chosen),
+                            provisional_birth_gp, q_simple_, resp_temp, M - 1,
+                            baseline_warp_results)
                     # resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
                 else:
                     q, q_lat, snr_aux = torch.clone(q__def), torch.clone(q_lat__def), torch.clone(snr__def)
@@ -873,6 +887,11 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 q_bas_, elbo_bas_ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                         self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                         snr=snr_aux, post=True)
+                if birth_record is not None:
+                    capture_refit(
+                        self, birth_record, x_trains, y_trains, beat,
+                        int(m_chosen), M - 1, reorder, resp, resp_temp,
+                        q_, q, gpmodels_temp, baseline_warp_results)
                 if torch.argmax(
                         torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
                     _log(self, "Bad estimation")
@@ -924,7 +943,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=post_)
-                    score_name = "birth_score_change" if self.birth_lds_kl_per_sqrt_point else "ELBO_reduction"
+                    score_name = "birth_score_change" if self.birth_lds_kl_per_dimension else "ELBO_reduction"
                     _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
                     if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                                       rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:
@@ -944,6 +963,9 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=post_)
+                if birth_record is not None:
+                    birth_record['decision_baseline_score'] = float((q_bas + elbo_bas).item())
+                    birth_record['decision_proposal_score'] = float((q_bas_post + elbo_post).item())
 
                 update_snr = True
 
@@ -953,6 +975,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                         if not q_bas + elbo_bas < q_bas_post + elbo_post:
                             _log(self, "Possibly better q_obs but worse elbo.")
                     if q_bas + elbo_bas < q_bas_post + elbo_post:
+                        if birth_record is not None:
+                            birth_record['accepted'] = True
                         _log(self, "Chosen to divide: " + str(m_chosen) + " with beat " + str(f_ind_new.item()))
                         self.gpmodels = gpmodels_temp
                         _synchronize_cluster_slots(self, reorder, gpmodels_temp)

@@ -115,7 +115,7 @@ class ModelState:
         self.verbose = self.verbosity == 'debug'
         self.hard_assignments = options['hard_assignments']
         self.fit_gp = options['fit_gp']
-        self.birth_lds_kl_per_sqrt_point = options.get('birth_lds_kl_per_sqrt_point', False)
+        self.birth_lds_kl_per_dimension = options['birth_lds_kl_per_dimension']
         self.actual_state = 0
         self.cuda = cuda
         self.device = 'cuda' if self.cuda else 'cpu'

@@ -20,7 +20,7 @@ def validate_inference(c):
     if c.schedule not in (None, 'online', 'online_fast', 'offline'):
         raise ValueError('Unknown inference schedule')
     for name in ('warp', 'classify', 'reestimate_initial_params',
-                 'hard_assignments', 'birth_lds_kl_per_sqrt_point'):
+                 'hard_assignments', 'birth_lds_kl_per_dimension'):
         boolean(getattr(c, name), name)
     for name in ('batch', 'force_model'):
         integer(getattr(c, name), name, optional=True)
@@ -92,10 +92,12 @@ def validate(c, *, for_build=False):
             raise ValueError('Fixed observation dimensions/values must match the waveform and latent grids')
         if (policies['C'].mode != 'fixed' or policies['Sigma'].mode not in (
                     'fixed', 'cluster', 'cluster_diagonal', 'shared', 'shared_diagonal')
-                or policies['A'].mode != 'cluster' or policies['Gamma'].mode != 'cluster'
+                or (policies['A'].mode, policies['Gamma'].mode) not in (
+                    ('cluster', 'cluster'), ('fixed', 'cluster'),
+                    ('fixed', 'fixed'))
                 or d.model_type != 'dynamic' or o.n_outputs != 1 or i.warp or n.cuda
                  or e.fit_gp or not e.inducing_points or i.reestimate_initial_params):
-            raise ValueError('Fixed affine observation requires fixed C, supported Sigma policy, free dynamic A/Gamma, one output, '
+            raise ValueError('Fixed affine observation requires fixed C, supported Sigma policy, cluster A/Gamma or fixed A with cluster/fixed Gamma, one output, '
                              'fixed GP kernel, inducing mode, CPU and no warp/recalibration')
     for name in ('A', 'C'):
         policy = policies[name]

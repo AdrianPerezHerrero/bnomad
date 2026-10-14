@@ -22,8 +22,14 @@ config = replace(
 )
 ```
 
-For each observation and candidate cluster, the warper evaluates the current
-cluster GP/LDS predictive mean on the original grid. Unrestricted DTW finds a
+Offline inference uses the observation selected by `f_ind_old` as each
+candidate's alignment template. Initially this is observation zero. A birth
+uses its own proposed observation in the newborn slot, so it does not inherit
+the parent's warp. Refitting the GP/LDS leaves the template unchanged until
+the representative selection changes `f_ind_old`. On differing time grids,
+the reference observation is interpolated onto the query grid. Online
+inference continues to use the current cluster GP/LDS predictive mean.
+Unrestricted DTW finds a
 path on at most `dtw_points` sampled positions. It compares standardized
 waveform shapes across output channels. The observed amplitudes are retained
 for the emission likelihood and state update.

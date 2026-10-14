@@ -77,6 +77,13 @@ and no alignment warp. The serialized configuration contains the arrays and
 policies rather than a Python callback. The decoder's own `state_dict()` is a
 separate, data-only representation.
 
+[The UCR archive example](../examples/ucr_autoencoder_archive.py) then fixes
+A to the zero matrix while learning a separate Gamma for each cluster from a
+calibrated latent-covariance prior. It also sets `hmm_switch=False`. Thus the
+archive's arbitrary row order does not enter through either the HDP transition
+matrix or the LDS state transition. The fixed affine decoder accepts this
+fixed-A/learned-Gamma configuration alongside the original learned pair.
+
 ## Nonlinear encoders and GPLVM decoders
 
 An encoder can initialize latent inference, but its output is not itself an

@@ -98,18 +98,20 @@ inference. GP filtering and Bayesian LDS sufficient statistics then use each
 observation's fractional responsibility. Cluster creation and reported labels
 still use a MAP choice. Soft assignments require `bayesian_params=True` and
 can cost substantially more because an observation may update several GPs.
-`InferenceConfig.birth_lds_kl_per_sqrt_point` defaults to `False`. When enabled,
+`InferenceConfig.birth_lds_kl_per_dimension` defaults to `True`. When enabled,
 the local birth and absorb proposal score divides the summed LDS parameter
 KL by the latent LDS state dimension in every inference schedule. With an
 inducing basis, this is the inducing-point count rather than the observed
-waveform point count. The existing
-field name is retained for compatibility. The same divisor applies to the
+waveform point count. The same divisor applies to the
 baseline and every proposal.
 This is an experimental score, not an ELBO;
 the MNIW posterior updates remain unchanged. Offline iteration summaries
 still report the raw ELBO, while proposal logs report the adjusted LDS score
 and its unscaled value. The full-record example enables the experiment and
-provides `--no-birth-lds-kl-per-sqrt-point` to restore ordinary proposal scoring.
+provides `--no-birth-lds-kl-per-dimension` to restore ordinary proposal scoring.
+Set `birth_lds_kl_per_dimension=False` in a package configuration to disable it.
+Saved configurations containing the old `birth_lds_kl_per_sqrt_point` key
+are read with that value preserved; newly saved configurations use the new key.
 `InferenceConfig.offline_representer_selection` controls the representative
 beat indices in `f_ind_old`. The default `"sorted"` retains the existing
 behavior: after an accepted reallocation or birth, each cluster selects its

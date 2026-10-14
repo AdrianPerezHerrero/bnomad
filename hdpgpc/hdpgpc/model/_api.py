@@ -89,14 +89,22 @@ class HDPGPC:
             raise ValueError(f'grid must have shape {expected} (or a shared (points, 1) grid for fit)')
         return data, coordinates
 
-    def fit(self, X, *, grid=None) -> HDPGPC:
+    def fit(self, X, *, grid=None, birth_diagnostic_limit=0) -> HDPGPC:
         """Fit a fresh model; honor offline or explicitly configured online order."""
+        if (isinstance(birth_diagnostic_limit, bool)
+                or not isinstance(birth_diagnostic_limit, Integral)
+                or birth_diagnostic_limit < 0):
+            raise ValueError('birth_diagnostic_limit must be a nonnegative integer')
         values, coordinates = self._inputs(X, grid, batch=True)
         inference = self._config.inference
+        if birth_diagnostic_limit and inference.schedule not in (None, 'offline'):
+            raise ValueError('Birth diagnostics currently require offline inference')
         if inference.classify:
             raise ValueError('fit/update require classify=False; use OfflineInference for classification')
         self._mode = inference.schedule or 'offline'
         backend = self._config.build_model(schedule=self._mode)
+        backend._birth_diagnostic_limit = int(birth_diagnostic_limit)
+        backend._birth_diagnostics = []
         self._backend = backend
         self._has_data = False
         self._failed = False
@@ -113,6 +121,12 @@ class HDPGPC:
             raise
         self._has_data = True
         return self
+
+    @property
+    def birth_diagnostics_(self):
+        """Independent snapshots of offline birth proposals, when requested."""
+        self._require_fitted()
+        return deepcopy(getattr(self._backend, '_birth_diagnostics', []))
 
     def _include(self, grid, values):
         inference = self._config.inference

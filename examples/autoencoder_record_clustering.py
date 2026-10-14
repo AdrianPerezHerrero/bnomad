@@ -75,7 +75,7 @@ LDS_UPDATE = 'conjugate_batch'    # offline; online uses conjugate_sequential
 LDS_DEGREES_OF_FREEDOM = 10
 INITIAL_PROCESS_NOISE = 0.1      # Latent-coordinate variance, not waveform variance.
 SIGMA_POLICY = 'fixed'           # 'fixed', 'cluster_diagonal', 'cluster', etc.
-BIRTH_LDS_KL_PER_POINT = True
+BIRTH_LDS_KL_PER_DIMENSION = True
 
 AE_BEATS = 1000
 AE_SAMPLING = 'uniform'           # 'uniform' or 'prefix'; online requires prefix.
@@ -205,7 +205,7 @@ def make_config(decoder: AffineGaussianObservation, schedule: str) -> HDPGPCConf
         alignment=AlignmentConfig(policy='none'),
         inference=InferenceConfig(
             schedule=schedule, warp=False, hard_assignments=HARD_ASSIGNMENTS,
-            birth_lds_kl_per_sqrt_point=BIRTH_LDS_KL_PER_POINT,
+            birth_lds_kl_per_dimension=BIRTH_LDS_KL_PER_DIMENSION,
             n_explore_steps=10, offline_representer_selection='fixed',
             it_limit=OFFLINE_ITERATIONS if schedule == 'offline' else None,
         ),

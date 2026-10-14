@@ -95,7 +95,7 @@ def _report_online_objective(self, sample_index, label, q, elbo, components,
     if not self.verbose:
         return
     total = float((q + elbo).item())
-    experimental = self.birth_lds_kl_per_sqrt_point
+    experimental = self.birth_lds_kl_per_dimension
     score_label = 'birth_score' if experimental else 'ELBO'
     delta = '' if baseline is None else f", delta_{score_label}={total - float(baseline):+.6g}"
     warp = getattr(self, '_flow_online_posteriors', {}).get(candidate)

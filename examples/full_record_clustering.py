@@ -127,7 +127,7 @@ CUSTOM_C = None              # Square LDS-grid matrix; None selects identity.
 CUSTOM_SIGMA = None          # Positive-definite LDS-grid covariance; None uses the initial noise.
 # Model-owned shared/fixed observation parameters use final scoring.
 LDS_STEP_SIZE = 0.05            # Fraction of new LDS evidence in natural_gradient mode.
-BIRTH_LDS_KL_PER_SQRT_POINT = True  # Historical flag name; LDS KL / LDS dimension in both schedules.
+BIRTH_LDS_KL_PER_DIMENSION = True  # LDS KL / latent LDS dimension in both schedules.
 OFFLINE_REPRESENTER_SELECTION = "sorted"  # "sorted" reranks by q_simple; "fixed" keeps split seeds.
 INITIAL_LENGTHSCALE = 1.0
 LENGTHSCALE_BOUNDS = (0.1, 10.0)
@@ -160,7 +160,7 @@ def _configuration(
     lds_step_size: float = LDS_STEP_SIZE,
     lds_inducing_points: int | None = LDS_INDUCING_POINTS,
     fit_gp: bool = FIT_GP,
-    birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
+    birth_lds_kl_per_dimension: bool = BIRTH_LDS_KL_PER_DIMENSION,
     offline_representer_selection: str = OFFLINE_REPRESENTER_SELECTION,
     initial_observation_noise: float = INITIAL_OBSERVATION_NOISE,
     initial_process_noise: float = INITIAL_PROCESS_NOISE,
@@ -242,7 +242,7 @@ def _configuration(
         inference=InferenceConfig(
             schedule=INFERENCE_MODE,
             hard_assignments=HARD_ASSIGNMENTS,
-            birth_lds_kl_per_sqrt_point=birth_lds_kl_per_sqrt_point,
+            birth_lds_kl_per_dimension=birth_lds_kl_per_dimension,
             warp=ENABLE_WARP,
             it_limit=OFFLINE_ITERATIONS if INFERENCE_MODE == "offline" else None,
             n_explore_steps=10,
@@ -290,7 +290,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
                lds_scoring: str = LDS_SCORING,
                lds_step_size: float = LDS_STEP_SIZE,
                lds_inducing_points: int | None = LDS_INDUCING_POINTS,
-               birth_lds_kl_per_sqrt_point: bool = BIRTH_LDS_KL_PER_SQRT_POINT,
+               birth_lds_kl_per_dimension: bool = BIRTH_LDS_KL_PER_DIMENSION,
                offline_representer_selection: str = OFFLINE_REPRESENTER_SELECTION,
                plot_directory: Path = PLOT_DIRECTORY,
                scale_waveforms: bool = SCALE_WAVEFORMS,
@@ -363,7 +363,7 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
         lds_step_size=lds_step_size,
         lds_inducing_points=lds_inducing_points,
         fit_gp=fit_gp,
-        birth_lds_kl_per_sqrt_point=birth_lds_kl_per_sqrt_point,
+        birth_lds_kl_per_dimension=birth_lds_kl_per_dimension,
         offline_representer_selection=offline_representer_selection,
         initial_observation_noise=initial_observation_noise,
         initial_process_noise=initial_process_noise,
@@ -411,9 +411,9 @@ def run_record(record: str, *, save_plots: bool = SAVE_PLOTS,
           + (f", step size={lds_step_size:g}"
              if config.dynamics.lds_update == "natural_gradient" else ""))
     detail_print(f"LDS scoring={config.dynamics.lds_scoring}")
-    birth_lds_divisor = len(config.x_basis) if birth_lds_kl_per_sqrt_point else 1
+    birth_lds_divisor = len(config.x_basis) if birth_lds_kl_per_dimension else 1
     detail_print("Experimental birth LDS KL / LDS dimension="
-          f"{birth_lds_kl_per_sqrt_point} "
+          f"{birth_lds_kl_per_dimension} "
           f"(divisor={birth_lds_divisor:.6g})")
     detail_print(format_lds_priors(
         dimension=len(config.x_basis), model_type=config.dynamics.model_type,
@@ -586,8 +586,8 @@ def main() -> None:
         help="Number of evenly spaced LDS basis points; 0 uses the full waveform grid.",
     )
     parser.add_argument(
-        "--birth-lds-kl-per-sqrt-point", action=argparse.BooleanOptionalAction,
-        default=BIRTH_LDS_KL_PER_SQRT_POINT,
+        "--birth-lds-kl-per-dimension", action=argparse.BooleanOptionalAction,
+        default=BIRTH_LDS_KL_PER_DIMENSION,
         help="Scale proposal LDS KL by LDS state dimension in either inference schedule.",
     )
     parser.add_argument(
@@ -620,7 +620,7 @@ def main() -> None:
                         lds_update=args.lds_update, lds_scoring=args.lds_scoring,
                         lds_step_size=args.lds_step_size,
                         lds_inducing_points=args.lds_inducing_points,
-                        birth_lds_kl_per_sqrt_point=args.birth_lds_kl_per_sqrt_point,
+                        birth_lds_kl_per_dimension=args.birth_lds_kl_per_dimension,
                         offline_representer_selection=args.offline_representer_selection,
                         plot_directory=args.plot_dir,
                         scale_waveforms=args.scale_waveforms, unit_grid=args.unit_grid,

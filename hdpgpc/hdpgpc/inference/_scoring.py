@@ -61,7 +61,7 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
         elbo_bas_LDS = elbo_bas_LDS + self.full_LDS_elbo(
             gpmodels[output], cluster_counts, one_sample=one_sample)
     raw_lds = elbo_bas_LDS
-    adjusted_lds = birth_score and self.birth_lds_kl_per_sqrt_point
+    adjusted_lds = birth_score and self.birth_lds_kl_per_dimension
     if adjusted_lds:
         dimension = _lds_point_dimension(self, gpmodels)
         divisor = dimension

@@ -4,6 +4,8 @@
 - [Runnable tutorials](tutorials.md)
 - [Choose a model setup](model_choices.md)
 - [Complete-record workflow and reusable helpers](record_workflow.md)
+- [UCR archive autoencoder experiment](ucr_autoencoder_archive.md)
+- [UCR direct-waveform DTW-GP experiment](ucr_dtw_gp_archive.md)
 - [MIT-BIH beat and annotation alignment](mitbih_annotations.md)
 - [LDS inference, PCA, inducing points, and prior calibration](lds_inference.md)
 - [Fixed observation models and decoder contract](fixed_observation_models.md)

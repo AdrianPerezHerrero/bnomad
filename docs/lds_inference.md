@@ -210,8 +210,9 @@ contains a trace for latent uncertainty, and the LDS parameter term contains
 analytic parameter KLs. A low in-sample emission error is not a pre-update
 predictive guarantee.
 
-`birth_lds_kl_per_sqrt_point=True` divides only the LDS parameter KL in
-proposal scoring by the *latent LDS dimension* (the field name is historical).
+`birth_lds_kl_per_dimension=True` divides only the LDS parameter KL in
+proposal scoring by the *latent LDS dimension*. This is enabled by default;
+set it to `False` to use the unscaled LDS KL for proposals.
 The same divisor applies to the baseline and proposal. It can ease births,
 but the resulting comparison is an experimental score rather than the
 original ELBO. The ordinary iteration report still uses the raw LDS KL.

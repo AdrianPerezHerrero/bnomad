@@ -151,9 +151,9 @@ class InferenceConfig:
     minibatch: int = 0
     classify: bool = False
     it_limit: int | None = None
-    # Historical flag name retained for serialized-config compatibility;
-    # both schedules now use /points in experimental proposal scoring.
-    birth_lds_kl_per_sqrt_point: bool = False
+    # Divide LDS KL by the latent state dimension in proposal scoring.
+    # Raw ELBO reporting remains unscaled.
+    birth_lds_kl_per_dimension: bool = True
 
     def run(self, model, x, y):
         """Run one existing entry point; never combine or reorder schedules."""
@@ -309,6 +309,15 @@ class HDPGPCConfig:
         options = {k: decode(data[k], memo) for k in ('x_basis', 'verbose') if k in data}
         for name, typ in SECTIONS.items():
             section = data.get(name, {})
+            if name == 'inference' and isinstance(section, dict):
+                old_key = 'birth_lds_kl_per_sqrt_point'
+                new_key = 'birth_lds_kl_per_dimension'
+                if old_key in section:
+                    section = dict(section)
+                    old_value = section.pop(old_key)
+                    if new_key in section and section[new_key] != old_value:
+                        raise ValueError('Conflicting LDS dimension normalization settings')
+                    section.setdefault(new_key, old_value)
             if not isinstance(section, dict) or set(section) - {f.name for f in fields(typ)}:
                 raise ValueError('Unknown or malformed configuration section: ' + name)
             options[name] = typ(**{f.name: decode(section[f.name], memo) for f in fields(typ) if f.name in section})
