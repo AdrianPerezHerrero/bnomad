@@ -2,9 +2,40 @@
 Keep the global/local alternation and mutation order unchanged."""
 
 import numpy as np
+import math
 import torch
 from ..alignment import _components as _alignment
 from ._birth_diagnostics import capture_seed, capture_refit
+
+
+def _reallocation_improves(baseline, proposal, *, atol=1e-6, rtol=1e-8):
+    """Require an ELBO gain larger than absolute and scale-relative roundoff.
+
+    Use the complete proposal objective, including LDS/linear terms. Equality,
+    nonfinite objectives and improvements within tolerance are rejected.
+    """
+    baseline, proposal = float(baseline), float(proposal)
+    if not (math.isfinite(baseline) and math.isfinite(proposal)):
+        return False
+    tolerance = atol + rtol * max(abs(baseline), abs(proposal))
+    return proposal - baseline > tolerance
+
+
+def _offline_converged(previous_resp, resp, previous_pair, resp_pair,
+                       previous_elbo, elbo, *, reallocation_accepted,
+                       birth_accepted):
+    """Converge on stable quantities only when no reallocation/birth was committed."""
+    if (reallocation_accepted or birth_accepted or previous_elbo is None
+            or previous_resp is None or previous_pair is None
+            or previous_resp.shape != resp.shape or previous_pair.shape != resp_pair.shape):
+        return False
+    if not (math.isfinite(float(previous_elbo)) and math.isfinite(float(elbo))):
+        return False
+    # Absolute responsibility tolerance also checks near-zero soft memberships.
+    return (bool(torch.allclose(previous_resp, resp, atol=1e-6, rtol=0))
+            and bool(torch.allclose(previous_pair, resp_pair, atol=1e-6, rtol=0))
+            and abs(float(elbo) - float(previous_elbo))
+            <= 1e-6 + 1e-5 * max(abs(float(previous_elbo)), abs(float(elbo))))
 
 
 def _log(self, *args, **kwargs):
@@ -123,6 +154,8 @@ def _commit_emergency_deletion(self, resp, resp_pair, q, q_lat, snr, models,
     self.snr_norm = self.normalize_snr(snr)
     _synchronize_cluster_slots(self, kept, self.gpmodels)
     self.M = old_count - 1
+    if hasattr(self, '_iteration_reallocation_accepted'):
+        self._iteration_reallocation_accepted = True
     return resp, resp_pair, q, q_lat, snr, warped, self.gpmodels
 
 
@@ -221,6 +254,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     y_trains_w = torch.clone(y_trains)
     warp_computed = False
     previous_elbo = None
+    previous_resp = previous_pair = None
     # Initial estimation of full group and conditioning the covariance matrices.
     if self.reestimate_initial_params:
         self.redefine_default(x_trains, y_trains, resp)
@@ -246,6 +280,8 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         if end:
             break
         self._iteration_birth_candidates = []
+        self._iteration_birth_search_complete = False
+        self._iteration_reallocation_accepted = False
         self._birth_iteration = iteration + 1
         resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains,
                                                                                                    y_trains,
@@ -318,6 +354,11 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                                                   self.gpmodels, self.M, snr='saved', post=False,
                                                   birth_score=False)
             elbo_ = elbo_ + elbo_lin + q_obs
+            birth_search_complete = self._iteration_birth_search_complete
+            reallocation_accepted = self._iteration_reallocation_accepted
+            converged = _offline_converged(
+                previous_resp, resp, previous_pair, respPair, previous_elbo, elbo_,
+                reallocation_accepted=reallocation_accepted, birth_accepted=birth_accepted)
             if self.verbose:
                 delta = "n/a" if previous_elbo is None else f"{(elbo_ - previous_elbo).item():+.6g}"
                 proposed = getattr(self, '_iteration_birth_candidates', [])
@@ -325,9 +366,16 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                       f"responsibility sums={resp_group}, "
                       f"proposed birth samples (1-based)={[i + 1 for i in proposed]}, "
                       f"birth_accepted={birth_accepted}, "
+                      f"reallocation_accepted={reallocation_accepted}, "
+                      f"birth_search_complete={birth_search_complete}, "
+                      f"converged={converged}, "
                       f"ELBO={elbo_.item():.6g}, delta_ELBO={delta}", flush=True)
-            previous_elbo = elbo_
+            previous_elbo = elbo_.detach().clone()
+            previous_resp = resp.detach().clone()
+            previous_pair = respPair.detach().clone()
             del self._iteration_birth_candidates
+            del self._iteration_birth_search_complete
+            del self._iteration_reallocation_accepted
             iteration = iteration + 1
             # Keep classification/continuation state even when a configured
             # iteration or cluster limit ends this fit immediately.
@@ -336,10 +384,12 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
             self.resp_last, self.respPair_last = resp, respPair
             self.elbo_last = elbo_
             if it_limit is not None and iteration >= it_limit:
+                _log(self, 'Stopping offline inference: configured iteration limit reached.')
                 self.train_elbo.append(elbo_)
                 self.resp_assigned.append(torch.argmax(resp, dim=1))
                 break
             if self.M == self.max_models:
+                _log(self, 'Stopping offline inference: configured cluster limit reached.')
                 self.train_elbo.append(elbo_)
                 self.resp_assigned.append(torch.argmax(resp, dim=1))
                 break
@@ -347,10 +397,10 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
             self.train_elbo.append(elbo_)
             self.resp_assigned.append(torch.argmax(resp, axis=1))
             self.q.append(q)
-            if (torch.where(resp_group == 0.0)[0].shape[0] > 1.0 or
-                    (len(self.resp_assigned) > 1 and (
-                            self.resp_assigned[-2].shape[0] == self.resp_assigned[-1].shape[0])
-                     and torch.all(self.resp_assigned[-2] == self.resp_assigned[-1]))):
+            if torch.where(resp_group == 0.0)[0].shape[0] > 1.0 or converged:
+                _log(self, 'Stopping offline inference: responsibilities and ELBO converged '
+                     'without an accepted reallocation or birth.' if converged else
+                     'Stopping offline inference: multiple empty cluster slots.')
                 break
             else:
                 elbo = elbo_
@@ -410,6 +460,11 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
             resp, respPair, q, q_lat, snr, y_trains_w, gpmodels = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w_=y_trains_w,
                                            resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi, q_def=q_def__, elbo_def=elbo_def__,
                                            reparam=reparam)
+            # Only refinement committed to the live existing-cluster state
+            # counts here; temporary birth-proposal refinements do not.
+            if (gpmodels is not self.gpmodels and resp.shape[1] == self.M
+                    and hasattr(self, '_iteration_reallocation_accepted')):
+                self._iteration_reallocation_accepted = True
             self.gpmodels = gpmodels
             if resp.shape[1] != M:
                 return resp, respPair, q, q_lat, snr, y_trains_w, True
@@ -583,7 +638,6 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             elbo_bas_ = elbo_post
             i__ = i__ + 1
 
-        new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
         _log(self, ">>> Prev -------")
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                               self.weight_mean(q_lat_, snr_),
@@ -595,10 +649,12 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         update_snr = True
         if torch.all(_cluster_occupied(self, resp_temp)):
             if q_bas < q_bas_post:
-                if not q_bas + elbo_bas < q_bas_post + elbo_post:
+                if not _reallocation_improves(q_bas + elbo_bas, q_bas_post + elbo_post):
                     _log(self, "Possibly better q_obs but worse elbo.")
-            if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
+            if _reallocation_improves(q_bas + elbo_bas, q_bas_post + elbo_post):
                 _log(self, "Reallocating beats into existing groups.")
+                if hasattr(self, '_iteration_reallocation_accepted'):
+                    self._iteration_reallocation_accepted = True
                 reallocate = True
                 self.gpmodels = gpmodels_temp
                 _synchronize_cluster_slots(self, reorder, gpmodels_temp)
@@ -651,7 +707,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                   self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                   snr=snr_, post=False)
-            if (q_bas + elbo_bas < q_bas_ + elbo_bas_
+            if (_reallocation_improves(q_bas + elbo_bas, q_bas_ + elbo_bas_)
                     and not torch.count_nonzero(resp_temp[:, -1])):
                 _log(self, "Emergency reallocation and removing last group.")
                 reallocate = True
@@ -901,7 +957,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                           self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                           snr=snr_, post=False)
-                    if (q_bas + elbo_bas < q_bas_ + elbo_bas_
+                    if (_reallocation_improves(q_bas + elbo_bas, q_bas_ + elbo_bas_)
                             and not torch.count_nonzero(resp_temp[:, -1])):
                         _log(self, "Emergency reallocation and removing last group.")
                         reallocate = True
@@ -1023,6 +1079,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                         return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                 else:
                     _log(self, "Bad estimation")
+    self._iteration_birth_search_complete = True
     reallocate = True
     return resp, respPair, q_, q_lat_, snr_, y_trains_w_, reallocate
 
@@ -1126,7 +1183,7 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     if torch.any(torch.sum(resp_temp, dim=1) > 2.0):
         _log(self, "STOP")
     if torch.all(_cluster_occupied(self, resp_temp)):
-        if q_bas + elbo_bas < q_bas_post + elbo_post:
+        if _reallocation_improves(q_bas + elbo_bas, q_bas_post + elbo_post):
             # self.gpmodels = gpmodels_temp
             if len(reorder) == self.M:
                 _synchronize_cluster_slots(self, reorder, gpmodels_temp)
@@ -1146,8 +1203,8 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
             return resp, respPair, q_, q_lat_, snr_, y_trains_w_, gpmodels
     else:
         _log(self, f">>> Possible emergency reallocation. Prev ----:\n Q_em: {q_def}, Elbo: {elbo_def}")
-        if ((q_def + elbo_def < q_bas_post + elbo_post)
-                and (q_bas + elbo_bas < q_bas_post + elbo_post)
+        if (_reallocation_improves(q_def + elbo_def, q_bas_post + elbo_post)
+                and _reallocation_improves(q_bas + elbo_bas, q_bas_post + elbo_post)
                 and not torch.count_nonzero(resp_temp[:, -1])):
             _log(self, "Emergency reallocation and removing last group.")
             resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = (

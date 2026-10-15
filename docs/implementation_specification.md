@@ -747,6 +747,14 @@ fallback, clipping and SciPy status boundaries; the original fixtures are unchan
 
 ### B11. Offline stopping and last-result cache timing
 
+**Current native offline extension:** The historical behaviour below describes
+the legacy implementation. Native `_offline.fit` now requires full responsibility
+and pairwise stability, finite ELBO stability, and no accepted reallocation or
+birth in the current iteration for convergence. Subsequent iterations use the
+normal selection path without forced birth exploration. Limit exits refresh
+the last-result caches before stopping. See
+[offline convergence](offline_convergence.md) for the numerical tolerances.
+
 **Current behaviour:** Outer stopping occurs on refill failure, one sample,
 iteration limit, exact cluster cap, more than one empty group, or identical
 consecutive assignments. It is not an outer ELBO-tolerance test; the diagnostic
