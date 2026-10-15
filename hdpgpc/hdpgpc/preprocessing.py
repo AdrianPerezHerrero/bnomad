@@ -3,6 +3,24 @@
 import numpy as np
 
 
+def normalize_samples(signal):
+    """Z-score each waveform/channel across its points, independently.
+
+    Return ``(values, centers, scales)``. Parameter arrays have shape
+    (observations, 1, outputs). Constant channels become zero and use scale
+    one, avoiding division by zero. No information from other samples is used.
+    """
+    signal = np.asarray(signal, dtype=np.float64)
+    if signal.ndim != 3 or min(signal.shape) == 0 or not np.isfinite(signal).all():
+        raise ValueError('signal must contain finite nonempty (samples, points, outputs) data')
+    centers = signal.mean(axis=1, keepdims=True)
+    standard_deviations = signal.std(axis=1, keepdims=True)
+    constant = standard_deviations <= np.finfo(np.float64).eps
+    scales = np.where(constant, 1., standard_deviations)
+    values = np.where(constant, 0., (signal - centers) / scales)
+    return values, centers, scales
+
+
 def prepare_sequences(signal, *, channels=(0,), scale_from_first=False,
                       unit_grid=False):
     """Select channels and return values plus their common observation grid.
