@@ -1,10 +1,11 @@
 # Working with a complete time-series record
 
-`examples/full_record_clustering.py` is an ECG experiment: it selects MIT-BIH
+`examples/mitbih_waveform_clustering.py` is an ECG experiment: it selects MIT-BIH
 records, reads their waveform and annotation files, builds a chosen recipe,
-fits the model, logs scores, and saves plots. Its experiment controls remain
-near the top of that script. The reusable preparation and reporting helpers
-now live in the package, so another dataset can use them independently.
+fits the model, logs scores, and saves plots. Its controls use the same CLI
+and `DEFAULTS` layout as Daphnet and the UCR examples. The reusable preparation,
+configuration and reporting stages live in the package. See the
+[common workflow and run-folder guide](experiment_workflows.md).
 
 ```python
 from hdpgpc import HDPGPC
@@ -45,7 +46,8 @@ strengths for a run log; `Tee` duplicates output into a log stream. Plotting
 helpers such as `plot_lds_diagnostics`, `plot_warp_diagnostics`,
 `model_lds_dynamics`, and `plot_lds_dynamics` are also available from
 `hdpgpc.diagnostics`. The
-record-specific composite report remains a plotting example. It is useful
+annotated composite report is `hdpgpc.diagnostics.plot_clustering_summary`.
+It is useful
 to save the model configuration and label mapping with each figure, because
 several reported scores depend on the evaluation choices.
 

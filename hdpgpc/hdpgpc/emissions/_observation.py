@@ -2,7 +2,7 @@
 
 import torch
 
-from ._distributions import matrix_normal_inv_wishart
+from ..dynamics._distributions import matrix_normal_inv_wishart
 
 
 class ObservationHistory:
@@ -53,7 +53,7 @@ class ObservationPolicy:
             self.prior = matrix_normal_inv_wishart(
                 self.C, precision, degrees_of_freedom, self.Sigma)
         else:
-            from ._parameter_posterior import make_pair_prior
+            from ..dynamics._parameter_posterior import make_pair_prior
             self.prior = make_pair_prior(self.C, self.Sigma, degrees_of_freedom,
                                          matrix_policy, noise_policy)
         self.posterior = self.prior

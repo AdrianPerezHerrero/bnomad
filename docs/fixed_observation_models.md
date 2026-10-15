@@ -61,7 +61,7 @@ decoder = AffineGaussianObservation(
 config = with_fixed_observation_model(config, decoder)
 ```
 
-[The autoencoder record example](../examples/autoencoder_record_clustering.py)
+[The autoencoder record example](../examples/mitbih_autoencoder_clustering.py)
 trains a tied linear encoder/decoder on 400 beats, estimates the fixed Gaussian
 decoder noise from its residuals, and then fits the HDP-GPC on the complete
 record. Every beat is encoded by the fixed observation model before its latent
@@ -94,7 +94,7 @@ Gaussian methods, with a full orthonormal Haar decoder. See
 [fixed wavelet observation](wavelet_observation.md) for ordering and the ACSF1 example.
 Previously saved `pca_*` metadata are still accepted when loading recipes.
 
-[The UCR archive example](../examples/ucr_autoencoder_archive.py) then fixes
+[The UCR archive example](../examples/ucr_autoencoder_clustering.py) then fixes
 A to the zero matrix while learning a separate Gamma for each cluster from a
 calibrated latent-covariance prior. It also sets `hmm_switch=False`. Thus the
 archive's arbitrary row order does not enter through either the HDP transition

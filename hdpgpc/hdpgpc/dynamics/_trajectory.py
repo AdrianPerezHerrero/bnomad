@@ -38,7 +38,7 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
         self.C = [ini_C]
         self.Sigma = [ini_Sigma]
     else:
-        from ._observation import ObservationHistory
+        from ..emissions._observation import ObservationHistory
         self.C = ObservationHistory(policy, 'C', self)
         self.Sigma = ObservationHistory(policy, 'Sigma', self)
     pair_policies = getattr(self, 'lds_pair_policies', None)

@@ -11,13 +11,14 @@ imports a retired implementation class.
 | `config` | Typed options, validation and data-only dictionary/YAML codec | `HDPGPCConfig`, eight section dataclasses |
 | `inference` | Separate standard/fast online, offline, classification and label-conditioned schedules; HMM messages and objective aggregation | `InferenceEngine`, `OnlineInference`, `OfflineInference` |
 | `hdp` | Sticks, transitions, concentration presets, expected logs, entropy, attributed bnpy optimizer | `HDPVariational` |
-| `emissions` | GP/output trajectories, observation interfaces, affine decoders, PCA calibration, Fourier/wavelet bases, prediction, fitting and SNR weights | `EmissionModel`, `GaussianProcessEmission`, `FixedObservationModel`, `AffineGaussianObservation`, PCA/Fourier/wavelet helpers |
+| `emissions` | GP/output trajectories, observation policies and histories, fixed interfaces, affine decoders, PCA/linear-AE calibration, Fourier/wavelet bases, prediction, fitting and SNR weights | `EmissionModel`, `GaussianProcessEmission`, `FixedObservationModel`, `AffineGaussianObservation`, calibration/basis helpers |
 | `dynamics` | Static/LDS initialization, filtering, smoothing, learning and conjugate distributions | `DynamicsModel`, `StaticDynamics`, `LinearDynamics` |
 | `alignment` | Identity/AMTGP policies, grids, optimization, prior and caches | `NoAlignment`, `GPAlignment`, `GaussianProcessWarp` |
 | `numerics` | Shared low-level normalization | private |
 | `datasets` | Research dataset utilities | dataset-specific |
 | `preprocessing` | Generic waveform selection, optional scaling, common-grid preparation | `prepare_sequences` |
 | `diagnostics` | Label and prior summaries; LDS and warp inspection plots | reporting and plotting helpers |
+| `experiments` | Common CLI, typed recipe construction, dataset execution, run identity and artifact output | `ExperimentRun`, `save_results`, record/UCR workflows |
 | `examples` | Small deterministic recipes, inputs and reference experiment | `configuration`, `waveforms`, reference command |
 
 ## Dependency direction
@@ -67,6 +68,21 @@ latent states to observations. Kalman recurrences, smoothing and conjugate
 parameter calculations stay in `dynamics`. The old observation modules and
 exports under `dynamics` have been removed. Package initialization, examples
 and diagnostic scripts import observation objects from `emissions`.
+
+`emissions._observation` owns shared C/Sigma policies and their observation
+histories; `dynamics._transition` owns A/Gamma policies. Both reuse the joint
+conjugate-distribution calculations in `dynamics`. These distributions stay
+there because they describe LDS parameter posteriors, not a particular encoder.
+`emissions._autoencoder` owns the reusable tied linear autoencoder and its
+calibration result. Dataset loaders, including the canonical UCR ZIP reader,
+belong to `datasets`; optional WFDB is imported only when reading WFDB records.
+
+The eight dataset experiment scripts are matching entry points. Generic stages
+live in `experiments.records` and `experiments.ucr`, using the same public model
+API and common reporting. Neither inference nor observation modules import
+these workflows or example files. The annotated cluster gallery now lives in
+`diagnostics._cluster_plots`; `tutorial_utils.plot_record_results` remains an
+alias for existing notebooks. See [experiment workflows](experiment_workflows.md).
 
 Root `__all__` contains exactly `HDPGPC`, `HDPGPCConfig`, `UpdateResult`, `Prediction`
 and `LatentState`. Underscore modules and mutable fields are private. Namespace

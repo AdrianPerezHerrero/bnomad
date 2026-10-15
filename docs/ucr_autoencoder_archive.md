@@ -1,79 +1,41 @@
-# UCR archive autoencoder experiment
-
-The [archive script](../examples/ucr_autoencoder_archive.py) applies the same
-tied, orthonormal **linear** autoencoder and fixed affine Gaussian decoder as
-the ECG autoencoder example to the 2018 univariate UCR classification
-archive. The [official archive](https://www.cs.ucr.edu/~eamonn/time_series_data_2018/)
-has 128 standard TRAIN/TEST dataset pairs. The script selects those pairs
-inside the ZIP and ignores its separate adjusted-data folder.
+# UCR archive with a fixed autoencoder emission
 
 ```powershell
-# Download the official ZIP to the ignored agents/data/ucr directory and run all 128.
-python examples/ucr_autoencoder_archive.py --download
-
-# A shorter diagnostic run across every dataset; only 50 series are fitted per set.
-python examples/ucr_autoencoder_archive.py --max-series 50 --max-points 32 --ae-epochs 10 --iterations 1 --max-clusters 2
-
-# Inspect one dataset without re-running completed successful datasets.
-python examples/ucr_autoencoder_archive.py --datasets Coffee --resume
+python examples/ucr_autoencoder_clustering.py --datasets Coffee --components 12
+python examples/ucr_autoencoder_clustering.py --datasets ACSF1 --epochs 60
+python examples/ucr_autoencoder_clustering.py --download --resume
 ```
 
-The default processes **every** TRAIN and TEST series in all 128 datasets.
-It trains the autoencoder, noise scale, and global normalization using TRAIN
-only, then fits HDP-GPC unsupervised to the concatenated TRAIN and TEST
-series. Missing points are linearly interpolated per series, and each series
-is represented on at most 64 equally spaced points by default. This
-resolution cap can be changed with `--max-points`; the original ZIP is not
-altered. A failed dataset gets an error row and traceback while later
-datasets continue. `--resume` skips datasets already marked successful in
-`results.csv` under the same archive hash and experiment settings. Each row
-records that run ID, so changing model controls cannot silently reuse an old
-result.
+The runner shares its loader, config/run stages and result schema with
+[UCR PCA](ucr_pca_archive.md). Omit `--datasets` to run the full archive.
+TRAIN statistics normalize both splits; only TRAIN calibrates the encoder.
+TRAIN+TEST are clustered together, so all scores are transductive descriptions.
 
-Each successful dataset produces `plots/<dataset>_<run-id>_summary.png` under
-the output directory. The figure shows every series in a two-dimensional PCA
-view of its autoencoder code, coloured first by fitted cluster and then by
-UCR class. A third panel shows the true-class composition within each fitted
-cluster. The figure header includes the number of series and clusters, purity,
-ARI, and NMI. No LDS or transition matrix is plotted. Use `--no-plots` to skip
-PNG generation; `--resume` checks that both requested PNGs exist.
+The reusable `hdpgpc.emissions.estimate_autoencoder_observation` trains a tied,
+orthonormal **linear** encoder/decoder with an affine offset and scale. It
+freezes the calibrated decoder before clustering. This is the exact Gaussian
+fixed observation path, with a waveform-space likelihood; it does not introduce
+nonlinear approximate inference or replace HDPGPC with a latent clustering model.
+The calibration network is reused only for diagnostics after fitting.
 
-`plots/<dataset>_<run-id>_clusters_output_0.png` additionally shows the final
-cluster curves through MIT-BIH's `plot_record_results` function. Each cluster
-panel contains the member waveforms coloured by true UCR class, the decoded
-observation mean coloured by majority class, and its predictive +/-2 SD band.
-The first row shows assignments, all decoded means, and class composition.
-The gallery uses three columns and grows vertically with the cluster count.
-No latent/Gamma overlays are added. The CSV records the path in `cluster_plot`;
-figures are saved and closed without an interactive window.
+Defaults retain up to 400 calibration TRAIN series, 40 latent components
+(capped by calibration rank and waveform dimension), 60 epochs, fixed isotropic
+Sigma, a 0.1 multiplier on calibrated observation noise, and a 0.05
+multiplier on calibrated latent covariance. Use `--components`,
+`--calibration-samples`, `--epochs`, `--process-noise` and
+`--observation-noise-scale` for controlled comparisons. The PCA script uses
+12 components and a latent covariance multiplier of 1 by default: set these
+explicitly, together with observation-noise scaling, to compare representations
+under matching dimensions/scales.
 
-The ZIP is about 316 MB; a complete model fit is substantially more expensive
-than downloading it. `results.csv` and error logs are saved under the ignored
-`agents/ucr_autoencoder_results` directory by default. The reported purity,
-ARI, and NMI are **descriptive clustering** scores. TEST waveforms participate
-in fitting, so `ari_test_transductive` is not a held-out classification
-estimate. The UCR archive documentation says row order generally has no
-meaning; the script disables the HDP Markov transition (`hmm_switch=False`),
-fixes the LDS transition matrix to zero, and initializes a learned Gamma
-posterior separately for each cluster from the autoencoder calibration
-covariance. The latent prior is therefore
-independent of the preceding archive row. The observation decoder and noise
-are also fixed after calibration. These numbers remain a pipeline experiment,
-not a competitive UCR classification benchmark.
-The first series still uses the LDS initial-state prior, so this configuration
-removes predictive dependence on the previous row without claiming exact
-permutation invariance of every inference update.
+A=0 and HMM conditioning is off, since archive row order is arbitrary. Gamma
+learns per cluster. `--gamma-mode` and `--sigma-mode` select existing compatible
+noise policies; C and the decoder offset remain fixed. GP kernel fitting and
+warping are excluded by the current fixed affine implementation.
 
-An earlier experiment that also fixed Gamma produced one cluster on all 128
-datasets in a 20-series, one-iteration diagnostic pass, and on full-series
-Coffee and CBF. That result motivated leaving Gamma trainable. It does not
-describe the current configuration's clustering performance.
-
-With cluster-learned Gamma and the current full-series defaults, CBF fitted
-five clusters across its 930 series (ARI 0.228, NMI 0.343). Coffee still fitted
-one cluster. These are descriptive, transductive scores.
-
-`--latent-covariance-scale` (also accepted as `--process-noise` for the earlier
-script interface) multiplies the calibrated latent covariance before it is
-used as the initial-state covariance and each cluster's Gamma prior. Gamma is
-then updated during fitting. The scale's default is 1.
+Outputs default to `agents/ucr_autoencoder_results/<dataset>/<run_id>/`.
+They include the shared cluster gallery and code projection, calibration model,
+training losses/indices, and an AE calibration reconstruction plot. LDS matrix
+and dynamics plots are optional. No transition heatmap is drawn for UCR.
+See [experiment workflows](experiment_workflows.md) for the common CLI, exact
+file schema, run identities, failure handling and resume semantics.

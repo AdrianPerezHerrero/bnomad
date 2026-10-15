@@ -1,4 +1,4 @@
-﻿# Fixed real windowed Fourier observation
+ï»¿# Fixed real windowed Fourier observation
 
 Fourier coordinates use the existing `AffineGaussianObservation` and
 `with_fixed_observation_model` installer. Inputs, likelihoods and predictive
@@ -88,9 +88,9 @@ or offline batch LDS updates.
 ## ACSF1 example
 
 ```powershell
-python examples/fourier_clustering.py --schedule offline --window-size 16
-python examples/fourier_clustering.py --window-size 16 --harmonics 4
-python examples/fourier_clustering.py --schedule online_fast --sigma-mode cluster_diagonal
+python examples/ucr_fourier_clustering.py --schedule offline --window-size 16
+python examples/ucr_fourier_clustering.py --window-size 16 --harmonics 4
+python examples/ucr_fourier_clustering.py --schedule online_fast --sigma-mode cluster_diagonal
 ```
 
 The example defaults to ACSF1 from the local UCR archive. Use `--archive`,
@@ -106,7 +106,9 @@ to zero. Gamma learns per cluster; Sigma follows --sigma-mode. The ordinary
 configuration can still learn A for ordered data. Iteration, cluster-count,
 seed and subset controls remain available.
 
-Outputs default to ignored `agents/fourier_example`: config.yaml, results.json
-including window controls, source indices, labels, assignments and metrics,
-and `<dataset>_fourier_clusters_output_0.png`. Plots are saved and closed
-without displaying an interactive window.
+Outputs use the common `<dataset>/<run_id>/` layout under
+`agents/ucr_fourier_results`. Cluster galleries, projections, calibration arrays,
+configuration, logs, assignments and JSON/CSV metrics use the same schema as
+PCA and the autoencoder. LDS plots are optional. See
+[experiment workflows](experiment_workflows.md). The example defaults to ACSF1;
+use `--datasets all` for the archive. The singular `--dataset` remains an alias.

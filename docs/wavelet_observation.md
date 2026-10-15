@@ -56,8 +56,8 @@ sequential update paths, including online and online_fast, are used unchanged.
 ## ACSF1 example
 
 ```powershell
-python examples/wavelet_clustering.py --points 64 --schedule offline
-python examples/wavelet_clustering.py --schedule online_fast --sigma-mode cluster_diagonal
+python examples/ucr_wavelet_clustering.py --points 64 --schedule offline
+python examples/ucr_wavelet_clustering.py --schedule online_fast --sigma-mode cluster_diagonal
 ```
 
 The example defaults to ACSF1 from the local UCR ZIP; use `--archive` to choose
@@ -74,7 +74,9 @@ fixed, learned full/diagonal per cluster, or learned full/diagonal shared Sigma.
 narrow bursts before the transform; increase `--points` to a power of two that
 fits the original resolution if preserving such events is necessary.
 
-Outputs default to ignored `agents/wavelet_example`: `config.yaml`,
-`results.json`, and `<dataset>_wavelet_clusters_output_0.png`. The plot uses the
-same summary function as the Fourier and MIT-BIH examples, is saved, and is
-closed without displaying an interactive window.
+Outputs use the common `<dataset>/<run_id>/` layout under
+`agents/ucr_wavelet_results`. Cluster galleries, projections, calibration arrays,
+configuration, logs, assignments and JSON/CSV metrics use the same schema as
+PCA and the autoencoder. LDS plots are optional. See
+[experiment workflows](experiment_workflows.md). The example defaults to ACSF1;
+use `--datasets all` for the archive. The singular `--dataset` remains an alias.

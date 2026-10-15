@@ -3,6 +3,7 @@
 - [Installation and supported versions](installation.md)
 - [Runnable tutorials](tutorials.md)
 - [Choose a model setup](model_choices.md)
+- [Comparable experiment scripts, arguments and run folders](experiment_workflows.md)
 - [Complete-record workflow and reusable helpers](record_workflow.md)
 - [UCR archive autoencoder experiment](ucr_autoencoder_archive.md)
 - [UCR archive fixed PCA experiment](ucr_pca_archive.md)

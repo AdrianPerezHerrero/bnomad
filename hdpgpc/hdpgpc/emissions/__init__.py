@@ -5,9 +5,13 @@ __all__ = (
     'PCAObservationEstimate', 'estimate_pca_observation',
     'real_fourier_basis', 'make_fourier_observation',
     'real_wavelet_basis', 'make_wavelet_observation',
+    'TiedLinearAutoencoder', 'AutoencoderObservationEstimate', 'estimate_autoencoder_observation',
 )
 
 def __getattr__(name):
+    if name in ('TiedLinearAutoencoder', 'AutoencoderObservationEstimate', 'estimate_autoencoder_observation'):
+        from . import _autoencoder
+        return getattr(_autoencoder, name)
     if name in ('FixedObservationModel', 'AffineGaussianObservation'):
         from . import _fixed_observation
         return getattr(_fixed_observation, name)

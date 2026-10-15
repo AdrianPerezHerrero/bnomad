@@ -300,7 +300,7 @@ class ModelState:
 
         self.observation_policies = []
         if self.observation_scope != 'cluster':
-            from ..dynamics._observation import ObservationPolicy
+            from ..emissions._observation import ObservationPolicy
             for ld in range(n_outputs):
                 template = self.gpmodels[ld][0]
                 initial_C = (self.observation_C_initial if self.observation_C_initial is not None

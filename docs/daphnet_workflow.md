@@ -4,12 +4,12 @@ This example applies the ordinary GP/LDS HDP-GPC model directly to acceleration
 windows. There is no encoder, PCA, Fourier or custom fixed observation adapter.
 
 ```powershell
-python examples/daphnet_clustering.py --download --records S02R01
-python examples/daphnet_clustering.py --records S02R01 --schedule online_fast
-python examples/daphnet_clustering.py --records S02R01 --warp
-python examples/daphnet_clustering.py --records S02R01 --normalize-samples
-python examples/daphnet_clustering.py --records S02R01 --lds-preset all_free
-python examples/daphnet_clustering.py --records all --segments all --no-fit-gp
+python examples/daphnet_waveform_clustering.py --download --records S02R01
+python examples/daphnet_waveform_clustering.py --records S02R01 --schedule online_fast
+python examples/daphnet_waveform_clustering.py --records S02R01 --warp
+python examples/daphnet_waveform_clustering.py --records S02R01 --normalize-samples
+python examples/daphnet_waveform_clustering.py --records S02R01 --lds-preset all_free
+python examples/daphnet_waveform_clustering.py --records all --segments all --no-fit-gp
 ```
 
 ## Data and windows
@@ -55,7 +55,7 @@ the prior scales. No class balancing is used.
 mean and standard deviation, overriding `--scaling`. This removes between-window
 offset and amplitude differences. Constant windows become zero without division
 by zero. The default is off; use `--no-normalize-samples` to disable it explicitly.
-Normalization parameters are saved as `sample_normalization.npz` in the segment
+Normalization parameters are saved as `normalization.npz` in the segment
 folder, and logs/results identify the effective normalization mode. This uses
 only the current window and is available with every inference schedule and warp.
 Warp is off by default. `--warp` enables the existing DTW-GP alignment for
@@ -66,7 +66,7 @@ plots identify aligned model coordinates when it is enabled.
 
 ## Model choices
 
-`make_config` in the script is the single configuration/API location. Defaults:
+`hdpgpc.experiments.records.make_config` is the shared configuration/API location. Defaults:
 
 - Dynamic model and chronological HMM conditioning enabled.
 - `only_plastic`: C=I and Sigma fixed, A/Gamma learned per cluster. Select
@@ -79,8 +79,8 @@ plots identify aligned model coordinates when it is enabled.
 - Initially fitted RBF/white-noise GP reused across proposals/clusters;
   `--no-fit-gp` retains a fixed kernel. `--lengthscale` is in seconds and
   `--gp-noise` is distinct from the LDS observation noise.
-- Hard assignments, HDP preset `more`, ten birth exploration steps, ten-cluster
-  cap and twenty offline iterations.
+- Hard assignments, HDP preset `more`, ten birth exploration steps, forty-cluster
+  cap and forty offline iterations.
 
 Use `--sigma-prior`, `--gamma-prior`, `--lds-degrees`, `--hdp-preset`,
 `--hard-assignments`/`--no-hard-assignments`, and the iteration/cluster controls
@@ -94,18 +94,20 @@ no freezing-specific features are supplied.
 
 ## Outputs and interpretation
 
-Outputs are under `agents/daphnet_results/<record>/segment_<number>/`:
+Outputs are under `agents/daphnet_waveform_runs/<record>_segment_<number>/<run_id>/`:
 
-- `clustering.log`, `config.yaml` and `results.json`;
-- `assignments.csv`, including source rows, timestamps, raw freezing fraction,
-  window annotation, cluster and cluster-majority annotation;
+- `settings.json`, `clustering.log`, `config.yaml` and `results.json`;
+- `assignments.csv`, including source rows, timestamps, freezing fraction,
+  true label, cluster and cluster-majority label;
 - `lds_parameters.npz`, storing final A, C, Gamma and Sigma;
-- `clusters_output_0.png`, reusing the annotated summary/gallery;
-- `lds_parameters_<page>.png` and `lds_dynamics.png`, using existing diagnostics.
+- `clusters_output_0.png` and `projection.png`;
+- `lds_parameters_output_0_<page>.png` and `lds_dynamics_output_0.png`;
+- `warps_output_0.png` when alignment is enabled.
 
-A root `summary.json` collects results. Plots use blue for non-freezing and red
-for freezing, are saved and closed without an interactive window. `--no-plots`
-disables graphics; `--no-lds-plots` keeps only the cluster plot.
+Root `results.csv` aggregates runs. Plots use blue for non-freezing and red
+for freezing and are saved and closed. `--no-plots` disables graphics;
+LDS matrix and dynamics plots have independent switches. See the
+[common workflow guide](experiment_workflows.md) for shared arguments and resume.
 
 Purity, ARI and NMI compare clusters with window annotations. The confusion
 matrix compares actual annotation with each cluster's majority annotation;

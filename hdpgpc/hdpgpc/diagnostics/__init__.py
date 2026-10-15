@@ -1,6 +1,7 @@
 """Research diagnostic utilities for fitted models, LDS matrices and input warps."""
 
 __all__ = ('plot_warp_diagnostics', 'model_warp_arrays',
+           'plot_clustering_summary',
            'plot_lds_diagnostics', 'model_lds_arrays',
            'plot_lds_dynamics', 'model_lds_dynamics',
            'plot_embedding_summary',
@@ -10,6 +11,9 @@ __all__ = ('plot_warp_diagnostics', 'model_warp_arrays',
 
 
 def __getattr__(name):
+    if name == 'plot_clustering_summary':
+        from ._cluster_plots import plot_clustering_summary
+        return plot_clustering_summary
     if name in __all__:
         if name in ('cluster_label_statistics', 'format_confusion_matrix',
                     'format_lds_priors', 'Tee'):

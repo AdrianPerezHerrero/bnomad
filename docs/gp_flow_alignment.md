@@ -94,5 +94,5 @@ Optional `grid_samples` overlays posterior warp draws in the map panel.
 When posterior standard deviations are available, dotted curves show twice
 the mean within-observation posterior standard deviation; that is distinct
 from variation between observations. The figure is returned for the caller
-to save, display or close. `examples/full_record_clustering.py` can generate
+to save, display or close. `examples/mitbih_waveform_clustering.py` can generate
 these plots with `--plot-warps`; `--no-plot-warps` disables them.

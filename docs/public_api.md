@@ -241,3 +241,28 @@ No old model imports, flat constructor adapters or old pickle paths are supporte
 The mutable state returned by `config.build_model()` is opaque and private.
 
 For actual 0.3 verification results see [the migration report](migration_0_3/report.md).
+
+## Dataset experiments and reusable reporting
+
+`hdpgpc.emissions.estimate_autoencoder_observation` calibrates the tied linear
+autoencoder on explicitly supplied observations. It returns an
+`AutoencoderObservationEstimate` containing the frozen network, exact affine
+observation model, selected indices, losses and reconstruction residuals.
+Use `with_fixed_observation_model(config, estimate.model, ...)` to install it.
+The existing PCA/Fourier/wavelet factories share this observation structure.
+
+`hdpgpc.datasets.ucr` supplies `PreparedDataset`, `archive_datasets`,
+`prepare_dataset` and `download_archive`. Preparation returns TRAIN/TEST values
+and labels plus TRAIN normalization statistics and interpolation metadata.
+Importing the dataset namespace does not load numerical libraries.
+
+`hdpgpc.diagnostics.plot_clustering_summary(model, values, annotations, ...)`
+returns a figure per output, using the same overview/gallery for all datasets.
+Pass `ordered=False` for class composition instead of temporal transitions.
+LDS/warp diagnostics remain separate reusable functions.
+
+`hdpgpc.experiments.ExperimentRun` owns one content-derived run directory and
+log; `save_results` emits the common results/assignment/plot schema. The record
+and UCR workflow modules expose `build_parser`, `make_config`, and their
+respective `run_records`/`run_ucr` functions. They orchestrate the public model
+API; they are not model implementations. See [the workflow guide](experiment_workflows.md).

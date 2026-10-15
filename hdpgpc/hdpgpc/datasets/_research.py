@@ -8,10 +8,8 @@ Created on Wed Nov 24 13:43:23 2021
 import os
 
 import torch
-import wfdb
 import numpy as np
 from sklearn.preprocessing import scale
-from wfdb import processing
 import pandas as pd
 
 #Class to get data from UCR or MIT-BIH 
@@ -86,6 +84,7 @@ def get_data(database = "mitdb", record = "100", deriv = 0, test = False, d2_dat
         else:
             return data_train, labels_train
     else:
+        import wfdb
         record_breath = None
         file_path = full_path
         record = wfdb.rdrecord(file_path, return_res=32, physical=False)
