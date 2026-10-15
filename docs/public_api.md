@@ -79,6 +79,37 @@ an ECG file layout. `hdpgpc.diagnostics` exports label statistics, confusion
 and LDS-prior formatting, log duplication, and fitted LDS/warp plots. See the
 [complete-record workflow](record_workflow.md) for inputs and interpretation.
 
+`hdpgpc.datasets.load_daphnet_record` reads an official ZIP or extracted
+recording, and `window_daphnet_record` constructs chronological windows without
+joining experimental gaps. `daphnet_records` lists IDs and `download_daphnet`
+retrieves the official archive when requested. See the
+[Daphnet waveform workflow](daphnet_workflow.md).
+
+Fixed observation models are exported from `hdpgpc.emissions`:
+`FixedObservationModel`, `AffineGaussianObservation`, `PCAObservationEstimate`,
+`estimate_pca_observation`, and the Fourier/wavelet factories and basis functions.
+Their implementations live in `emissions._fixed_observation`, `_pca`, `_fourier`
+and `_wavelet`. The previous `hdpgpc.dynamics` observation exports and private
+modules have been removed; callers must import these objects from `emissions`.
+Serialized affine state dictionaries and configuration arrays are unchanged.
+Python pickles referring to the removed module paths require migration; no
+legacy module aliases are retained.
+Latent filtering, smoothing and parameter estimation remain in `dynamics`.
+
+`hdpgpc.emissions.make_fourier_observation` creates an
+`AffineGaussianObservation` from a full or selected real windowed Fourier basis.
+`window_size` defaults to 16 non-overlapping points; setting it to the waveform
+length reproduces the former global basis. Harmonic selections apply per window.
+`real_fourier_basis` returns the synthesis matrix itself. Install the decoder
+with `hdpgpc.config.with_fixed_observation_model`, the same helper used for
+fixed linear autoencoders and new PCA configurations. See
+[fixed windowed Fourier observation](fourier_observation.md).
+
+`hdpgpc.emissions.make_wavelet_observation` creates the same affine observation
+model using a full real orthonormal Haar basis. `real_wavelet_basis` returns
+its synthesis matrix. Both require a uniformly spaced grid with a power-of-two
+point count. See [fixed wavelet observation](wavelet_observation.md).
+
 All names beginning with `_`, including `HDPGPC._backend`, are internal. The
 implementation modules `model._api` and `model._results` are internal; import
 their public classes through the exports above. Native tensors, mutable model

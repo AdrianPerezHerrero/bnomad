@@ -128,7 +128,7 @@ covariance. `with_pca_emission(config, estimate)` installs them and fixes
 ```python
 from hdpgpc import HDPGPC
 from hdpgpc.config import NoisePolicyConfig, with_pca_emission
-from hdpgpc.dynamics import estimate_pca_observation
+from hdpgpc.emissions import estimate_pca_observation
 
 estimate = estimate_pca_observation(values, grid, components=12, max_beats=256)
 config = with_pca_emission(

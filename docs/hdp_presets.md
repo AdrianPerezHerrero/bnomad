@@ -8,6 +8,12 @@ transition model. These are the **current implementation values**:
 | `less` | 1000 | 1000 | 1 | 0 |
 | `balanced` | 1000 | 100 | 1 | 0 |
 | `more` | 10 | 100 | 1 | 0 |
+| `max` | 1 | 0.01 | 1 | 0 |
+
+Select the new bundle with `HDPConfig(hdp_hyp='max')`, or pass
+`--hdp-preset max` to the UCR, Fourier or wavelet runners. Existing preset
+values and defaults are unchanged. The name is a preset label, not a guarantee
+that every dataset will produce more clusters.
 
 `gamma` controls the global stick concentration, `transAlpha` controls
 transition-row concentration around those weights, `startAlpha` affects the

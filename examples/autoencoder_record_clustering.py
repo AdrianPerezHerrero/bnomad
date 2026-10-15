@@ -42,7 +42,7 @@ from hdpgpc.config import (
     HDPGPCConfig, InferenceConfig, MultiOutputConfig, NoisePolicyConfig,
     NumericalConfig, with_fixed_observation_model,
 )
-from hdpgpc.dynamics import AffineGaussianObservation
+from hdpgpc.emissions import AffineGaussianObservation
 from hdpgpc.diagnostics import (
     Tee, cluster_label_statistics, format_confusion_matrix,
     model_lds_arrays, model_lds_dynamics,
@@ -69,7 +69,7 @@ INFERENCE_MODE = 'offline'       # 'offline', 'online', 'online_fast'
 VERBOSE = 'debug'             # 'silent', 'progress', 'debug'
 HARD_ASSIGNMENTS = True
 OFFLINE_ITERATIONS = 50
-HDP_PRESET = 'more'           # 'less', 'balanced', 'more'
+HDP_PRESET = 'more'           # 'less', 'balanced', 'more', 'max'
 MAX_CLUSTERS = 35
 LDS_UPDATE = 'conjugate_batch'    # offline; online uses conjugate_sequential
 LDS_DEGREES_OF_FREEDOM = 10

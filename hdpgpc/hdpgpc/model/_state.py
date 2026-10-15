@@ -354,7 +354,7 @@ class ModelState:
                     initial[index] = torch.eye(initial[index].shape[0], dtype=torch.float64)
         initial_covariance = None
         if self.fixed_observation_grid is not None:
-            from ..dynamics._fixed_observation import AffineGaussianObservation
+            from ..emissions._fixed_observation import AffineGaussianObservation
             latent_covariance = np.asarray(self.fixed_latent_covariance)
             if latent_covariance.ndim == 1:
                 latent_covariance = np.diag(latent_covariance)

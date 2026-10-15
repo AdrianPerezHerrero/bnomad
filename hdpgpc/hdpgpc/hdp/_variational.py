@@ -74,6 +74,11 @@ class HDPVariational:
             self.transAlpha = 1e+02
             self.startAlpha = 1e+00
             self.kappa = 0.0
+        elif hdp_hyp == 'max':
+            self.gamma = 1e+00
+            self.transAlpha = 1e-02
+            self.startAlpha = 1e+00
+            self.kappa = 0.0
 
 
     def init_global_params(self, d_dim, M):

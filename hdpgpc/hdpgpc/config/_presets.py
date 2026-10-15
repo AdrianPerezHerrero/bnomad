@@ -106,46 +106,19 @@ def with_pca_emission(config: HDPGPCConfig, estimate, *,
     GP kernel fitting and warping are excluded because component indices are
     not waveform coordinates.
     """
-    from ..dynamics._pca import PCAObservationEstimate
+    from ..emissions._pca import PCAObservationEstimate
 
     if not isinstance(config, HDPGPCConfig) or not isinstance(estimate, PCAObservationEstimate):
         raise TypeError('expected HDPGPCConfig and PCAObservationEstimate')
-    if config.multi_output.n_outputs != 1:
-        raise ValueError('PCA observation currently requires one output channel')
-    if config.inference.warp or config.numerics.cuda:
-        raise ValueError('PCA observation currently requires warp=False and CPU inference')
-    if sigma_policy is None:
-        sigma_policy = NoisePolicyConfig(mode='fixed')
-    if not isinstance(sigma_policy, NoisePolicyConfig):
-        raise TypeError('sigma_policy must be a NoisePolicyConfig')
-    if sigma_policy.mode not in ('fixed', 'cluster', 'cluster_diagonal',
-                                 'shared', 'shared_diagonal'):
-        raise ValueError('PCA Sigma policy must be fixed, cluster, cluster_diagonal, shared, or shared_diagonal')
-    dimension = estimate.components.shape[1]
-    sigma_value = (estimate.residual_covariance.copy() if sigma_policy.value is None
-                   else np.asarray(sigma_policy.value).copy())
-    observation = replace(
-        config.observation, scope='cluster', C=None, Sigma=None,
-        C_policy=MatrixPolicyConfig(mode='fixed', value=estimate.components.copy()),
-        Sigma_policy=replace(sigma_policy, value=sigma_value),
-        pca_grid=estimate.grid.copy(), pca_mean=estimate.mean.copy(),
-        pca_variances=estimate.latent_variances.copy(),
-        fixed_grid=None, fixed_offset=None, fixed_latent_covariance=None,
+    from ..emissions._fixed_observation import AffineGaussianObservation
+
+    model = AffineGaussianObservation(
+        C=estimate.components, Sigma=estimate.residual_covariance,
+        observation_grid=estimate.grid, offset=estimate.mean,
+        latent_covariance=np.diag(estimate.latent_variances),
     )
-    dynamics = replace(
-        config.dynamics, model_type='dynamic', bayesian_params=True,
-        A_policy=MatrixPolicyConfig(mode='cluster'),
-        Gamma_policy=NoisePolicyConfig(mode='cluster'), lds_scoring='final',
-        lds_update=('conjugate_sequential' if (
-            config.dynamics.lds_update == 'legacy' or
-            (config.dynamics.lds_update == 'conjugate_batch' and
-             config.inference.schedule != 'offline'))
-                    else config.dynamics.lds_update),
-    )
-    emission = replace(config.emission, inducing_points=True, fit_gp=False)
-    return replace(config, x_basis=np.arange(dimension, dtype=np.float64)[:, None],
-                   observation=observation, dynamics=dynamics, emission=emission,
-                   multi_output=replace(config.multi_output, use_snr=False))
+    return with_fixed_observation_model(config, model, sigma_policy=sigma_policy)
+
 
 
 def with_fixed_observation_model(config: HDPGPCConfig, model, *,
@@ -157,7 +130,7 @@ def with_fixed_observation_model(config: HDPGPCConfig, model, *,
     only `AffineGaussianObservation`; a nonlinear implementation needs its own
     posterior and ELBO integration before it can be used for fitting.
     """
-    from ..dynamics._fixed_observation import AffineGaussianObservation
+    from ..emissions._fixed_observation import AffineGaussianObservation
 
     if not isinstance(config, HDPGPCConfig) or not isinstance(model, AffineGaussianObservation):
         raise TypeError('Current LDS inference requires HDPGPCConfig and AffineGaussianObservation')

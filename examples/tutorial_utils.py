@@ -77,7 +77,7 @@ def _plot_cluster_latent(axis, state, gamma, color, *, pca=False, legend=False):
     if not pca:
         _plot_latent_process(axis, state, gamma, color, legend=legend)
         return
-    # PCA coordinates index components rather than waveform time; a separate
+    # Fixed decoder coordinates index components rather than waveform time; a separate
     # inset avoids presenting their coefficients on the observation x-axis.
     inset = axis.inset_axes((0.62, 0.57, 0.35, 0.36))
     _plot_latent_process(inset, state, gamma, color)
@@ -225,7 +225,8 @@ def plot_results(model, values, grid=None, title='Clustering results'):
 
 
 def plot_record_results(model, values, annotations, *, grid=None, record='', metrics=None,
-                        channels=None, warped=False, ordered=True, show_latent=True):
+                        channels=None, warped=False, ordered=True, show_latent=True,
+                        annotation_colors=None):
     """Plot the full-record overview and annotated cluster gallery.
 
     A separate figure is returned for each output channel. Transition entries
@@ -234,6 +235,7 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
     Set ordered=False for independent datasets: labels use a generic palette
     and the overview shows class composition instead of temporal transitions.
     show_latent=False omits the latent process and Gamma overlays.
+    annotation_colors optionally overrides label colours for non-ECG datasets.
     """
     values = np.asarray(values)
     if values.ndim != 3 or not all(values.shape):
@@ -281,6 +283,9 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
                         for i, label in enumerate(classes)}
     else:
         label_colors = {}
+
+    if annotation_colors is not None:
+        label_colors.update({str(label): color for label, color in annotation_colors.items()})
 
     def annotation_color_for(label):
         return label_colors[label] if label in label_colors else _annotation_color(label)
@@ -434,7 +439,7 @@ def plot_record_results(model, values, annotations, *, grid=None, record='', met
 
         gallery_header.text(
             0, 0.5,
-            ('Clusters · solid: PCA reconstruction (±2 SD) · inset: latent PCA state / Γ · faint: beats'
+            ('Clusters · solid: fixed decoder reconstruction (±2 SD) · inset: latent state / Γ · faint: beats'
              if pca else
              'Clusters · solid: C f_sm (±2 SD) · dashed dark: f_sm (±2√diag Γ) · faint: beats'),
             va='center', fontsize=10, fontweight='bold',

@@ -32,7 +32,8 @@ from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
 
 from tutorial_utils import plot_record_results
 from hdpgpc import HDPGPC
-from hdpgpc.dynamics import estimate_lds_noise_priors, estimate_pca_observation
+from hdpgpc.dynamics import estimate_lds_noise_priors
+from hdpgpc.emissions import estimate_pca_observation
 from hdpgpc.diagnostics import (
     Tee, cluster_label_statistics, format_confusion_matrix, format_lds_priors,
     model_lds_arrays, model_lds_dynamics, model_warp_arrays,
@@ -102,7 +103,7 @@ PLOT_DPI = 160
 # Typed configuration values; these are experiment settings, not package defaults.
 # Lengthscale is measured in the selected grid units; noise settings depend on waveform scale.
 MAX_CLUSTERS = 30
-HDP_PRESET = "more"            # "less", "balanced" or "more" (see HDPConfig preset descriptions).
+HDP_PRESET = "more"            # "less", "balanced", "more" or "max" (see HDPConfig preset descriptions).
 MODEL_TYPE = "dynamic"         # "static" or "dynamic" (see DynamicsConfig model_type descriptions).
 LDS_DEGREES_OF_FREEDOM = 10  # None uses the package default: 5 offline, 20 online.
 LDS_UPDATE = "conjugate_batch"  # "conjugate_sequential", "conjugate_batch", "natural_gradient", or "legacy".

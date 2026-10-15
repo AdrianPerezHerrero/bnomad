@@ -20,7 +20,7 @@ Bounds = Union[tuple[float, float], list[tuple[float, float]], 'ndarray', None]
 class HDPConfig:
     """Existing concentration preset, initial truncation and dependence switch."""
     M: int | None = None
-    hdp_hyp: Literal['less', 'balanced', 'more'] = 'balanced'
+    hdp_hyp: Literal['less', 'balanced', 'more', 'max'] = 'balanced'
     hmm_switch: bool = True
     max_models: int | None = None
 
