@@ -198,9 +198,9 @@ def main():
                         help='PCA dimension, capped by waveform and TRAIN calibration sizes.')
     parser.add_argument('--pca-samples', type=int, default=400)
     parser.add_argument('--noise-floor', type=float, default=1e-6)
-    parser.add_argument('--process-noise', '--latent-covariance-scale', type=float, default=0.1,
+    parser.add_argument('--process-noise', '--latent-covariance-scale', type=float, default=1.0,
                         help='Multiply calibrated latent prior variances (default 1).')
-    parser.add_argument('--observation-noise-scale', type=float, default=0.1,
+    parser.add_argument('--observation-noise-scale', type=float, default=1.0,
                         help='Multiply calibrated residual Sigma prior (default 1).')
     parser.add_argument('--gamma-mode', choices=NOISE_MODES, default='cluster')
     parser.add_argument('--sigma-mode', choices=NOISE_MODES, default='cluster')
