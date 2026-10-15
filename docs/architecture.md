@@ -11,7 +11,7 @@ imports a retired implementation class.
 | `config` | Typed options, validation and data-only dictionary/YAML codec | `HDPGPCConfig`, eight section dataclasses |
 | `inference` | Separate standard/fast online, offline, classification and label-conditioned schedules; HMM messages and objective aggregation | `InferenceEngine`, `OnlineInference`, `OfflineInference` |
 | `hdp` | Sticks, transitions, concentration presets, expected logs, entropy, attributed bnpy optimizer | `HDPVariational` |
-| `emissions` | GP/output trajectories, priors, prediction, fitting, GPyTorch models and SNR weights | `EmissionModel`, `GaussianProcessEmission` |
+| `emissions` | GP/output trajectories, observation interfaces, affine decoders, PCA calibration, Fourier/wavelet bases, prediction, fitting and SNR weights | `EmissionModel`, `GaussianProcessEmission`, `FixedObservationModel`, `AffineGaussianObservation`, PCA/Fourier/wavelet helpers |
 | `dynamics` | Static/LDS initialization, filtering, smoothing, learning and conjugate distributions | `DynamicsModel`, `StaticDynamics`, `LinearDynamics` |
 | `alignment` | Identity/AMTGP policies, grids, optimization, prior and caches | `NoAlignment`, `GPAlignment`, `GaussianProcessWarp` |
 | `numerics` | Shared low-level normalization | private |
@@ -30,12 +30,13 @@ engines -> cluster lifecycle, HMM messages, objective scoring, output weights
         -> HDP variational component
         -> GP emission -> GP prior/prediction and training
                        -> static/LDS dynamics
+                       -> fixed affine observation decoder
         -> alignment policy -> native AMTGP or identity
 scientific components -> numerical helpers and numerical libraries
 ```
 
 Engines share state, not an inference loop. HDP does not orchestrate emissions,
-dynamics or alignment. Dynamics does not import the main model or emission class.
+dynamics or alignment. Dynamics algorithms do not import the main model or GP emission class.
 Alignment policy owns enable/disable decisions; the warper owns its optimizer/cache.
 
 `model._state.ModelState` has typed initialization and private component dispatch.
@@ -58,6 +59,14 @@ Native state has no old constructor, `include_sample`, `include_batch` or `from_
 covariance and prediction operations; `_training` owns fitting objectives,
 optimizers and stopping loops; `_torch_models` owns the three active GPyTorch
 training classes. Unused alternate warp models were retired, not duplicated.
+
+`emissions._fixed_observation` owns the fixed observation contract and exact
+affine Gaussian decoder. `_pca` calibrates a decoder and its priors; `_fourier`
+and `_wavelet` construct fixed synthesis bases. These describe the mapping from
+latent states to observations. Kalman recurrences, smoothing and conjugate
+parameter calculations stay in `dynamics`. The old observation modules and
+exports under `dynamics` have been removed. Package initialization, examples
+and diagnostic scripts import observation objects from `emissions`.
 
 Root `__all__` contains exactly `HDPGPC`, `HDPGPCConfig`, `UpdateResult`, `Prediction`
 and `LatentState`. Underscore modules and mutable fields are private. Namespace

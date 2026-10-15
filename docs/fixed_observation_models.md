@@ -51,7 +51,7 @@ decoder can be installed directly:
 
 ```python
 from hdpgpc.config import with_fixed_observation_model
-from hdpgpc.dynamics import AffineGaussianObservation
+from hdpgpc.emissions import AffineGaussianObservation
 
 decoder = AffineGaussianObservation(
     C=decoder_matrix, Sigma=observation_covariance,
@@ -76,6 +76,23 @@ per-cluster A/Gamma. It requires one output, CPU inference, a fixed GP kernel,
 and no alignment warp. The serialized configuration contains the arrays and
 policies rather than a Python callback. The decoder's own `state_dict()` is a
 separate, data-only representation.
+
+`make_fourier_observation(grid, window_size=16, n_harmonics=6)` constructs this same affine
+class with a real orthonormal windowed Fourier synthesis matrix. A full basis retains
+the waveform information; a selected basis reduces the LDS dimension. Its
+encoding, Gaussian score, predictive covariance, Sigma policies and
+serialization use the same methods as PCA and the linear autoencoder. See
+[fixed windowed Fourier observation](fourier_observation.md) for the coefficient
+ordering and a runnable example. Fixed identity emission can also use this
+interface by supplying `C=np.eye(N)` to `AffineGaussianObservation` and
+installing it with `with_fixed_observation_model`. The usual learned-C LDS
+continues to learn its emission matrix through its existing parameter policy.
+
+New `with_pca_emission` configurations delegate to this generic installer.
+`make_wavelet_observation(grid)` also uses this installer and the same affine
+Gaussian methods, with a full orthonormal Haar decoder. See
+[fixed wavelet observation](wavelet_observation.md) for ordering and the ACSF1 example.
+Previously saved `pca_*` metadata are still accepted when loading recipes.
 
 [The UCR archive example](../examples/ucr_autoencoder_archive.py) then fixes
 A to the zero matrix while learning a separate Gamma for each cluster from a
