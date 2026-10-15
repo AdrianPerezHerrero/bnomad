@@ -45,7 +45,7 @@ from hdpgpc.config import (
     HDPGPCConfig, InferenceConfig, MatrixPolicyConfig, MultiOutputConfig, NoisePolicyConfig,
     NumericalConfig, with_fixed_observation_model,
 )
-from hdpgpc.dynamics import AffineGaussianObservation
+from hdpgpc.emissions import AffineGaussianObservation
 from hdpgpc.diagnostics import cluster_label_statistics, plot_embedding_summary
 from tutorial_utils import plot_record_results
 
@@ -179,7 +179,7 @@ def calibrate_autoencoder(train: np.ndarray, *, grid: np.ndarray,
     latent_cov += ridge * np.eye(latent_dim)
     latent_cov *= covariance_scale
     noise = max(float(np.mean(residual ** 2)),
-                0.05 * float(np.var(batch)), 1e-8)
+                0.05 * float(np.var(batch)), 1e-8) * 0.1
     decoder = AffineGaussianObservation(
         C=scale * basis, Sigma=noise * np.eye(train.shape[1]),
         observation_grid=grid, offset=mean,
@@ -194,7 +194,7 @@ def make_config(decoder: AffineGaussianObservation, args) -> HDPGPCConfig:
     update = ('conjugate_batch' if args.schedule == 'offline'
               else 'conjugate_sequential')
     base = HDPGPCConfig(
-        verbose='silent',
+        verbose='debug',
         hdp=HDPConfig(hdp_hyp=args.hdp_preset, hmm_switch=False,
                       max_models=args.max_clusters),
         emission=GPEmissionConfig(
@@ -208,15 +208,15 @@ def make_config(decoder: AffineGaussianObservation, args) -> HDPGPCConfig:
             lds_update=update, lds_scoring='final'),
         alignment=AlignmentConfig(policy='none'),
         inference=InferenceConfig(
-            schedule=args.schedule, warp=False, hard_assignments=True,
-            birth_lds_kl_per_dimension=True, n_explore_steps=4,
+            schedule=args.schedule, warp=False, hard_assignments=False,
+            birth_lds_kl_per_dimension=True, n_explore_steps=10,
             it_limit=args.iterations if args.schedule == 'offline' else None),
         multi_output=MultiOutputConfig(n_outputs=1, share_gp=True, use_snr=False),
         numerics=NumericalConfig(seed=args.seed, num_threads=1,
                                  dtype='float64', deterministic=True),
     )
     configured = with_fixed_observation_model(
-        base, decoder, sigma_policy=NoisePolicyConfig(mode='fixed'))
+        base, decoder, sigma_policy=NoisePolicyConfig(mode='cluster'))
     # A=0 makes successive archive rows independent under the latent prior.
     # Gamma starts from the calibrated encoder-code covariance, then each
     # cluster updates its own posterior without depending on the previous row.
@@ -315,16 +315,16 @@ def main() -> None:
                         help='Maximum waveform resolution after interpolation (default: 64).')
     parser.add_argument('--ae-beats', type=int, default=400)
     parser.add_argument('--ae-epochs', type=int, default=60)
-    parser.add_argument('--latent-dim', type=int, default=15)
+    parser.add_argument('--latent-dim', type=int, default=40)
     parser.add_argument('--schedule', choices=('offline', 'online_fast', 'online'),
                         default='offline')
     parser.add_argument('--iterations', type=int, default=30,
                         help='Maximum offline iterations (default: 30).')
     parser.add_argument('--max-clusters', type=int, default=30)
-    parser.add_argument('--hdp-preset', choices=('less', 'balanced', 'more'),
-                        default='more')
+    parser.add_argument('--hdp-preset', choices=('less', 'balanced', 'more', 'max'),
+                        default='max')
     parser.add_argument('--process-noise', '--latent-covariance-scale',
-                        dest='process_noise', type=float, default=1.0,
+                        dest='process_noise', type=float, default=0.05,
                         help='Scale the calibrated, fixed latent covariance (default: 1).')
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()

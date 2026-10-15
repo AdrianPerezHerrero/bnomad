@@ -286,11 +286,11 @@ def main() -> None:
     parser.add_argument('--iterations', type=int, default=30,
                         help='Maximum offline iterations.')
     parser.add_argument('--max-clusters', type=int, default=30)
-    parser.add_argument('--hdp-preset', choices=('less', 'balanced', 'more'),
+    parser.add_argument('--hdp-preset', choices=('less', 'balanced', 'more', 'max'),
                         default='more')
     parser.add_argument('--gamma', type=float, default=0.1,
                         help='Fixed Gamma = gamma times identity.')
-    parser.add_argument('--sigma-prior', type=float, default=2.0,
+    parser.add_argument('--sigma-prior', type=float, default=0.01,
                         help='Initial Sigma covariance scale.')
     parser.add_argument('--sigma-mode', choices=('cluster', 'cluster_diagonal'),
                         default='cluster')
@@ -307,8 +307,8 @@ def main() -> None:
     parser.add_argument('--dtw-points', type=int, default=24)
     parser.add_argument('--dtw-inducing', type=int, default=10)
     parser.add_argument('--dtw-lengthscale', type=float, default=0.2)
-    parser.add_argument('--dtw-amplitude', type=float, default=5.0)
-    parser.add_argument('--dtw-anchor-noise', type=float, default=2.0)
+    parser.add_argument('--dtw-amplitude', type=float, default=0.1)
+    parser.add_argument('--dtw-anchor-noise', type=float, default=0.05)
     parser.add_argument('--exploration-steps', type=int, default=5)
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
