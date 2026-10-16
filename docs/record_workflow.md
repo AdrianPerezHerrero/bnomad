@@ -7,6 +7,13 @@ and `DEFAULTS` layout as Daphnet and the UCR examples. The reusable preparation,
 configuration and reporting stages live in the package. See the
 [common workflow and run-folder guide](experiment_workflows.md).
 
+For a fixed PCA observation model, use
+`python examples/mitbih_pca_clustering.py --records 100 --components 12`.
+This shares the waveform runner's data loading, annotation alignment and reports.
+It calibrates PCA once, then learns cluster dynamics in the reduced latent space.
+Select `--sigma-mode cluster_diagonal` or `--sigma-mode cluster` to learn the
+observation covariance, or leave it at the calibrated fixed covariance.
+
 ```python
 from hdpgpc import HDPGPC
 from hdpgpc.preprocessing import prepare_sequences

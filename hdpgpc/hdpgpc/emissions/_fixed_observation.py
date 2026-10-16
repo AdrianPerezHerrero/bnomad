@@ -15,12 +15,19 @@ import torch
 
 
 def _chol_cov(value):
-    matrix = 0.5 * (value + value.T)
-    eye = torch.eye(len(matrix), dtype=matrix.dtype, device=matrix.device)
-    scale = torch.diag(matrix).abs().mean().clamp_min(torch.finfo(matrix.dtype).eps)
+    matrix = 0.5 * (value + value.mT)
+    eye = torch.eye(matrix.shape[-1], dtype=matrix.dtype, device=matrix.device)
+    scale = matrix.diagonal(dim1=-2, dim2=-1).abs().mean(-1).clamp_min(torch.finfo(matrix.dtype).eps)
     for relative in (1e-8, 1e-7, 1e-6, 1e-5, 1e-4):
-        factor, info = torch.linalg.cholesky_ex(matrix + relative * scale * eye)
-        if not bool(info.item()):
+        factor, info = torch.linalg.cholesky_ex(matrix + relative * scale[..., None, None] * eye)
+        if not bool(info.any()):
+            return factor
+        if info.ndim:
+            # Successful rows keep the same jitter as their scalar counterpart.
+            failed = torch.where(info != 0)[0]
+            factor = factor.clone()
+            for index in failed.tolist():
+                factor[index] = _chol_cov(matrix[index])
             return factor
     raise torch.linalg.LinAlgError('Fixed observation covariance is not positive definite')
 
@@ -255,27 +262,78 @@ class AffineGaussianObservation(FixedObservationModel):
         return -0.5 * (quadratic + trace + logdet
                        + self.observation_dim * np.log(2 * np.pi))
 
+    def condition_batch(self, prior_mean, prior_covariance, observations, *,
+                        responsibilities, noise=None):
+        """Condition independent states sharing one prior covariance and decoder.
+
+        Repeated responsibilities reuse a factorization. The caller separates
+        the initial-state prior from subsequent independent process priors.
+        This method does not perform sequential parameter learning.
+        """
+        mean = torch.as_tensor(prior_mean).reshape(-1, 1)
+        covariance = torch.as_tensor(prior_covariance, dtype=mean.dtype, device=mean.device)
+        values = torch.as_tensor(observations, dtype=mean.dtype, device=mean.device)
+        if values.ndim == 3 and values.shape[-1] == 1:
+            values = values[..., 0]
+        weights = torch.as_tensor(responsibilities, dtype=mean.dtype, device=mean.device).reshape(-1)
+        if (values.ndim != 2 or values.shape != (len(weights), self.observation_dim)
+                or mean.shape != (self.latent_dim, 1)
+                or not bool(torch.isfinite(weights).all()) or bool((weights <= 0).any())):
+            raise ValueError('Independent batch requires matching observations and positive responsibilities')
+        C, Sigma, offset = self._tensors(mean, noise)
+        prior_precision = torch.cholesky_inverse(_chol_cov(covariance))
+        if torch.equal(Sigma, torch.diag(torch.diag(Sigma))):
+            inverse_variance = 1. / torch.diag(Sigma)
+            encoded_precision = C.T @ (inverse_variance[:, None] * C)
+            information = C.T @ (inverse_variance[:, None] * (values.T - offset))
+        else:
+            chol = _chol_cov(Sigma)
+            encoded_precision = C.T @ torch.cholesky_solve(C, chol)
+            information = C.T @ torch.cholesky_solve(values.T - offset, chol)
+        encoded_precision = .5 * (encoded_precision + encoded_precision.T)
+        if weights.requires_grad:
+            unique, inverse = weights, torch.arange(len(weights), device=weights.device)
+        else:
+            unique, inverse = torch.unique(weights, return_inverse=True)
+        precision = prior_precision[None, :, :] + unique[:, None, None] * encoded_precision[None, :, :]
+        posterior = torch.cholesky_inverse(_chol_cov(precision))
+        posterior = .5 * (posterior + posterior.mT)
+        covariance_batch = posterior[inverse]
+        natural = prior_precision @ mean + weights[None, :] * information
+        means = covariance_batch @ natural.T.unsqueeze(-1)
+        return means, covariance_batch
+
     def expected_log_likelihood_batch(self, observations, latent_mean,
                                       latent_covariance, *, noise=None):
-        """Score many observations with one latent posterior and one factorization."""
-        mean = torch.as_tensor(latent_mean).reshape(-1, 1)
+        """Score observations with one shared or one per-observation posterior."""
+        mean = torch.as_tensor(latent_mean)
         covariance = torch.as_tensor(latent_covariance, dtype=mean.dtype, device=mean.device)
         values = torch.as_tensor(observations, dtype=mean.dtype, device=mean.device)
         if values.ndim == 3 and values.shape[-1] == 1:
             values = values[..., 0]
         if values.ndim != 2 or values.shape[1] != self.observation_dim:
             raise ValueError('Batch observations have the wrong dimension')
+        if mean.ndim < 3:
+            mean = mean.reshape(1, -1, 1)
+        if mean.shape[-2:] != (self.latent_dim, 1) or len(mean) not in (1, len(values)):
+            raise ValueError('Latent means must be one state or one state per observation')
+        if covariance.ndim == 2:
+            covariance = covariance.unsqueeze(0)
+        if covariance.shape[-2:] != (self.latent_dim, self.latent_dim) or len(covariance) not in (1, len(values)):
+            raise ValueError('Latent covariances must be one state or one state per observation')
         C, Sigma, offset = self._tensors(mean, noise)
-        residual = values.T - offset - C @ mean
+        residual = values.T - offset - (C @ mean).squeeze(-1).T
         if torch.equal(Sigma, torch.diag(torch.diag(Sigma))):
             variance = torch.diag(Sigma)
             quadratic = torch.sum(residual.square() / variance[:, None], dim=0)
-            trace = torch.sum(torch.sum((C @ covariance) * C, dim=1) / variance)
+            precision = C.T @ (C / variance[:, None])
+            trace = torch.einsum('ij,nji->n', precision, covariance)
             logdet = torch.log(variance).sum()
         else:
             chol = _chol_cov(Sigma)
             quadratic = torch.sum(residual * torch.cholesky_solve(residual, chol), dim=0)
-            trace = torch.trace(torch.cholesky_solve(C @ covariance @ C.T, chol))
+            precision = C.T @ torch.cholesky_solve(C, chol)
+            trace = torch.einsum('ij,nji->n', precision, covariance)
             logdet = 2 * torch.log(torch.diag(chol)).sum()
         return -0.5 * (quadratic + trace + logdet
                        + self.observation_dim * np.log(2 * np.pi))

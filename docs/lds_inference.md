@@ -68,6 +68,11 @@ clusters and count their prior and parameter KL once.
 
 ## Sequential and batch parameter learning
 
+Compatible fixed-zero A and affine-observation batch fits automatically use
+batched conditioning and scoring. Independent cluster assignments also bypass
+HMM recurrences when `hmm_switch=False`. See [independent fast paths](independent_fast_paths.md)
+for exact activation conditions, state conventions and general-path fallbacks.
+
 The package default is `conjugate_sequential`. Both online schedules process
 one observation at a time and update the cluster LDS using its current
 smoothed state moments. Offline inference may use that same sequential

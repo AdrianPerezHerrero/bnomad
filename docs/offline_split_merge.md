@@ -91,14 +91,15 @@ generator and leaves inference's random state untouched. Feature construction
 and affine pseudoinverses are computed once per fit; merge ranking continues
 using its original standardized waveform features.
 
-Every parent with at least four MAP members gets up to two cheap partitions,
+Every parent with at least two MAP members gets up to two cheap partitions,
 starting respectively from its worst-scoring member and the member farthest
 from its weighted center. The other seed is the farthest member from that seed.
 Each partition uses at most six weighted two-means steps. Complement-equivalent
-partitions are deduplicated. Both children must have at least 2.0 units of parent
-responsibility among the parent's MAP members. This prevents singleton outlier
-initializations; it is an initialization restriction, not a constraint imposed
-on subsequent full-model refinement.
+partitions are deduplicated. Singleton children are allowed, including a split
+of two observations into two singletons. Both children must have positive parent
+responsibility mass; in soft mode a singleton may carry fractional mass. The
+existing variance floor keeps a singleton's proxy covariance nonzero. Full-model
+refinement and objective-based acceptance still determine whether to retain it.
 
 For each partition, parent weights `w_t = r_tk` over those MAP members supply
 the count, first moment and diagonal variance of one Gaussian and each child.
@@ -177,6 +178,11 @@ forward/backward and pair-message calculations then refine these statistics.
 Hard assignments use adjacent hard labels to keep transition counts coherent.
 
 ## Cost and state ownership
+
+Independent assignments bypass forward/backward, and compatible fixed-zero A
+affine models use batched state conditioning and scoring. See [automatic fast
+paths](independent_fast_paths.md). Proposal refinement remains global; these
+optimizations do not restrict outside observations from moving into a child.
 
 - Candidate GP kernels reuse their fitted parent kernels. The first fit retains
   the configured GP fitting behavior and initial cross-output kernel sharing.

@@ -38,6 +38,10 @@ scientific components -> numerical helpers and numerical libraries
 
 Engines share state, not an inference loop. HDP does not orchestrate emissions,
 dynamics or alignment. Dynamics algorithms do not import the main model or GP emission class.
+`dynamics/_independent.py` owns compatible fixed-zero-transition batch
+trajectory operations; `AffineGaussianObservation` owns batched conditioning
+and likelihoods. `inference/_messages.py` dispatches independent assignments
+directly. [Fast-path conditions](independent_fast_paths.md) document fallbacks.
 Alignment policy owns enable/disable decisions; the warper owns its optimizer/cache.
 
 `model._state.ModelState` has typed initialization and private component dispatch.

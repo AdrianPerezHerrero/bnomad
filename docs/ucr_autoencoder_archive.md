@@ -28,6 +28,14 @@ multiplier on calibrated latent covariance. Use `--components`,
 explicitly, together with observation-noise scaling, to compare representations
 under matching dimensions/scales.
 
+The UCR `--sigma-prior` and `--gamma-prior` arguments also apply to the decoder:
+they multiply calibrated Sigma and latent covariance respectively, after the
+existing observation/process noise-scale controls. Both default to 0.001 in the
+shared runner. To retain the previous calibrated values, explicitly use
+`--sigma-prior 1 --gamma-prior 1`. The gamma multiplier affects both initial
+latent-state covariance and the Gamma noise prior. These factors multiply
+variances/covariances without squaring them; fixed/learned policies are unchanged.
+
 A=0 and HMM conditioning is off, since archive row order is arbitrary. Gamma
 learns per cluster. `--gamma-mode` and `--sigma-mode` select existing compatible
 noise policies; C and the decoder offset remain fixed. GP kernel fitting and

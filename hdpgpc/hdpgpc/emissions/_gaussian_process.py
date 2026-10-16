@@ -651,6 +651,10 @@ class GaussianProcessEmission:
         if active.numel() == 0:
             return q, q_lat
 
+        from ..dynamics import _independent
+        if _independent.full_pass(self, x_trains, y_trains, resp, active):
+            return self.compute_sq_err_all(x_trains, y_trains), self.compute_q_lat_all(x_trains)
+
         batch_lds = self.lds_update == 'conjugate_batch'
         if batch_lds and not self.inducing_points and any(not torch.equal(x_trains[index], self.x_basis)
                              for index in active.tolist()):
@@ -743,6 +747,12 @@ class GaussianProcessEmission:
         if len(self.indexes) == 0:
             return sq_err
 
+        from ..dynamics import _independent
+        if _independent.compatible(self):
+            independent_scores = _independent.observation_scores(self, x_trains, y_trains, no_first=no_first)
+            if independent_scores is not None:
+                return independent_scores
+
         idx_t = torch.as_tensor(self.indexes, device=device, dtype=torch.long)
         sample_ids = torch.arange(n_samps, device=device, dtype=torch.long)
 
@@ -823,6 +833,9 @@ class GaussianProcessEmission:
             return sq_err
         if len(torch.nonzero(self.Gamma[-1]))< 1:
             return sq_err
+        from ..dynamics import _independent
+        if _independent.compatible(self):
+            return _independent.latent_scores(self, len(x_trains), h_ini)
         for j, index in enumerate(self.indexes):
             sq_err[index] = self.log_lat_error(j, h_ini)
         return sq_err

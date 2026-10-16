@@ -14,6 +14,7 @@ import torch
 
 from . import _offline as legacy
 from ._birth_diagnostics import capture_seed, capture_refit
+from ._messages import assignment_messages
 
 
 def _partition_key(resp):
@@ -89,8 +90,9 @@ def _split_gain(features, weights, assignment):
     groups = torch.stack((assignment == 0, assignment == 1), 1).to(weights.dtype)
     grouped_weights = weights[:, None] * groups
     masses = grouped_weights.sum(0)
-    # Soft memberships must carry actual mass, not just many tiny probabilities.
-    if bool((masses < 2.).any()):
+    # Singleton children are valid, including fractional parent responsibility
+    # in soft mode. Only empty children cannot define the weighted proxy fit.
+    if bool((masses <= 0.).any()):
         return None
     mass = masses.sum()
     mean = (weights[:, None] * features).sum(0) / mass
@@ -303,8 +305,7 @@ def _refine(state, steps):
         start = (state.hdp.expected_log_start(state.M, state.startTheta) if state.hmm_switch
                  else state.hdp.expected_log_iid_weights(state.M))
         state.fmsg = None  # full batch, never the online tail-message cache
-        alpha, scales = state.forward(start, state.trans_A, evidence)
-        beta = state.backward(state.trans_A, evidence, scales)
+        alpha, beta, scales = assignment_messages(state, start, state.trans_A, evidence)
         resp = state._safe_exp(torch.log(alpha) + torch.log(beta))
         if state.hard_assignments:
             pair = resp.new_zeros((state.T, state.M, state.M))
@@ -347,7 +348,7 @@ def _moves(state, features, split_features=None):
         losses = -(state.static_factor * state.weight_mean(state.q_last, state.snr_last)
                    + state.dynamic_factor * state.weight_mean(state.q_lat_last, state.snr_last))
         members = {k: torch.where(labels == k)[0] for k in range(count)}
-        parents = [k for k in range(count) if len(members[k]) >= 4]
+        parents = [k for k in range(count) if len(members[k]) >= 2]
         parent_loss = {k: float((resp[:, k] * losses[:, k]).sum()) for k in parents}
         candidates = []
         used = set()

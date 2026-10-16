@@ -45,8 +45,10 @@ def build_parser(representation, description=None, defaults=None):
                         default='fixed' if representation == 'waveform' else 'cluster')
     parser.add_argument('--process-noise', '--latent-covariance-scale', type=float, default=1.)
     parser.add_argument('--observation-noise-scale', type=float, default=1.)
-    parser.add_argument('--sigma-prior', type=float, default=.001)
-    parser.add_argument('--gamma-prior', '--gamma', type=float, default=.001)
+    parser.add_argument('--sigma-prior', type=float, default=.001,
+                        help='Waveform noise variance, or multiplier of calibrated decoder Sigma (1 preserves calibration).')
+    parser.add_argument('--gamma-prior', '--gamma', type=float, default=.001,
+                        help='Waveform process variance, or multiplier of calibrated decoder latent covariance (1 preserves calibration).')
     if representation in ('pca', 'autoencoder'):
         parser.add_argument('--components', '--latent-dim', type=int, default=12)
         parser.add_argument('--calibration-samples', '--pca-samples', '--ae-beats', type=int, default=400)
@@ -72,6 +74,11 @@ def build_parser(representation, description=None, defaults=None):
 def make_config(grid, args, decoder=None):
     """Construct the single HDPGPC recipe; no wrapper model is introduced."""
     policy = alignment_policy(args)
+    if decoder is not None:
+        # Calibration has already applied the existing noise-scale controls.
+        # Apply the prior multipliers here for every supplied affine decoder.
+        decoder = replace(decoder, Sigma=args.sigma_prior * decoder.Sigma,
+                          latent_covariance=args.gamma_prior * decoder.latent_covariance)
     dimension = len(grid) if decoder is None else decoder.latent_dim
     sigma = (args.sigma_prior * args.observation_noise_scale if decoder is None
              else float(np.diag(decoder.Sigma).mean()))
@@ -146,11 +153,11 @@ def calibrate(train, grid, args, destination):
                 train, estimate.network, estimate.indices, estimate.losses)}
     elif kind == 'fourier':
         decoder = make_fourier_observation(grid, window_size=args.window_size,
-            n_harmonics=args.harmonics, Sigma=args.sigma_prior * args.observation_noise_scale,
-            latent_covariance=args.gamma_prior * args.process_noise)
+            n_harmonics=args.harmonics, Sigma=args.observation_noise_scale,
+            latent_covariance=args.process_noise)
     else:
-        decoder = make_wavelet_observation(grid, Sigma=args.sigma_prior * args.observation_noise_scale,
-                                           latent_covariance=args.gamma_prior * args.process_noise)
+        decoder = make_wavelet_observation(grid, Sigma=args.observation_noise_scale,
+                                           latent_covariance=args.process_noise)
     np.savez_compressed(destination / 'observation_calibration.npz', **decoder.state_dict())
     metadata['latent_dimension'] = decoder.latent_dim
     return decoder, metadata, figures
@@ -176,6 +183,13 @@ def run_dataset(archive, name, pair, args, run):
     selected = rng.permutation(selected)
     values, labels = values[selected, :, None], labels[selected]
     config = make_config(grid, args, decoder)
+    if decoder is not None:
+        # Save the covariances actually installed in the recipe, including the
+        # prior multipliers, rather than just the pre-prior pilot estimates.
+        prior_state = decoder.state_dict()
+        prior_state['Sigma'] = config.observation.Sigma_policy.value
+        prior_state['latent_covariance'] = config.observation.fixed_latent_covariance
+        np.savez_compressed(run.path / 'observation_calibration.npz', **prior_state)
     (run.path / 'config.yaml').write_text(config.to_yaml(), encoding='utf-8')
     log_configuration(config, args, source='TRAIN calibration' if decoder is not None else 'configured')
     # The same public call is used by every experiment variant.

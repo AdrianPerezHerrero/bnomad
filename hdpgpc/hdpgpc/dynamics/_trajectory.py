@@ -433,9 +433,14 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
         previous_cov = self.cov_f_sm[position]
         filtered_previous_cov = self.cov_f[position]
         A_q, Gamma_q = self.A[position], self.Gamma[position]
-        predicted_cov = A_q @ filtered_previous_cov @ A_q.T + Gamma_q
-        gain = torch.cholesky_solve(A_q @ filtered_previous_cov.T,
-                                    self._chol_spd(predicted_cov)).T
+        if not A_q.requires_grad and torch.count_nonzero(A_q) == 0:
+            # Exactly independent states: the lag covariance is zero, so a
+            # Cholesky solve for the zero RTS gain would be redundant.
+            gain = torch.zeros_like(filtered_previous_cov)
+        else:
+            predicted_cov = A_q @ filtered_previous_cov @ A_q.T + Gamma_q
+            gain = torch.cholesky_solve(A_q @ filtered_previous_cov.T,
+                                        self._chol_spd(predicted_cov)).T
         transition_y.append(root * mean)
         transition_f.append(root * previous_mean)
         transition_cov_y = transition_cov_y + weight * covariance

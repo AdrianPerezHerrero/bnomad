@@ -32,6 +32,20 @@ score variances. Sigma initially contains per-point reconstruction residual
 variances. The pilot floors both types of variance at `--noise-floor` (1e-6).
 `--process-noise` multiplies the latent prior variances; its default is 1.
 `--observation-noise-scale` multiplies the residual Sigma prior, also default 1.
+`--sigma-prior` and `--gamma-prior` additionally multiply these calibrated
+covariances (both runner defaults are 0.001):
+
+```text
+Sigma_initial = sigma_prior * observation_noise_scale * calibrated_residual_covariance
+Gamma_initial = gamma_prior * process_noise * calibrated_latent_covariance
+```
+
+These are covariance multipliers, not standard deviations and not prior degrees
+of freedom. The latent initial-state covariance receives the same gamma factor.
+Use `--sigma-prior 1 --gamma-prior 1` to retain the earlier calibrated noise
+scales. Noise policies still decide whether these values stay fixed or initialize
+learned posteriors. The saved calibration NPZ and configuration contain the
+effective scaled matrices.
 
 Installation uses the shared `with_fixed_observation_model` helper and
 `AffineGaussianObservation` implementation. Filtering consumes waveform-space

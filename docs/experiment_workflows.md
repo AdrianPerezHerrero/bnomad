@@ -14,6 +14,7 @@ python examples/ucr_autoencoder_clustering.py --datasets Coffee --components 12
 python examples/ucr_waveform_clustering.py --datasets Coffee --no-warp
 python examples/daphnet_waveform_clustering.py --records S02R01 --warp
 python examples/mitbih_waveform_clustering.py --records 100 --no-warp
+python examples/mitbih_pca_clustering.py --records 100 --components 12
 python examples/mitbih_autoencoder_clustering.py --records 100 --calibration-samples 400
 python examples/ucr_fourier_clustering.py --datasets ACSF1 --window-size 16
 python examples/ucr_wavelet_clustering.py --datasets ACSF1
@@ -53,6 +54,7 @@ inference engine. General plotting belongs to `hdpgpc.diagnostics`.
 | Resolution/subset | `--max-points`, `--max-series` |
 | Calibration | `--components`, `--calibration-samples`; AE also `--epochs`, `--learning-rate` |
 | Normalization | `--normalize-samples` / `--no-normalize-samples` |
+| UCR covariance priors | `--sigma-prior`, `--gamma-prior`: variances for waveform mode; covariance multipliers for calibrated decoders |
 | Diagnostics | `--plots`, `--projection-plots`, `--lds-plots`, `--lds-dynamics-plots`, `--warp-plots`, `--birth-plots N` |
 | Reproducibility | `--seed`, `--output-dir`, `--resume`, `--verbose silent/progress/debug` |
 
@@ -86,6 +88,7 @@ The singular `--dataset` remains an alias for one UCR dataset.
 | --- | --- | --- |
 | ECG waveform | Chronological; `stable` LDS preset; DTW-GP enabled | Gamma and Sigma per cluster, with preset shrinkage |
 | Daphnet waveform | Chronological; `only_plastic`; warp off | Gamma per cluster; Sigma fixed |
+| ECG PCA | Chronological; fixed calibrated PCA C | Gamma per cluster; Sigma fixed (selectable) |
 | ECG autoencoder | Chronological; fixed trained affine C | Gamma per cluster; Sigma fixed |
 | UCR waveform | HMM off; A=0, C=I; DTW-GP enabled | Sigma full per cluster; Gamma fixed |
 | UCR PCA | HMM off; A=0; fixed PCA C | Gamma full and Sigma diagonal per cluster |
@@ -106,8 +109,19 @@ cluster; only Sigma's noise policy is selectable.
 For record PCA, use:
 
 ```powershell
-python examples/mitbih_waveform_clustering.py --records 100 --representation pca --no-warp --no-fit-gp --components 12
+python examples/mitbih_pca_clustering.py --records 100 --components 12
+python examples/mitbih_pca_clustering.py --records 100 --offline-strategy split_merge --sigma-mode cluster_diagonal
 ```
+
+The dedicated PCA entry point defaults to 12 components, a 400-beat calibration
+minibatch, 50 outer iterations, no warp and no GP kernel fitting. Calibration
+reduces the component count if the waveform or minibatch is smaller. PCA's mean
+and decoder remain fixed, A/Gamma learn per cluster, and Sigma defaults to the
+calibrated fixed residual covariance. `--sigma-mode` selects a learned or shared
+covariance when supported by the model. Outputs are saved under
+`agents/mitbih_pca_runs/<record>/<run_id>/`. The waveform entry point's
+`--representation pca` option remains available with explicit `--no-warp
+--no-fit-gp`.
 
 Online record calibration defaults to a prefix and rejects uniform sampling;
 the prefix is replayed during fitting. Offline calibration can sample uniformly.

@@ -119,6 +119,26 @@ def _backward_log_fallback(q, transition_weights):
     return torch.exp(log_beta)
 
 
+def _iid_messages(self, q):
+    """Independent-label marginals without any forward/backward recurrence."""
+    evidence = _shifted_log_evidence(q)
+    weights = self.hdp.expected_log_iid_weights(q.shape[1]).to(q)
+    joint = evidence + weights - weights.max()
+    normalizers = torch.logsumexp(joint, dim=1)
+    if not bool(torch.isfinite(normalizers).all()):
+        raise FloatingPointError('Independent assignments have no finite component')
+    return torch.softmax(joint, dim=1), torch.ones_like(q), normalizers.exp()
+
+
+def assignment_messages(self, start, transitions, evidence):
+    """Keep the native HMM path; dispatch independent assignments directly."""
+    if not self.hmm_switch:
+        return _iid_messages(self, evidence)
+    alpha, scales = self.forward(start, transitions, evidence)
+    beta = self.backward(transitions, evidence, scales)
+    return alpha, beta, scales
+
+
 def variational_local_terms(self, q, transTheta=None, startTheta=None, liks=None,
                             classify=False, hard_assignments=None):
     """
@@ -157,8 +177,7 @@ def variational_local_terms(self, q, transTheta=None, startTheta=None, liks=None
             q_aux[-1] = -np.inf
     m_ = np.argmax(self.weight_mean(q)[-1])
     q_, _ = self.LogLik(self.weight_mean(q))
-    alpha, margprob = self.forward(startPi, transPi, q_)
-    beta = self.backward(transPi, q_, margprob)
+    alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_)
     resp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
     m_resp = np.argmax(self.cond_cpu(resp[-1]))
     respPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_, margprob), axis=1)
@@ -217,6 +236,9 @@ def forward(self, pi=None, trans_A=None, q=None):
         trans_A = self.trans_A
     if q is None:
         q = self.q[-1]
+    if not self.hmm_switch:
+        alpha, _, scales = _iid_messages(self, q)
+        return alpha, scales
     M = self.M
     T = q.shape[0]
     K = q.shape[1]
@@ -290,6 +312,8 @@ def backward(self, trans_A=None, q=None, margprob=None):
         trans_A = self.trans_A
     if q is None:
         q = self.q[-1]
+    if not self.hmm_switch:
+        return torch.ones_like(q)
     M = q.shape[1]
     q_ = q
 
@@ -336,6 +360,12 @@ def coupled_state_coef(self, alpha=None, beta=None, trans_A=None, q=None, margpr
         Psi coefficients.
 
     """
+    if not self.hmm_switch:
+        if alpha is None:
+            alpha, _, _ = _iid_messages(self, self.q[-1] if q is None else q)
+        pairs = alpha.new_zeros((len(alpha), alpha.shape[1], alpha.shape[1]))
+        pairs[1:] = alpha[:-1, :, None] * alpha[1:, None, :]
+        return torch.log(pairs)
     if alpha is None or margprobs is None:
         alpha, margprobs = self.forward()
     if beta is None:

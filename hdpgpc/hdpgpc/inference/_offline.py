@@ -6,6 +6,7 @@ import math
 import torch
 from ..alignment import _components as _alignment
 from ._birth_diagnostics import capture_seed, capture_refit
+from ._messages import assignment_messages
 
 
 def _reallocation_improves(baseline, proposal, *, atol=1e-6, rtol=1e-8):
@@ -558,8 +559,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             snr_aux[:, -1, :] = torch.zeros(snr_aux[:, -1, :].shape) + torch.min(snr_aux) * 2.0
 
         q_norm, _ = self.LogLik(self.weight_mean(q_aux, snr_aux))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
+        alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp_temp = self._safe_exp(resplog_temp)
@@ -851,8 +851,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     # Compute resp
                     q_mean = self.weight_mean(q_simple_, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
-                    alpha, margprob = self.forward(startPi, transPi, q_norm)
-                    beta = self.backward(transPi, q_norm, margprob)
+                    alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
                     resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
                     respPairlog_temp, _ = self.LogLik(
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
@@ -873,8 +872,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q__[f_ind_new, -1, :] = 0.0
                     q_mean = self.weight_mean(q__, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
-                    alpha, margprob = self.forward(startPi, transPi, q_norm)
-                    beta = self.backward(transPi, q_norm, margprob)
+                    alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
                     resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
                     respPairlog_temp, _ = self.LogLik(
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
@@ -1097,8 +1095,7 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     snr_aux = torch.clone(snr_)
 
     q_norm, _ = self.LogLik(self.weight_mean(q_, snr_aux))
-    alpha, margprob = self.forward(startPi, transPi, q_norm)
-    beta = self.backward(transPi, q_norm, margprob)
+    alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
     logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
     logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
     resp_temp = self._safe_exp(logresp)
@@ -1244,8 +1241,7 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
                    if self.hmm_switch else self.hdp.expected_log_iid_weights(self.M))
 
         q_norm, _ = self.LogLik(self.weight_mean(q, snr))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
+        alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp = self._safe_exp(resplog_temp)
@@ -1272,8 +1268,7 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
                    else self.hdp.expected_log_iid_weights(self.M))
 
         q_norm, _ = self.LogLik(self.weight_mean(q_new, snr_new))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
+        alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp_new = self._safe_exp(resplog_temp)
@@ -1339,8 +1334,7 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
                     if self.transition_policies:
                         q_lat[:, m, ld] = gp.compute_q_lat_all(grids)
         q_norm, _ = self.LogLik(self.weight_mean(q, snr))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
+        alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp = self._safe_exp(resplog_temp)
