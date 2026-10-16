@@ -50,7 +50,6 @@ def build_parser(dataset='mitbih', representation='waveform', description=None, 
     parser.add_argument('--gamma-mode', choices=NOISE_MODES)
     parser.add_argument('--shrink-strength', type=float, default=10.)
     parser.add_argument('--lds-inducing-points', type=int, default=0)
-    parser.add_argument('--offline-representer-selection', choices=('sorted', 'fixed'), default='sorted')
     parser.add_argument('--sigma-prior', type=float, default=.1 if dataset == 'daphnet' else 50.)
     parser.add_argument('--gamma-prior', type=float, default=.1 if dataset == 'daphnet' else 10.)
     parser.add_argument('--lengthscale', type=float, default=.15 if dataset == 'daphnet' else 1.)
@@ -107,6 +106,10 @@ def make_config(grid, args, outputs=1, decoder=None, noise_scales=None):
             lds_update=lds_update(args), lds_scoring=args.lds_scoring, lds_step_size=args.lds_step_size),
         alignment=AlignmentConfig(policy=policy, x_basis_warp=grid if policy != 'none' else None),
         inference=InferenceConfig(schedule=args.schedule, warp=policy != 'none',
+            offline_strategy=getattr(args, 'offline_strategy', 'legacy'),
+            split_merge_refine_steps=getattr(args, 'split_merge_refine_steps', 3),
+            split_merge_stability_patience=getattr(args, 'split_merge_stability_patience', 3),
+            split_merge_score_rtol=getattr(args, 'split_merge_score_rtol', 1e-3),
             hard_assignments=args.hard_assignments, n_explore_steps=args.exploration_steps,
             birth_lds_kl_per_dimension=args.birth_lds_kl_per_dimension,
             offline_representer_selection=args.offline_representer_selection,

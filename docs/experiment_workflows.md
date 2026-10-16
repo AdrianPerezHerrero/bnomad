@@ -45,6 +45,8 @@ inference engine. General plotting belongs to `hdpgpc.diagnostics`.
 | Purpose | Arguments |
 | --- | --- |
 | Inference | `--schedule offline/online/online_fast`, `--iterations`, `--hard-assignments` / `--no-hard-assignments` |
+| Offline optimizer | `--offline-strategy legacy/split_merge`, `--split-merge-refine-steps`, `--offline-representer-selection sorted/fixed` |
+| Split/merge stopping | `--split-merge-stability-patience` (3), `--split-merge-score-rtol` (0.001) |
 | Exploration | `--hdp-preset`, `--max-clusters`, `--exploration-steps` |
 | LDS | `--lds-update`, `--lds-scoring`, `--lds-degrees`, `--lds-step-size`, `--birth-lds-kl-per-dimension` |
 | GP/alignment | `--fit-gp` / `--no-fit-gp`, `--alignment`, `--warp` / `--no-warp` |
@@ -65,6 +67,12 @@ By default, offline uses `conjugate_batch`, and online schedules use
 affine observations require CPU, one output, final scoring, no warp, no GP
 kernel fitting and a non-legacy LDS update. They use the exact existing affine
 Gaussian likelihood; encoder coordinates are not treated as noiseless states.
+
+The default offline optimizer remains `legacy`. Select `--offline-strategy
+split_merge` for group split/merge search with the same GP/LDS and HDP tools.
+`--split-merge-refine-steps` controls local refinement and `--exploration-steps`
+limits candidate fits per outer iteration. See [offline split–merge inference](offline_split_merge.md)
+for scoring, caching and stopping semantics.
 
 The scripts retain aliases for earlier CLI names, including `--latent-dim`,
 `--ae-beats`, `--ae-epochs`, `--pca-samples`, `--points`, `--max-windows`,
@@ -161,6 +169,9 @@ ECG report. Ordered summaries show transitions; unordered summaries show class
 composition. LDS and warp figures retain their existing detailed diagnostics.
 The projection is a two-dimensional visualization of codes or waveform rows;
 it does not change the fitted representation.
+Its cluster legend is placed below the three data panels in up to six columns.
+Additional legend rows increase the figure height, preserving space for the
+projections and class-composition plot when many clusters are present.
 
 `results.json` has a common schema: status, run ID, dimensions, metrics,
 class-majority confusion matrix, cluster mapping, metadata, artifact list and

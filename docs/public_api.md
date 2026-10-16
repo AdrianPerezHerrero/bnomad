@@ -232,6 +232,16 @@ Both kinds of summaries detach/copy arrays for reporting. They do not detach,
 replace or mutate training tensors. Predictions/posteriors are opt-in on `update`
 so normal streaming does not pay for their computation and matrix copies.
 
+`InferenceConfig.offline_strategy` selects `'legacy'` (default) or
+`'split_merge'` for offline fits. The latter returns detached proposal diagnostics
+through `model.split_merge_history_`; legacy fits return an empty list.
+`model.split_merge_convergence_` reports the stopping reason, iteration and
+final assignment/score stability checks (an empty dictionary for legacy fits).
+Split/merge outer stopping uses `split_merge_stability_patience=3` consecutive
+stable iterations and `split_merge_score_rtol=1e-3` by default. See
+[offline split–merge inference](offline_split_merge.md) for its controls and
+relationship to LDS updates and the configured objective.
+
 ## Advanced native engines
 
 For tensor-level classification, label-conditioned fitting and other scientific

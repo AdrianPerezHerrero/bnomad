@@ -1,5 +1,9 @@
 # Offline convergence and reallocation
 
+This page describes `offline_strategy='legacy'`, the default. The alternative
+[split–merge optimizer](offline_split_merge.md) is selected independently and
+keeps its own structural search loop.
+
 Existing-cluster reallocations require a proposal-score gain greater than
 `1e-6 + 1e-8 * max(abs(baseline), abs(proposal))`. This rejects numerical
 roundoff without changing the final birth acceptance rule.

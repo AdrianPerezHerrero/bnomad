@@ -16,6 +16,7 @@
 - [Fixed orthonormal Haar wavelet observation](wavelet_observation.md)
 - [HDP presets and gamma/transAlpha sensitivity](hdp_presets.md)
 - [Offline convergence and reallocation](offline_convergence.md)
+- [Optional offline split–merge inference](offline_split_merge.md)
 - [Alignment choices and computational tradeoffs](alignment_choices.md)
 - [Real-record Colab notebook suite](../tutorials/README.md)
 - [Public API reference](public_api.md)

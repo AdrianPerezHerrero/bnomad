@@ -40,13 +40,13 @@ def build_parser(representation, description=None, defaults=None):
                         default=DEFAULT_ARCHIVE.parents[2] / f'ucr_{representation}_results')
     parser.add_argument('--max-points', '--points', type=int, default=64)
     parser.add_argument('--max-series', type=int)
-    parser.add_argument('--sigma-mode', choices=NOISE_MODES, default='cluster_diagonal')
+    parser.add_argument('--sigma-mode', choices=NOISE_MODES, default='cluster')
     parser.add_argument('--gamma-mode', choices=NOISE_MODES,
                         default='fixed' if representation == 'waveform' else 'cluster')
     parser.add_argument('--process-noise', '--latent-covariance-scale', type=float, default=1.)
     parser.add_argument('--observation-noise-scale', type=float, default=1.)
-    parser.add_argument('--sigma-prior', type=float, default=.01)
-    parser.add_argument('--gamma-prior', '--gamma', type=float, default=.1)
+    parser.add_argument('--sigma-prior', type=float, default=.001)
+    parser.add_argument('--gamma-prior', '--gamma', type=float, default=.001)
     if representation in ('pca', 'autoencoder'):
         parser.add_argument('--components', '--latent-dim', type=int, default=12)
         parser.add_argument('--calibration-samples', '--pca-samples', '--ae-beats', type=int, default=400)
@@ -90,6 +90,10 @@ def make_config(grid, args, decoder=None):
             lds_scoring=args.lds_scoring, lds_step_size=args.lds_step_size),
         inference=InferenceConfig(
             schedule=args.schedule, warp=policy != 'none', hard_assignments=args.hard_assignments,
+            offline_strategy=getattr(args, 'offline_strategy', 'legacy'),
+            split_merge_refine_steps=getattr(args, 'split_merge_refine_steps', 1),
+            split_merge_stability_patience=getattr(args, 'split_merge_stability_patience', 3),
+            split_merge_score_rtol=getattr(args, 'split_merge_score_rtol', 1e-3),
             birth_lds_kl_per_dimension=args.birth_lds_kl_per_dimension,
             n_explore_steps=args.exploration_steps,
             it_limit=args.iterations if args.schedule == 'offline' else None),

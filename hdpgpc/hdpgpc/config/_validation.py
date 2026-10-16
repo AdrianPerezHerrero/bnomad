@@ -28,6 +28,15 @@ def validate_inference(c):
     integer(c.n_explore_steps, 'n_explore_steps')
     if c.offline_representer_selection not in ('sorted', 'fixed'):
         raise ValueError('offline_representer_selection must be sorted or fixed')
+    if c.offline_strategy not in ('legacy', 'split_merge'):
+        raise ValueError('offline_strategy must be legacy or split_merge')
+    integer(c.split_merge_refine_steps, 'split_merge_refine_steps', 1)
+    integer(c.split_merge_stability_patience, 'split_merge_stability_patience', 1)
+    if (isinstance(c.split_merge_score_rtol, bool) or not isinstance(c.split_merge_score_rtol, Real)
+            or not math.isfinite(c.split_merge_score_rtol) or c.split_merge_score_rtol < 0):
+        raise ValueError('split_merge_score_rtol must be finite and nonnegative')
+    if c.offline_strategy == 'split_merge' and c.schedule in ('online', 'online_fast'):
+        raise ValueError('split_merge strategy requires offline inference')
     integer(c.it_limit, 'it_limit', 1, optional=True)
     if c.schedule == 'offline' and (c.force_model is not None or c.minibatch != 0 or c.classify):
         raise ValueError('force_model/minibatch/classify apply only to online inference')

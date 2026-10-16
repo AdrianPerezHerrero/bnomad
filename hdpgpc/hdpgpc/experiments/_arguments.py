@@ -7,6 +7,16 @@ NOISE_MODES = ('fixed', 'cluster', 'cluster_diagonal', 'shared', 'shared_diagona
 
 def add_common_arguments(parser, *, defaults=None, ordered=False):
     parser.add_argument('--schedule', choices=('offline', 'online', 'online_fast'), default='offline')
+    parser.add_argument('--offline-strategy', choices=('legacy', 'split_merge'), default='legacy',
+                        help='Offline optimizer; legacy preserves the current birth/deletion search.')
+    parser.add_argument('--offline-representer-selection', choices=('sorted', 'fixed'), default='sorted',
+                        help='Reselect offline representatives by score, or preserve their initial seeds.')
+    parser.add_argument('--split-merge-refine-steps', type=int, default=3,
+                        help='Local refinement passes per split/merge branch (default: 3).')
+    parser.add_argument('--split-merge-stability-patience', type=int, default=3,
+                        help='Consecutive stable outer iterations required to stop (default: 3).')
+    parser.add_argument('--split-merge-score-rtol', type=float, default=1e-3,
+                        help='Relative score-change tolerance with stable responsibilities (default: 0.001).')
     parser.add_argument('--iterations', type=int, default=30)
     parser.add_argument('--max-clusters', type=int, default=30)
     parser.add_argument('--hdp-preset', choices=('less', 'balanced', 'more', 'max'), default='max')
@@ -59,6 +69,15 @@ def validate_common(args):
             or not 0 <= args.seed < 2**32):
         raise ValueError('Invalid iteration, cluster, LDS, exploration or seed controls')
     lds_update(args)
+    if getattr(args, 'split_merge_refine_steps', 3) < 1:
+        raise ValueError('split_merge_refine_steps must be positive')
+    if getattr(args, 'split_merge_stability_patience', 3) < 1:
+        raise ValueError('split_merge_stability_patience must be positive')
+    score_rtol = getattr(args, 'split_merge_score_rtol', 1e-3)
+    if not math.isfinite(score_rtol) or score_rtol < 0:
+        raise ValueError('split_merge_score_rtol must be finite and nonnegative')
+    if getattr(args, 'offline_strategy', 'legacy') == 'split_merge' and args.schedule != 'offline':
+        raise ValueError('split_merge strategy requires --schedule offline')
 
 
 def validate_affine(args):

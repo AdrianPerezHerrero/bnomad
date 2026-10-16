@@ -50,16 +50,19 @@ class OnlineInference(InferenceEngine):
 
 
 class OfflineInference(InferenceEngine):
-    """Repeated batch local/global updates and the existing batch utility paths.
+    """Selectable offline optimizers and the existing batch utility paths.
 
-    Proposal/refinement helpers are compatibility hooks, not interchangeable
-    optimizers. Classification and label reload retain their distinct schedules.
+    Legacy proposal/refinement helpers remain bound to their original schedule.
+    Classification and label reload retain their distinct schedules.
     """
 
     __slots__ = ()
 
     def fit(self, x_trains, y_trains, it_limit=None, warp=False):
-        """Run the existing fit schedule on the bound owner."""
+        """Run the selected offline optimizer; legacy remains the default."""
+        if getattr(self._model, 'offline_strategy', 'legacy') == 'split_merge':
+            from . import _split_merge
+            return _split_merge.fit(self._model, x_trains, y_trains, it_limit, warp)
         from . import _offline
 
         return _offline.fit(self._model, x_trains, y_trains, it_limit, warp)

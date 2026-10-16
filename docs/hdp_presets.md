@@ -1,7 +1,12 @@
 # HDP presets and birth sensitivity
 
-`HDPConfig(hdp_hyp='balanced')` selects a starting bundle for the HDP
-transition model. These are the **current implementation values**:
+`HDPConfig(hdp_hyp='balanced')` selects a starting bundle according to
+`hmm_switch`. This switch concerns cluster assignments and is independent of
+the LDS matrix A.
+
+## Markov assignments (`hmm_switch=True`)
+
+These are the **current HMM implementation values**, unchanged:
 
 | Preset | `gamma` | `transAlpha` | `startAlpha` | `kappa` |
 | --- | ---: | ---: | ---: | ---: |
@@ -10,10 +15,9 @@ transition model. These are the **current implementation values**:
 | `more` | 10 | 100 | 1 | 0 |
 | `max` | 1 | 0.01 | 1 | 0 |
 
-Select the new bundle with `HDPConfig(hdp_hyp='max')`, or pass
-`--hdp-preset max` to the UCR, Fourier or wavelet runners. Existing preset
-values and defaults are unchanged. The name is a preset label, not a guarantee
-that every dataset will produce more clusters.
+Select a bundle with `HDPConfig(hdp_hyp='max')`, or pass
+`--hdp-preset max` to a dataset runner. The name is a preset label, not a
+guarantee that every dataset will produce more clusters.
 
 `gamma` controls the global stick concentration, `transAlpha` controls
 transition-row concentration around those weights, `startAlpha` affects the
@@ -24,6 +28,34 @@ Changing one does not imply a monotonic change in this implementation's birth
 score. The older preset comparisons in `agents/` used earlier preset values;
 their numerical ordering does not characterize the current table.
 
+## Independent assignments (`hmm_switch=False`)
+
+Only gamma is active in the independent stick-weight prior and linear ELBO:
+
+| Preset | `gamma` |
+| --- | ---: |
+| `less` | 0.001 |
+| `balanced` | 0.1 |
+| `more` | 1.0 |
+| `max` | 100.0 |
+
+Larger gamma spreads prior mass over more mixture components. These
+values give the names an increasing concentration
+ordering; the final cluster count still depends on the observations, priors,
+objective and search. They are not calibrated birth probabilities.
+`transAlpha`, `startAlpha` and `kappa` keep their bundle values as inactive
+fields; neither assignment weights nor the independent-mixture ELBO uses them.
+The independent weight posterior remains
+`q(v_k) = Beta(1 + N_k, gamma + sum_{j>k} N_j)`.
+
+Resolution is automatic when the model is built, including for UCR runners
+and LDS presets that disable HMM. No extra CLI flag or configuration system
+is needed. For example, `HDPConfig(hdp_hyp='max', hmm_switch=False)` uses
+gamma=100; fixing A=0 alone with HMM still enabled retains the HMM bundle.
+Saved recipes retain the preset name and dependence switch; rebuilding an
+older non-HMM recipe now resolves the updated mixture gamma values. Historical
+fitted-state snapshots retain the hyperparameters stored in those snapshots.
+
 ## A controlled birth experiment
 
 The package's HDP-only diagnostic compares a one-cluster 200-beat baseline
@@ -32,6 +64,8 @@ transition parameters twice, then initializes the proposed newborn by the
 production temporary-growth path. `startAlpha=0.1`, `kappa=0`. The entries
 below are **HDP score of the birth proposal minus HDP score of the baseline**;
 a larger number favors birth. GP, LDS, and warp scores are excluded.
+This is an HMM transition diagnostic; it does not characterize the independent
+mixture preset table above.
 
 | Newborn beats | `transAlpha` | `gamma=0.01` | `gamma=0.1` | `gamma=1` | `gamma=10` |
 | ---: | ---: | ---: | ---: | ---: | ---: |

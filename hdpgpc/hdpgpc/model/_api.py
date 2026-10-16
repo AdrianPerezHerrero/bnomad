@@ -128,6 +128,18 @@ class HDPGPC:
         self._require_fitted()
         return deepcopy(getattr(self._backend, '_birth_diagnostics', []))
 
+    @property
+    def split_merge_history_(self):
+        """Detached split/merge scores, components and acceptance decisions."""
+        self._require_fitted()
+        return deepcopy(getattr(self._backend, '_split_merge_history', []))
+
+    @property
+    def split_merge_convergence_(self):
+        """Stopping reason, final score change and assignment stability diagnostics."""
+        self._require_fitted()
+        return deepcopy(getattr(self._backend, '_split_merge_convergence', {}))
+
     def _include(self, grid, values):
         inference = self._config.inference
         method = (self._backend.online.update_fast if self._mode == 'online_fast'

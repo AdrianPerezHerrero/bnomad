@@ -10,7 +10,9 @@ def plot_embedding_summary(codes, assignments, labels, metrics, *, title=None,
     """Plot every sample in a PCA view, assignments, and class composition.
 
     The display coordinates are the first two principal components of the
-    supplied latent codes. Labels are used for display only.
+    supplied latent codes. Labels are used for display only. Cluster legends
+    have a separate wrapping row; extra entries increase the figure height
+    rather than taking space from the three data panels.
     """
     codes = np.asarray(codes, dtype=np.float64)
     assignments = np.asarray(assignments).reshape(-1)
@@ -36,16 +38,26 @@ def plot_embedding_summary(codes, assignments, labels, metrics, *, title=None,
     np.add.at(contingency, (class_index, cluster_index), 1)
     proportions = contingency / np.maximum(contingency.sum(axis=0, keepdims=True), 1)
 
-    figure, axes = plt.subplots(1, 3, figsize=(17, 5),
-                                gridspec_kw={'width_ratios': (1, 1, 1.2)},
-                                constrained_layout=True)
+    legend_columns = min(6, len(clusters))
+    legend_rows = (len(clusters) + legend_columns - 1) // legend_columns
+    legend_height = 0.45 + 0.28 * legend_rows
+    figure = plt.figure(figsize=(17, 5 + legend_height), constrained_layout=True)
+    layout = figure.add_gridspec(2, 3, width_ratios=(1, 1, 1.2),
+                                height_ratios=(4.2, legend_height))
+    axes = [figure.add_subplot(layout[0, column]) for column in range(3)]
+    legend_axis = figure.add_subplot(layout[1, :])
+    legend_axis.set_axis_off()
     cluster_cmap = plt.get_cmap('tab20', max(len(clusters), 2))
     for index, cluster in enumerate(clusters):
         chosen = cluster_index == index
         axes[0].scatter(xy[chosen, 0], xy[chosen, 1], s=7, alpha=0.55,
                         color=cluster_cmap(index), rasterized=True,
                         label=f'{cluster} (n={chosen.sum()})')
-    axes[0].legend(title='Cluster', fontsize=8, loc='best', markerscale=2)
+    handles, legend_labels = axes[0].get_legend_handles_labels()
+    legend_axis.legend(handles, legend_labels, title='Clusters (sample counts)',
+                       ncol=legend_columns, fontsize=8, loc='center',
+                       markerscale=2, frameon=False, columnspacing=2,
+                       handletextpad=0.5, borderaxespad=0)
     axes[0].set_title(f'{projection_name} projection · fitted clusters')
 
     label_cmap = plt.get_cmap('tab20' if len(classes) <= 20 else 'turbo',

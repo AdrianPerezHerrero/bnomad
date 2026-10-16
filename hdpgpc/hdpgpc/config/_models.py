@@ -18,7 +18,11 @@ Bounds = Union[tuple[float, float], list[tuple[float, float]], 'ndarray', None]
 
 @dataclass(frozen=True)
 class HDPConfig:
-    """Existing concentration preset, initial truncation and dependence switch."""
+    """Concentration preset, initial truncation and dependence switch.
+
+    HMM presets retain joint concentration bundles. With hmm_switch=False,
+    gamma is 0.001/0.1/1/100 for less/balanced/more/max respectively.
+    """
     M: int | None = None
     hdp_hyp: Literal['less', 'balanced', 'more', 'max'] = 'balanced'
     hmm_switch: bool = True
@@ -139,6 +143,7 @@ class InferenceConfig:
 
     schedule=None means select at the call site, as legacy experiments do.
     One warp flag controls alignment for either inference schedule.
+    offline_strategy selects the batch optimizer independently of LDS updates.
     """
     batch: int | None = None
     reestimate_initial_params: bool = False
@@ -154,6 +159,10 @@ class InferenceConfig:
     # Divide LDS KL by the latent state dimension in proposal scoring.
     # Raw ELBO reporting remains unscaled.
     birth_lds_kl_per_dimension: bool = True
+    offline_strategy: Literal['legacy', 'split_merge'] = 'legacy'
+    split_merge_refine_steps: int = 3
+    split_merge_stability_patience: int = 3
+    split_merge_score_rtol: float = 1e-3
 
     def run(self, model, x, y):
         """Run one existing entry point; never combine or reorder schedules."""
@@ -350,6 +359,8 @@ def _initialization_options(config, *, schedule=None):
         raise ValueError('Unknown inference schedule')
     if config.dynamics.lds_update == 'conjugate_batch' and schedule != 'offline':
         raise ValueError('conjugate_batch LDS updates require offline inference')
+    if config.inference.offline_strategy == 'split_merge' and schedule != 'offline':
+        raise ValueError('split_merge strategy requires offline inference')
     result = {'x_basis': config.x_basis, 'verbose': config.verbose}
     for name in SECTIONS:
         section = getattr(config, name)

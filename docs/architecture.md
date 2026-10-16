@@ -9,7 +9,7 @@ imports a retired implementation class.
 | --- | --- | --- |
 | `model` | Input/result adaptation, initialization, mutable state, cluster lifecycle, representation conversion | `HDPGPC`, `UpdateResult`, `Prediction`, `LatentState` |
 | `config` | Typed options, validation and data-only dictionary/YAML codec | `HDPGPCConfig`, eight section dataclasses |
-| `inference` | Separate standard/fast online, offline, classification and label-conditioned schedules; HMM messages and objective aggregation | `InferenceEngine`, `OnlineInference`, `OfflineInference` |
+| `inference` | Separate standard/fast online, selectable legacy/split–merge offline, classification and label-conditioned schedules; HMM messages and objective aggregation | `InferenceEngine`, `OnlineInference`, `OfflineInference` |
 | `hdp` | Sticks, transitions, concentration presets, expected logs, entropy, attributed bnpy optimizer | `HDPVariational` |
 | `emissions` | GP/output trajectories, observation policies and histories, fixed interfaces, affine decoders, PCA/linear-AE calibration, Fourier/wavelet bases, prediction, fitting and SNR weights | `EmissionModel`, `GaussianProcessEmission`, `FixedObservationModel`, `AffineGaussianObservation`, calibration/basis helpers |
 | `dynamics` | Static/LDS initialization, filtering, smoothing, learning and conjugate distributions | `DynamicsModel`, `StaticDynamics`, `LinearDynamics` |
@@ -50,6 +50,8 @@ with no second copy of their bodies:
 - `emissions._weights`: SNR, output reduction and joint scores.
 - `model._conversion`: array/tensor/device conversion and private checkpoint writing.
 - `inference._online`, `_offline`: distinct schedules and private helpers.
+- `inference._split_merge`: opt-in transactional group split/merge search,
+  reusing native messages, emission fitting, shared policies and objective terms.
 
 Direct bindings preserve self identity, array aliasing, mutation order and trace
 boundaries. Private HDP/alignment dispatch on the state is used by current engines;

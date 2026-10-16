@@ -45,15 +45,13 @@ class HDPVariational:
             raise AttributeError(name)
 
     def set_hyperparameters(self, hdp_hyp):
-        # Hyperparameters of HDP
-        # Gamma represent the variability in the prior weights for the rows of the transition matrix so:
-        #   -- higher gamma more possible clusters
-        #   -- lower gamma more concentrated prior distribution
-        # transAlpha represent a factor of prior probability of state-state transition
-        #   -- higher transalpha more concentrated jumps (more skewed transition matrix)
-        #   -- lower transalpha more sparse jumps (more difusse transition matrix, higher flexibility)
-        # startAlpha represent a factor of prior probability of starting state
-        # kappa represent the sticky factor of self transition
+        """Resolve the existing preset for Markov or independent assignments.
+
+        HMM profiles retain their calibrated joint concentrations. Without an
+        HMM, gamma alone controls the mixture stick prior; its preset ordering
+        increases from less to max. Transition/start concentrations and sticky
+        mass are inactive in the independent-label objective.
+        """
 
         # HDP Hyperparams
         if hdp_hyp == 'less':
@@ -79,6 +77,10 @@ class HDPVariational:
             self.transAlpha = 1e-02
             self.startAlpha = 1e+00
             self.kappa = 0.0
+
+        if not self._state.hmm_switch:
+            self.gamma = {'less': 0.001, 'balanced': 0.1,
+                          'more': 1.0, 'max': 100.0}[hdp_hyp]
 
 
     def init_global_params(self, d_dim, M):

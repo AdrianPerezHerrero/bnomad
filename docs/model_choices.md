@@ -74,9 +74,10 @@ for PCA setup and limits.
 
 ## HDP and alignment
 
-The current `less`, `balanced`, and `more` HDP presets are fixed bundles of
-`gamma`, `transAlpha`, `startAlpha`, and `kappa`. Their names do **not** give a
-monotonic birth penalty in every setting. See [HDP presets and sensitivity](hdp_presets.md)
+With HMM enabled, `less`, `balanced`, `more` and `max` select joint bundles of
+`gamma`, `transAlpha`, `startAlpha`, and `kappa`. With HMM disabled, only gamma
+is active, taking values 0.001, 0.1, 1 and 100 in that order. Their names do **not**
+guarantee a monotonic final cluster count. See [HDP presets and sensitivity](hdp_presets.md)
 for current values and the measured gamma/transAlpha tables.
 
 `gp` is the existing deterministic GP aligner. `dtw_gp` is a cheaper

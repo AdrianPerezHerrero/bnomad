@@ -154,6 +154,13 @@ def log_configuration(config, args, *, source='configured'):
     from ..diagnostics import format_lds_priors
     print(f'Schedule={args.schedule}; HMM={config.hdp.hmm_switch}; '
           f'alignment={config.alignment.policy}; fit_gp={config.emission.fit_gp}')
+    if args.schedule == 'offline':
+        print(f'Offline strategy={config.inference.offline_strategy}; '
+              f'proposal refinement steps={config.inference.split_merge_refine_steps}; '
+              f'representer selection={config.inference.offline_representer_selection}')
+        if config.inference.offline_strategy == 'split_merge':
+            print(f'Split/merge stopping: score rtol={config.inference.split_merge_score_rtol:g}; '
+                  f'stable iterations={config.inference.split_merge_stability_patience}')
     print(f'LDS update={config.dynamics.lds_update}; scoring={config.dynamics.lds_scoring}; '
           f'hard assignments={config.inference.hard_assignments}; seed={args.seed}')
     print(format_lds_priors(dimension=len(config.x_basis), model_type=config.dynamics.model_type,
@@ -249,6 +256,8 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
               'cluster_cap_reached': model.n_clusters_ >= args.max_clusters,
               'ordered': ordered, 'warp': model.config.inference.warp,
               'metadata': metadata or {}, 'diagnostic_omissions': failures,
+              'split_merge_history': getattr(model, 'split_merge_history_', []),
+              'split_merge_convergence': getattr(model, 'split_merge_convergence_', {}),
               'seconds': round(time.perf_counter() - run.started, 3),
               'output_directory': str(run.path.resolve()),
               'artifacts': sorted(str(path.relative_to(run.path)) for path in run.path.rglob('*')
