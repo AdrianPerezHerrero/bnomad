@@ -4,13 +4,17 @@ __all__ = ('plot_warp_diagnostics', 'model_warp_arrays',
            'plot_clustering_summary',
            'plot_lds_diagnostics', 'model_lds_arrays',
            'plot_lds_dynamics', 'model_lds_dynamics',
-           'plot_embedding_summary',
+           'plot_embedding_summary', 'model_latent_trajectories',
+           'plot_latent_trajectories', 'plot_image_clustering_summary',
            'plot_birth_warp_diagnostic',
            'cluster_label_statistics', 'format_confusion_matrix',
            'format_lds_priors', 'Tee')
 
 
 def __getattr__(name):
+    if name in ('model_latent_trajectories', 'plot_latent_trajectories', 'plot_image_clustering_summary'):
+        from . import _image_trajectories
+        return getattr(_image_trajectories, name)
     if name == 'plot_clustering_summary':
         from ._cluster_plots import plot_clustering_summary
         return plot_clustering_summary

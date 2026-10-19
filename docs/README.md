@@ -5,6 +5,8 @@
 - [Choose a model setup](model_choices.md)
 - [Comparable experiment scripts, arguments and run folders](experiment_workflows.md)
 - [Complete-record workflow and reusable helpers](record_workflow.md)
+- [CAS-Colon PCA image sequences and latent trajectories](cas_colon_pca.md)
+- [CAS-Colon affine autoencoder image sequences](cas_colon_autoencoder.md)
 - [UCR archive autoencoder experiment](ucr_autoencoder_archive.md)
 - [UCR archive fixed PCA experiment](ucr_pca_archive.md)
 - [UCR direct-waveform DTW-GP experiment](ucr_dtw_gp_archive.md)

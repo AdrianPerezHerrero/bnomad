@@ -4,7 +4,7 @@ Start with one dataset or a short record prefix. Every runner uses the ordinary
 `HDPGPC(config).fit(values, grid=grid)` API and the same reporting code.
 
 Dataset examples follow `<dataset>_<representation>_clustering.py`, using
-`ucr`, `mitbih` or `daphnet` as the dataset prefix. `waveform` identifies the
+`ucr`, `mitbih`, `daphnet` or `cas_colon` as the dataset prefix. `waveform` identifies the
 direct GP/LDS representation; alignment and online/offline inference remain
 selectable arguments within that example.
 
@@ -15,6 +15,8 @@ python examples/ucr_waveform_clustering.py --datasets Coffee --no-warp
 python examples/daphnet_waveform_clustering.py --records S02R01 --warp
 python examples/mitbih_waveform_clustering.py --records 100 --no-warp
 python examples/mitbih_pca_clustering.py --records 100 --components 12
+python examples/cas_colon_pca_clustering.py --records 1 --components 10
+python examples/cas_colon_autoencoder_clustering.py --records 1 --components 10 --epochs 250
 python examples/mitbih_autoencoder_clustering.py --records 100 --calibration-samples 400
 python examples/ucr_fourier_clustering.py --datasets ACSF1 --window-size 16
 python examples/ucr_wavelet_clustering.py --datasets ACSF1
@@ -40,6 +42,13 @@ configuration system. Shared builders construct the existing typed
 
 `hdpgpc.experiments` owns orchestration and files. It contains no alternative
 inference engine. General plotting belongs to `hdpgpc.diagnostics`.
+
+CAS-Colon PCA and affine autoencoder runners use an image gallery and retained latent-state trajectory plots
+instead of a flattened-pixel waveform gallery. It retains chronological frames
+and HMM transitions. See the [image experiment guide](cas_colon_pca.md) for data
+layout, frame-gap handling, reconstruction/forecast panels and current restrictions.
+The [autoencoder guide](cas_colon_autoencoder.md) describes its calibration,
+covariance scales and exact affine limitations.
 
 ## Common arguments
 
@@ -91,6 +100,7 @@ The singular `--dataset` remains an alias for one UCR dataset.
 | Daphnet waveform | Chronological; `only_plastic`; warp off | Gamma per cluster; Sigma fixed |
 | ECG PCA | Chronological; fixed calibrated PCA C | Gamma per cluster; Sigma fixed (selectable) |
 | ECG autoencoder | Chronological; fixed trained affine C | Gamma per cluster; Sigma fixed |
+| CAS-Colon PCA / autoencoder | Chronological images; HMM on; fixed calibrated affine C | A/Gamma per cluster; Sigma fixed (selectable) |
 | UCR waveform | HMM off; A=0, C=I; DTW-GP enabled | Sigma full per cluster; Gamma fixed |
 | UCR PCA | HMM off; A=0; fixed PCA C | Gamma full and Sigma diagonal per cluster |
 | UCR autoencoder | HMM off; A=0; fixed trained affine C | Gamma full per cluster; Sigma fixed |

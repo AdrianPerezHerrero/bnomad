@@ -172,7 +172,7 @@ def log_configuration(config, args, *, source='configured'):
 def save_results(run, model, values, labels, grid, args, *, ordered,
                  metadata=None, codes=None, projection_name='Latent',
                  row_metadata=None, annotation_colors=None, extra_figures=None,
-                 positive_label=None):
+                 positive_label=None, summary_plotter=None, evaluation_mask=None):
     """Common report/plot schema; optional diagnostics never refit the model."""
     import matplotlib.pyplot as plt
     from ..diagnostics import (cluster_label_statistics, format_confusion_matrix,
@@ -184,10 +184,23 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
            for cluster in model.cluster_ids_):
         raise RuntimeError('Inference retained assignments for missing cluster components; '
                            'a consistent final report cannot be generated')
-    scores, classes, confusion, mapping = cluster_label_statistics(model.labels_, labels)
-    assigned = np.array([mapping[int(cluster)] for cluster in model.labels_])
+    evaluated = (np.ones(len(labels), dtype=bool) if evaluation_mask is None
+                 else np.asarray(evaluation_mask, dtype=bool))
+    if evaluated.shape != (len(labels),) or not evaluated.any():
+        raise ValueError('Evaluation mask must select at least one aligned observation')
+    scores, classes, confusion, mapping = cluster_label_statistics(
+        np.asarray(model.labels_)[evaluated], labels[evaluated])
+    if evaluation_mask is None:
+        assigned = np.array([mapping[int(cluster)] for cluster in model.labels_])
+    else:
+        # A component containing only ambiguous frames has no reference class.
+        for cluster in model.cluster_ids_:
+            mapping.setdefault(int(cluster), None)
+        assigned = np.array([mapping[int(cluster)] for cluster in model.labels_], dtype=object)
+        scores.update(evaluation_frames=int(evaluated.sum()),
+                      excluded_evaluation_frames=int((~evaluated).sum()))
     if positive_label is not None:
-        actual, predicted = labels == positive_label, assigned == positive_label
+        actual, predicted = labels[evaluated] == positive_label, assigned[evaluated] == positive_label
         tp = int((actual & predicted).sum()); fp = int((~actual & predicted).sum())
         fn = int((actual & ~predicted).sum())
         scores.update(positive_label_precision_in_sample=tp / (tp + fp) if tp + fp else 0.,
@@ -196,6 +209,9 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
     print(f'{run.dataset}: clusters={model.n_clusters_}, purity={scores["purity"]:.3f}, '
           f'ARI={scores["adjusted_rand_index"]:.3f}, NMI={scores["normalized_mutual_information"]:.3f}')
     print(format_confusion_matrix(classes, confusion))
+    if evaluation_mask is not None:
+        print(f'Label metrics: {evaluated.sum()}/{len(labels)} frames; '
+              f'{(~evaluated).sum()} ambiguous/unlabeled frames excluded.')
     print('Cluster-majority mapping and label scores are evaluated in-sample.')
     (run.path / 'config.yaml').write_text(model.config.to_yaml(), encoding='utf-8')
     columns = {} if row_metadata is None else dict(row_metadata)
@@ -219,7 +235,8 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
         finally:
             plt.close(figure)
     if args.plots:
-        for output, figure in enumerate(plot_clustering_summary(
+        summary_plotter = plot_clustering_summary if summary_plotter is None else summary_plotter
+        for output, figure in enumerate(summary_plotter(
                 model, values, labels, grid=grid, record=run.dataset, metrics=scores,
                 ordered=ordered, warped=model.config.inference.warp,
                 show_latent=ordered or args.lds_plots or args.lds_dynamics_plots,
