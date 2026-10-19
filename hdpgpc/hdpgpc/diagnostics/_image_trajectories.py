@@ -129,7 +129,8 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
                                   frames_per_cluster=10, trajectories=None, record='', metrics=None,
                                   grid=None, ordered=True, warped=False, show_latent=True,
                                   annotation_colors=None, evaluation_mask=None,
-                                  representation_name='PCA', random_state=42):
+                                  representation_name='PCA', random_state=42,
+                                  calibration_encoder=None):
     """Image-native replacement for the waveform gallery; returns [figure].
 
     Frame rows show observations, fixed affine encoder/decoder reconstructions, actual smoothed
@@ -140,6 +141,9 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
     The majority-label timeline uses only evaluation-included reference labels;
     clusters with no reference label are gray. Sampling is seeded independently
     of model inference and never changes the fitted model or its assignments.
+    An optional (pixels, latent dimension) calibration_encoder supplies raw
+    reconstruction features, e.g. SFA. This changes only the calibration row;
+    smoothed states and forecasts always use the model's Gaussian LDS posterior.
     """
     from ..emissions._fixed_observation import AffineGaussianObservation
 
@@ -223,7 +227,11 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
         states = all_means[np.searchsorted(state['indices'], selected, side='right')]
         pixels = values[selected, :, 0]
         C, offset, A = decoder.C, decoder.offset, _array(gp.A[-1])
-        raw_projection = offset + ((pixels - offset) @ np.linalg.pinv(C).T) @ C.T
+        encoder = (np.linalg.pinv(C).T if calibration_encoder is None
+                   else np.asarray(calibration_encoder, dtype=float))
+        if encoder.shape != C.shape or not np.isfinite(encoder).all():
+            raise ValueError('Calibration encoder must have finite (pixels, latent dimension) entries')
+        raw_projection = offset + ((pixels - offset) @ encoder) @ C.T
         reconstructed = offset + states @ C.T
         forecast = offset + (states @ A.T) @ C.T
         majority = majorities[cluster] or 'unlabeled'

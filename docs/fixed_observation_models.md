@@ -94,6 +94,15 @@ Gaussian methods, with a full orthonormal Haar decoder. See
 [fixed wavelet observation](wavelet_observation.md) for ordering and the ACSF1 example.
 Previously saved `pca_*` metadata are still accepted when loading recipes.
 
+`estimate_sfa_observation` calibrates a linear slow-feature representation from
+ordered temporal pairs, then fits an ordinary fixed affine Gaussian decoder.
+It returns `SFAObservationEstimate`, including the raw encoder and the same
+`AffineGaussianObservation` class used above. Raw SFA features are calibration
+diagnostics; the LDS uses the decoder's exact Gaussian information encoding,
+which generally differs from the raw SFA map with diagonal residual noise.
+See [Linear SFA observations](linear_sfa_observation.md) for the mathematics,
+pair sampling and CAS-Colon example.
+
 [The UCR archive example](../examples/ucr_autoencoder_clustering.py) then fixes
 A to the zero matrix while learning a separate Gamma for each cluster from a
 calibrated latent-covariance prior. It also sets `hmm_switch=False`. Thus the

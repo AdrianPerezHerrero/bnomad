@@ -7,6 +7,8 @@ only after fitting for evaluation and plots.
 
 For the same workflow with a trained tied linear encoder/decoder, see the
 [CAS-Colon autoencoder example](cas_colon_autoencoder.md).
+For calibration that uses temporal order explicitly, see the
+[Linear SFA example](linear_sfa_observation.md).
 
 ## Prepare the dataset
 

@@ -14,15 +14,15 @@ from ..datasets.cas_colon import cas_colon_annotations, load_cas_colon_frames
 from ..diagnostics import (model_latent_trajectories, plot_latent_trajectories,
                            plot_image_clustering_summary)
 from ..emissions import (AffineGaussianObservation, estimate_pca_observation,
-                         estimate_autoencoder_observation)
+                         estimate_autoencoder_observation, estimate_sfa_observation)
 from . import records
 from ._arguments import validate_common, validate_affine
 from ._runs import ExperimentRun, experiment_settings, save_results, append_summary, log_configuration
 
 
 def build_parser(description=None, defaults=None, *, representation='pca'):
-    if representation not in ('pca', 'autoencoder'):
-        raise ValueError('CAS-Colon supports pca or autoencoder representations')
+    if representation not in ('pca', 'autoencoder', 'sfa'):
+        raise ValueError('CAS-Colon supports pca, autoencoder or sfa representations')
     selected = dict(records=['1'], components=10, calibration_samples=400,
                     sigma_prior=1., gamma_prior=.01, sigma_mode='fixed',
                     offline_strategy='split_merge', split_merge_refine_steps=1,
@@ -45,6 +45,13 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
                         help='Maximum randomly sampled gallery frames per cluster (default: 10; uses --seed).')
     parser.add_argument('--trajectory-plots', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--hmm-switch', action=argparse.BooleanOptionalAction, default=True)
+    if representation == 'sfa':
+        parser.add_argument('--sfa-lag', type=int, default=1,
+                            help='Temporal lag in selected frame steps; pairs never cross segment boundaries.')
+        parser.add_argument('--sfa-whitening-components', type=int, default=64,
+                            help='Maximum pilot whitening rank before selecting slow features (default: 64).')
+        parser.add_argument('--sfa-rank-tolerance', type=float, default=1e-6,
+                            help='Relative singular-value cutoff for numerical covariance rank.')
     for action in parser._actions:
         if action.dest == 'schedule':
             action.choices = ('offline',)
@@ -78,8 +85,12 @@ def _validate(args):
     validate_affine(args)
     if args.schedule != 'offline':
         raise ValueError('CAS-Colon trajectory reports currently require offline inference')
-    if args.representation not in ('pca', 'autoencoder'):
-        raise ValueError('CAS-Colon supports pca or autoencoder representations')
+    if args.representation not in ('pca', 'autoencoder', 'sfa'):
+        raise ValueError('CAS-Colon supports pca, autoencoder or sfa representations')
+    if args.representation == 'sfa' and (
+            args.sfa_lag < 1 or args.sfa_whitening_components < args.components
+            or not np.isfinite(args.sfa_rank_tolerance) or not 0 < args.sfa_rank_tolerance < 1):
+        raise ValueError('SFA requires positive lag, whitening components >= components and rank tolerance in (0,1)')
     if args.representation == 'autoencoder' and (
             args.epochs < 1 or not np.isfinite(args.learning_rate) or args.learning_rate <= 0
             or not np.isfinite(args.noise_floor_fraction) or args.noise_floor_fraction < 0):
@@ -108,7 +119,32 @@ def run_sequence(sequence, args, run, *, segment):
                     min(args.calibration_samples, len(values)) - 1)
     sampling = args.calibration_sampling or 'uniform'
     calibration_start = perf_counter()
-    if args.representation == 'autoencoder':
+    calibration_encoder = None
+    if args.representation == 'sfa':
+        estimate = estimate_sfa_observation(values, grid, components=dimension,
+            max_samples=args.calibration_samples, sampling=sampling, random_state=args.seed,
+            times=sequence.seconds, lag=args.sfa_lag,
+            whitening_components=args.sfa_whitening_components,
+            rank_tolerance=args.sfa_rank_tolerance, noise_floor=args.noise_floor)
+        decoder, indices = estimate.model, estimate.indices
+        calibration_encoder = estimate.encoder
+        codes = estimate.transform(values)
+        representation_name = 'Linear SFA'
+        calibration_metadata = dict(encoder='linear_sfa', lag=args.sfa_lag,
+            derivative_time_units='video seconds', derivative_variances=estimate.derivative_variances,
+            calibration_pair_count=len(estimate.pair_indices),
+            numerical_rank=estimate.numerical_rank, whitening_dimension=estimate.whitening_dimension,
+            rank_tolerance=args.sfa_rank_tolerance,
+            raw_encoder_is_gaussian_measurement=False)
+        np.savez_compressed(run.path / 'sfa_calibration.npz', encoder=estimate.encoder,
+            offset=decoder.offset, indices=indices, pair_indices=estimate.pair_indices,
+            pair_times=sequence.seconds[estimate.pair_indices], codes=codes,
+            derivative_variances=estimate.derivative_variances,
+            numerical_rank=estimate.numerical_rank, whitening_dimension=estimate.whitening_dimension,
+            lag=args.sfa_lag, rank_tolerance=args.sfa_rank_tolerance)
+        calibration_description = (f'{len(estimate.pair_indices)} genuine temporal pairs, '
+                                  f'derivative variances={np.round(estimate.derivative_variances, 4).tolist()}')
+    elif args.representation == 'autoencoder':
         estimate = estimate_autoencoder_observation(values, grid, components=dimension,
             max_samples=args.calibration_samples, epochs=args.epochs, learning_rate=args.learning_rate,
             sampling=sampling, random_state=args.seed, noise_floor=args.noise_floor,
@@ -136,6 +172,7 @@ def run_sequence(sequence, args, run, *, segment):
         codes = (values[:, :, 0] - decoder.offset) @ np.linalg.pinv(decoder.C).T
         calibration_description = f'explained variance={estimate.explained_variance_ratio:.4f}'
     calibration_metadata['calibration_seconds'] = perf_counter() - calibration_start
+    dimension = decoder.latent_dim
     config = make_config(grid, args, decoder)
     prior_state = decoder.state_dict()
     prior_state['Sigma'] = config.observation.Sigma_policy.value
@@ -156,7 +193,7 @@ def run_sequence(sequence, args, run, *, segment):
             image_shape=tuple(args.image_size), times=sequence.seconds,
             frames_per_cluster=args.frames_per_cluster, trajectories=trajectories,
             evaluation_mask=sequence.evaluation_mask, representation_name=representation_name,
-            random_state=args.seed, **kwargs)
+            random_state=args.seed, calibration_encoder=calibration_encoder, **kwargs)
 
     def extra_figures():
         figures = ({'latent_trajectories': plot_latent_trajectories(model, times=sequence.seconds,

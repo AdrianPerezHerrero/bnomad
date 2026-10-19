@@ -96,6 +96,14 @@ Python pickles referring to the removed module paths require migration; no
 legacy module aliases are retained.
 Latent filtering, smoothing and parameter estimation remain in `dynamics`.
 
+`SFAObservationEstimate` and `estimate_sfa_observation` are exported from
+`hdpgpc.emissions` (implementation `emissions._sfa`). Temporal calibration
+returns the existing affine observation model plus raw slow-feature encoder,
+pair indices and derivative eigenvalues. Install `estimate.model` with
+`with_fixed_observation_model`; use `estimate.transform(values)` for raw SFA
+features. See [Linear SFA](linear_sfa_observation.md) for sampling and the
+distinction between raw encoding and Gaussian posterior inference.
+
 `hdpgpc.emissions.make_fourier_observation` creates an
 `AffineGaussianObservation` from a full or selected real windowed Fourier basis.
 `window_size` defaults to 16 non-overlapping points; setting it to the waveform
