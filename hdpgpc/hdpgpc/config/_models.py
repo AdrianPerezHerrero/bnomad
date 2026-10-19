@@ -22,9 +22,11 @@ class HDPConfig:
 
     HMM presets retain joint concentration bundles. With hmm_switch=False,
     gamma is 0.001/0.1/1/100 for less/balanced/more/max respectively.
+    balanced_sticky and more_sticky use their base concentrations with kappa=10
+    (inactive without HMM); their independent mixture gammas are 0.1 and 1.
     """
     M: int | None = None
-    hdp_hyp: Literal['less', 'balanced', 'more', 'max'] = 'balanced'
+    hdp_hyp: Literal['less', 'balanced', 'balanced_sticky', 'more', 'more_sticky', 'max'] = 'balanced'
     hmm_switch: bool = True
     max_models: int | None = None
 

@@ -60,18 +60,18 @@ class HDPVariational:
             self.transAlpha = 1e+03
             self.startAlpha = 1e+00
             self.kappa = 0.0
-        elif hdp_hyp == 'balanced':
+        elif hdp_hyp in ('balanced', 'balanced_sticky'):
             #Balanced scheme
             self.gamma = 1e+03
             self.transAlpha = 1e+02
             self.startAlpha = 1e+00
-            self.kappa = 0.0
-        elif hdp_hyp == 'more':
+            self.kappa = 10.0 if hdp_hyp == 'balanced_sticky' else 0.0
+        elif hdp_hyp in ('more', 'more_sticky'):
             #More clusters scheme
             self.gamma = 1e+01
             self.transAlpha = 1e+02
             self.startAlpha = 1e+00
-            self.kappa = 0.0
+            self.kappa = 10.0 if hdp_hyp == 'more_sticky' else 0.0
         elif hdp_hyp == 'max':
             self.gamma = 1e+00
             self.transAlpha = 1e-02
@@ -79,8 +79,8 @@ class HDPVariational:
             self.kappa = 0.0
 
         if not self._state.hmm_switch:
-            self.gamma = {'less': 0.001, 'balanced': 0.1,
-                          'more': 1.0, 'max': 100.0}[hdp_hyp]
+            self.gamma = {'less': 0.001, 'balanced': 0.1, 'balanced_sticky': 0.1,
+                          'more': 1.0, 'more_sticky': 1.0, 'max': 100.0}[hdp_hyp]
 
 
     def init_global_params(self, d_dim, M):
@@ -355,8 +355,8 @@ class HDPVariational:
 
         tAlpha = K * K * np.log(alpha) + K * np.log(startAlpha)
         if kappa > 0:
-            coefU = K + 1.0 + eta1
-            coef1mU = K * kvec(K) + 1.9 + gamma - eta0
+            coefU = K + 1.0 - eta1
+            coef1mU = K * kvec(K) + 1.0 + gamma - eta0
             sumEbeta = np.sum(self.cond_to_numpy(self.cond_cpu(self.rho2beta(rho, returnSize='K'))))
             tBeta = sumEbeta * (np.log(alpha + kappa) - np.log(kappa))
             tKappa = K * (np.log(kappa) - np.log(alpha + kappa))

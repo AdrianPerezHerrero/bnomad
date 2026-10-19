@@ -147,6 +147,9 @@ galleries, latent trajectories, projection and optional LDS diagnostics as the
 other CAS-Colon examples. The raw reconstruction gallery uses **W.T**, not the
 decoder pseudoinverse. Its row can therefore differ from the smoothed LDS row.
 The projection figure uses raw SFA codes.
+`--min-cluster-samples P` hides galleries, latent paths, detailed trajectories
+and optional LDS panels for clusters with fewer than P assigned observations;
+default 1 shows all clusters. Global overviews and metrics remain complete.
 
 `sfa_calibration.npz` contains encoder W, offset, calibration indices, actual
 pair indices/times, raw codes, derivative eigenvalues and rank information.

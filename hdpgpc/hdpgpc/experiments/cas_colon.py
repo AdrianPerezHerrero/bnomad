@@ -197,7 +197,8 @@ def run_sequence(sequence, args, run, *, segment):
 
     def extra_figures():
         figures = ({'latent_trajectories': plot_latent_trajectories(model, times=sequence.seconds,
-                    title=f'CAS-Colon video {sequence.video}', trajectories=trajectories)}
+                    title=f'CAS-Colon video {sequence.video}', trajectories=trajectories,
+                    min_cluster_samples=args.min_cluster_samples)}
                 if args.trajectory_plots else {})
         if args.representation == 'autoencoder':
             from ..diagnostics._calibration_plots import plot_autoencoder_calibration

@@ -179,7 +179,10 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
         plot_clustering_summary, plot_embedding_summary, model_lds_arrays,
         model_lds_dynamics, model_warp_arrays, plot_lds_diagnostics,
         plot_lds_dynamics, plot_warp_diagnostics, plot_birth_warp_diagnostic)
+    from ..diagnostics._plot_selection import cluster_plot_ids, empty_cluster_figure
     values, labels = np.asarray(values), np.asarray(labels)
+    min_cluster_samples = getattr(args, 'min_cluster_samples', 1)
+    plotted_ids = set(int(cluster) for cluster in cluster_plot_ids(model.labels_, min_cluster_samples))
     if any(int(cluster) >= len(output) for output in model._backend.gpmodels
            for cluster in model.cluster_ids_):
         raise RuntimeError('Inference retained assignments for missing cluster components; '
@@ -240,19 +243,33 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
                 model, values, labels, grid=grid, record=run.dataset, metrics=scores,
                 ordered=ordered, warped=model.config.inference.warp,
                 show_latent=ordered or args.lds_plots or args.lds_dynamics_plots,
-                annotation_colors=annotation_colors)):
+                annotation_colors=annotation_colors,
+                **({'min_cluster_samples': min_cluster_samples} if min_cluster_samples > 1 else {}))):
             save(figure, f'clusters_output_{output}.png')
         if args.projection_plots:
             projection = values.reshape(len(values), -1) if codes is None else codes
             save(plot_embedding_summary(projection, model.labels_, labels, scores,
                  title=run.dataset, projection_name=projection_name), 'projection.png')
         for output, group in enumerate(matrices):
+            shown = {cluster: values for cluster, values in group.items() if cluster in plotted_ids}
+            lds_title = (run.dataset if min_cluster_samples == 1 else
+                         f'{run.dataset} | clusters with >= {min_cluster_samples} assigned samples')
             if args.lds_plots:
-                for page, figure in enumerate(plot_lds_diagnostics(group, title=run.dataset), 1):
-                    save(figure, f'lds_parameters_output_{output}_{page:02d}.png')
+                if shown:
+                    for page, figure in enumerate(plot_lds_diagnostics(shown, title=lds_title), 1):
+                        save(figure, f'lds_parameters_output_{output}_{page:02d}.png')
+                else:
+                    save(empty_cluster_figure(lds_title, min_cluster_samples),
+                         f'lds_parameters_output_{output}_01.png')
             if args.lds_dynamics_plots:
-                save(plot_lds_dynamics(model_lds_dynamics(model, grid=grid, output=output),
-                     title=run.dataset), f'lds_dynamics_output_{output}.png')
+                if shown:
+                    dynamics = {cluster: values for cluster, values in
+                                model_lds_dynamics(model, grid=grid, output=output).items()
+                                if cluster in plotted_ids}
+                    figure = plot_lds_dynamics(dynamics, title=lds_title)
+                else:
+                    figure = empty_cluster_figure(lds_title, min_cluster_samples)
+                save(figure, f'lds_dynamics_output_{output}.png')
             if args.warp_plots and model.config.inference.warp:
                 offsets, std = model_warp_arrays(model, grid, output=output)
                 save(plot_warp_diagnostics(grid, offsets, labels=model.labels_,
@@ -272,6 +289,10 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
               'cluster_majority_labels': mapping,
               'cluster_cap_reached': model.n_clusters_ >= args.max_clusters,
               'ordered': ordered, 'warp': model.config.inference.warp,
+              'plot_selection': {'min_cluster_samples': min_cluster_samples,
+                                 'shown_cluster_ids': sorted(plotted_ids),
+                                 'hidden_cluster_ids': sorted(int(cluster) for cluster in model.cluster_ids_
+                                                              if int(cluster) not in plotted_ids)},
               'metadata': metadata or {}, 'diagnostic_omissions': failures,
               'split_merge_history': getattr(model, 'split_merge_history_', []),
               'split_merge_convergence': getattr(model, 'split_merge_convergence_', {}),

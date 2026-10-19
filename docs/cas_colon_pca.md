@@ -43,6 +43,7 @@ python examples/cas_colon_pca_clustering.py --records 1
 python examples/cas_colon_pca_clustering.py --records 1 --image-size 24 24 --components 8 --max-series 150
 python examples/cas_colon_pca_clustering.py --records 1 2 --sigma-mode cluster_diagonal --sigma-prior 1
 python examples/cas_colon_pca_clustering.py --records all --resume
+python examples/cas_colon_pca_clustering.py --records 1 --min-cluster-samples 5
 ```
 
 Defaults:
@@ -125,6 +126,13 @@ components containing only ambiguous frames have no majority reference label.
 trajectory figure only. `--projection-plots` controls the standard embedding
 summary. `--lds-plots` optionally adds matrix diagnostics. Figures are saved
 and closed without opening GUI windows.
+
+`--min-cluster-samples P` (default 1) hides clusters with fewer than P assigned
+frames from the image gallery, latent paths, detailed trajectories and optional
+LDS diagnostics. Overview timelines/transitions and all metrics/arrays still
+include every observation. The threshold uses final MAP membership, including
+ambiguous frames. A cluster with exactly P frames is shown. Empty selections
+produce an overview or an explanatory detail figure, not a plotting error.
 
 Reusable functions:
 

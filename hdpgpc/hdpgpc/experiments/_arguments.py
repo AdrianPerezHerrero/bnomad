@@ -19,7 +19,8 @@ def add_common_arguments(parser, *, defaults=None, ordered=False):
                         help='Relative score-change tolerance with stable responsibilities (default: 0.001).')
     parser.add_argument('--iterations', type=int, default=30)
     parser.add_argument('--max-clusters', type=int, default=30)
-    parser.add_argument('--hdp-preset', choices=('less', 'balanced', 'more', 'max'), default='max')
+    parser.add_argument('--hdp-preset', choices=(
+        'less', 'balanced', 'balanced_sticky', 'more', 'more_sticky', 'max'), default='max')
     parser.add_argument('--lds-degrees', '--lds-degrees-of-freedom', type=int, default=10)
     parser.add_argument('--lds-update', choices=('conjugate_batch', 'conjugate_sequential',
                                                'natural_gradient', 'legacy'), default=None)
@@ -37,6 +38,8 @@ def add_common_arguments(parser, *, defaults=None, ordered=False):
                         help='Enable alignment (DTW-GP when none selected); --no-warp disables it.')
     parser.add_argument('--normalize-samples', action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument('--plots', '--save-plots', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--min-cluster-samples', type=int, default=1,
+                        help='Minimum final assigned sample count for cluster detail plots (default: 1).')
     parser.add_argument('--projection-plots', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--lds-plots', '--plot-lds', action=argparse.BooleanOptionalAction, default=ordered)
     parser.add_argument('--lds-dynamics-plots', '--plot-lds-dynamics',
@@ -63,6 +66,8 @@ def lds_update(args):
 
 
 def validate_common(args):
+    if getattr(args, 'min_cluster_samples', 1) < 1:
+        raise ValueError('min_cluster_samples must be a positive integer')
     if (args.iterations < 1 or args.max_clusters < 1 or args.lds_degrees < 3
             or args.exploration_steps < 1 or args.birth_plots < 0
             or not math.isfinite(args.lds_step_size) or not 0 < args.lds_step_size <= 1

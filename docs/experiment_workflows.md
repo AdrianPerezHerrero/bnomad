@@ -69,6 +69,7 @@ genuine temporal pairs and its fixed Gaussian decoder.
 | UCR covariance priors | `--sigma-prior`, `--gamma-prior`: variances for waveform mode; covariance multipliers for calibrated decoders |
 | Record covariance priors | `--sigma-prior`: waveform variance or calibrated PCA/AE Sigma multiplier; `--gamma-prior`: process variance times identity |
 | Diagnostics | `--plots`, `--projection-plots`, `--lds-plots`, `--lds-dynamics-plots`, `--warp-plots`, `--birth-plots N` |
+| Cluster detail selection | `--min-cluster-samples P` (default 1); show detail panels only for clusters with at least P final assigned observations |
 | Reproducibility | `--seed`, `--output-dir`, `--resume`, `--verbose silent/progress/debug` |
 
 Boolean switches support their `--no-...` counterpart. `--no-plots` disables
@@ -76,6 +77,18 @@ all PNGs; saving closes figures without displaying them. Warp plots are made
 only when alignment is active. Birth plots capture the first N proposals and
 are currently available only offline. A requested diagnostic failure marks
 the run as failed; missing captured birth curves are reported explicitly.
+
+`--min-cluster-samples 5` omits clusters with fewer than five final MAP-assigned
+observations from image/waveform galleries, fitted-mean/latent-path displays,
+CAS-Colon trajectory detail rows and optional LDS matrix/dynamics plots. It is
+a reporting threshold; it does not delete clusters or refit the model. Original
+cluster IDs and colors are retained. Assignment timelines, transitions, label
+composition, projection/warp overviews, scores and saved arrays include the
+complete clustering. Figure headers identify the selection; `results.json`
+records the threshold and shown/hidden detail cluster IDs under `plot_selection`.
+If all clusters are below the threshold, the overview remains and detail-only
+figures explain that no cluster meets the minimum. Counts use final assignments,
+including ambiguous-label observations, rather than soft responsibility sums.
 
 By default, offline uses `conjugate_batch`, and online schedules use
 `conjugate_sequential`. An explicit batch request online is rejected. Fixed

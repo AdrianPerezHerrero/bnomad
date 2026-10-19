@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from ._plot_selection import cluster_plot_ids, empty_cluster_figure
 
 
 def _array(value):
@@ -64,22 +65,31 @@ def _times(times, count):
     return times
 
 
-def plot_latent_trajectories(model, *, times=None, output=0, title='', trajectories=None):
+def plot_latent_trajectories(model, *, times=None, output=0, title='', trajectories=None,
+                             min_cluster_samples=1):
     """Per cluster: state path, component uncertainty and final-A changes.
 
     Uses the first two common latent coordinates (one-dimensional states get a
     zero second coordinate). Components are not refit for this visualization.
     Orange arrows show A*m-m in that projection; they are model changes, not
     observed future frames. Two-dimensional arrows omit other state dimensions.
+    Only clusters with at least min_cluster_samples final MAP assignments get
+    detail panels; histories and labels are never modified.
     """
     labels = np.asarray(model.labels_, dtype=int)
     times = _times(times, len(labels))
     paths = model_latent_trajectories(model, output=output) if trajectories is None else trajectories
-    ids = sorted(paths)
-    colors = _colors(ids)
+    visible = set(cluster_plot_ids(labels, min_cluster_samples).tolist())
+    ids = [cluster for cluster in sorted(paths) if cluster in visible]
+    colors = _colors(sorted(paths))
+    if not ids:
+        return empty_cluster_figure(title or 'Latent trajectories', min_cluster_samples)
     fig, axes = plt.subplots(len(ids), 3, figsize=(16, 3.6 * len(ids)), squeeze=False,
                              constrained_layout=True)
-    fig.suptitle((title + ' | ' if title else '') + 'Smoothed latent trajectories and one-step LDS changes')
+    heading = (title + ' | ' if title else '') + 'Smoothed latent trajectories and one-step LDS changes'
+    if min_cluster_samples > 1:
+        heading += f' | {len(ids)}/{len(paths)} clusters with >= {min_cluster_samples} assigned samples'
+    fig.suptitle(heading)
     for row, cluster in enumerate(ids):
         state = paths[cluster]
         indices = state['indices']
@@ -130,7 +140,7 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
                                   grid=None, ordered=True, warped=False, show_latent=True,
                                   annotation_colors=None, evaluation_mask=None,
                                   representation_name='PCA', random_state=42,
-                                  calibration_encoder=None):
+                                  calibration_encoder=None, min_cluster_samples=1):
     """Image-native replacement for the waveform gallery; returns [figure].
 
     Frame rows show observations, fixed affine encoder/decoder reconstructions, actual smoothed
@@ -144,6 +154,8 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
     An optional (pixels, latent dimension) calibration_encoder supplies raw
     reconstruction features, e.g. SFA. This changes only the calibration row;
     smoothed states and forecasts always use the model's Gaussian LDS posterior.
+    min_cluster_samples filters galleries and latent paths by final MAP counts;
+    assignment timelines, transition counts and metrics retain all observations.
     """
     from ..emissions._fixed_observation import AffineGaussianObservation
 
@@ -163,6 +175,8 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
     times = _times(times, len(labels))
     paths = model_latent_trajectories(model) if trajectories is None else trajectories
     ids, colors = sorted(paths), _colors(sorted(paths))
+    eligible = set(cluster_plot_ids(labels, min_cluster_samples).tolist())
+    visible_ids = [cluster for cluster in ids if cluster in eligible]
     members_by_cluster = {cluster: np.flatnonzero(labels == cluster) for cluster in ids}
     majorities = {}
     majority_correct = 0
@@ -173,8 +187,8 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
         majority_correct += int(counts.max()) if len(counts) else 0
     purity = majority_correct / evaluated.sum() if evaluated.any() else None
     rng = np.random.default_rng(random_state)
-    fig = plt.figure(figsize=(18, 5.8 + 4.1 * len(ids)), constrained_layout=True)
-    layout = fig.add_gridspec(len(ids) + 1, 1, height_ratios=[5.5] + [4.] * len(ids))
+    fig = plt.figure(figsize=(18, 5.8 + 4.1 * len(visible_ids)), constrained_layout=True)
+    layout = fig.add_gridspec(len(visible_ids) + 1, 1, height_ratios=[5.5] + [4.] * len(visible_ids))
     top = layout[0].subgridspec(1, 3)
     timeline = top[0].subgridspec(3, 1)
     truth_axis, assignment_axis = fig.add_subplot(timeline[0]), fig.add_subplot(timeline[1])
@@ -197,7 +211,7 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
                       xlabel='Video time (s)', ylabel='Cluster')
     majority_axis.set_yticks(ids)
     majority_axis.set_ylim(assignment_axis.get_ylim())
-    for cluster in ids:
+    for cluster in visible_ids:
         state = paths[cluster]
         owned = labels[state['indices']] == cluster
         rows = state['indices'][owned]
@@ -207,6 +221,9 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
         path_axis.scatter(xy[:, 0], xy[:, 1], color=colors[cluster], s=7)
     path_axis.set(title=f'Smoothed states: common {representation_name} coordinates',
                   xlabel='Latent component 1', ylabel='Latent component 2')
+    if not visible_ids:
+        path_axis.text(.5, .5, f'No clusters with >= {min_cluster_samples} samples',
+                       ha='center', va='center', transform=path_axis.transAxes)
     transitions = np.zeros((len(ids), len(ids)))
     slots = {cluster: index for index, cluster in enumerate(ids)}
     for a, b in zip(labels[:-1], labels[1:]):
@@ -216,11 +233,23 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
     transition_axis.set(title='Empirical consecutive-frame transitions', xlabel='Next cluster', ylabel='Current cluster')
     transition_axis.set_xticks(range(len(ids)), ids)
     transition_axis.set_yticks(range(len(ids)), ids)
-    for row, cluster in enumerate(ids, 1):
+    for row, cluster in enumerate(visible_ids, 1):
         gp = model._backend.gpmodels[0][cluster]
         decoder = getattr(gp, 'fixed_observation_model', None)
+        if decoder is None:
+            # Earlier legacy proposal copies retained affine arrays but lost
+            # the per-emission attachment. The declared model-level decoder
+            # is usable only if it agrees with this cluster's retained arrays.
+            decoder = getattr(model._backend, 'fixed_observation_model', None)
         if not isinstance(decoder, AffineGaussianObservation):
-            raise ValueError('Image gallery requires a fixed affine observation model')
+            raise ValueError(f'Image gallery requires a fixed affine observation model for cluster {cluster}')
+        direct_grid = getattr(gp, 'direct_observation_grid', None)
+        direct_offset = getattr(gp, 'direct_observation_offset', None)
+        if (direct_grid is None or direct_offset is None
+                or not np.array_equal(_array(gp.C[-1]), decoder.C)
+                or not np.array_equal(_array(direct_grid), decoder.grid)
+                or not np.array_equal(_array(direct_offset).reshape(-1), decoder.offset)):
+            raise ValueError(f'Cluster {cluster} affine parameters disagree with its fixed image decoder')
         state, members = paths[cluster], members_by_cluster[cluster]
         selected = np.sort(rng.choice(members, size=min(frames_per_cluster, len(members)), replace=False))
         all_means = np.vstack((state['prior_mean'][None], state['means']))
@@ -261,7 +290,9 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
     metric_text = f' | Purity {purity:.3f}' if purity is not None else ' | Purity N/A'
     if metrics:
         metric_text += f' | ARI {metrics["adjusted_rand_index"]:.3f} | NMI {metrics["normalized_mutual_information"]:.3f}'
+    selection_text = (f'\nDetails: {len(visible_ids)}/{len(ids)} clusters with >= {min_cluster_samples} samples; '
+                      'overview and scores include all observations' if min_cluster_samples > 1 else '')
     fig.suptitle(f'{record} | {len(values)} frames | {len(ids)} clusters{metric_text}\n'
                  f'Label metrics: {evaluated.sum()}/{len(values)} frames; '
-                 'A one-step is a native cluster step, not an observed future frame')
+                 'A one-step is a native cluster step, not an observed future frame' + selection_text)
     return [fig]

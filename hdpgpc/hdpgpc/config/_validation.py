@@ -185,8 +185,8 @@ def validate(c, *, for_build=False):
     integer(h.max_models, 'max_models', 1, optional=True)
     if h.max_models is not None and h.max_models < M:
         raise ValueError('max_models cannot be smaller than initial M')
-    if h.hdp_hyp not in ('less', 'balanced', 'more', 'max'):
-        raise ValueError('hdp_hyp must be less, balanced, more or max')
+    if h.hdp_hyp not in ('less', 'balanced', 'balanced_sticky', 'more', 'more_sticky', 'max'):
+        raise ValueError('hdp_hyp must be less, balanced, balanced_sticky, more, more_sticky or max')
     integer(o.n_outputs, 'n_outputs', 1)
     if (obs.scope != 'cluster' or any(p.mode.startswith('shared') for p in policies.values())) and o.n_outputs != 1:
         raise ValueError('shared/fixed observation parameters currently require one output')

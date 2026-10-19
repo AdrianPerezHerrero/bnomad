@@ -95,6 +95,11 @@ the fixed decoder, offset, initial covariance and applied Sigma. These affine
 parameters also determine the encoder through the decoder pseudoinverse.
 `--no-plots` disables all figures; saving does not open GUI windows.
 
+Use `--min-cluster-samples 5` to hide detail panels for clusters with fewer than
+five assigned images. This filters image galleries, latent paths, detailed
+trajectories and optional LDS plots. Global overviews, metrics, assignments and
+saved state arrays retain all observations. Default 1 shows every active cluster.
+
 Labels are used only for reporting. Identical images with ambiguous anatomical
 annotations are fitted once and excluded from label metrics, as in the PCA
 runner. Calibration sees the selected segment; metrics describe in-sample

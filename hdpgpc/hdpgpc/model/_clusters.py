@@ -354,6 +354,17 @@ def gpmodel_deepcopy(self, gpmodel):
         gp_.gp.direct_observation_grid = gpmodel.gp.direct_observation_grid
         gp_.gp.direct_observation_offset = gpmodel.gp.direct_observation_offset
         gp_.gp.direct_initial_covariance = gpmodel.gp.direct_initial_covariance
+        # The decoder is immutable and shared across fixed-affine clusters.
+        # Keep its attachment on both layers: filtering and emission scoring
+        # consult different layers, and diagnostics inspect the emission.
+        fixed_model = getattr(gpmodel, 'fixed_observation_model', None)
+        if fixed_model is None:
+            fixed_model = getattr(gpmodel.gp, 'fixed_observation_model', None)
+        if fixed_model is None:
+            fixed_model = getattr(self, 'fixed_observation_model', None)
+        if fixed_model is not None:
+            gp_.fixed_observation_model = fixed_model
+            gp_.gp.fixed_observation_model = fixed_model
     if gpmodel.lds_scoring == 'historical':
         gp_.lds_internal_score_history = gpmodel.lds_internal_score_history.copy()
         gp_.lds_observation_score_history = gpmodel.lds_observation_score_history.copy()

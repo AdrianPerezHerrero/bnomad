@@ -6,18 +6,37 @@ the LDS matrix A.
 
 ## Markov assignments (`hmm_switch=True`)
 
-These are the **current HMM implementation values**, unchanged:
+These are the **current HMM implementation values**:
 
 | Preset | `gamma` | `transAlpha` | `startAlpha` | `kappa` |
 | --- | ---: | ---: | ---: | ---: |
 | `less` | 1000 | 1000 | 1 | 0 |
 | `balanced` | 1000 | 100 | 1 | 0 |
+| `balanced_sticky` | 1000 | 100 | 1 | 10 |
 | `more` | 10 | 100 | 1 | 0 |
+| `more_sticky` | 10 | 100 | 1 | 10 |
 | `max` | 1 | 0.01 | 1 | 0 |
 
 Select a bundle with `HDPConfig(hdp_hyp='max')`, or pass
 `--hdp-preset max` to a dataset runner. The name is a preset label, not a
 guarantee that every dataset will produce more clusters.
+
+`balanced_sticky` keeps the balanced concentrations and adds a self-transition
+pseudocount of 10 to each active state. Select it with
+`HDPConfig(hdp_hyp='balanced_sticky')` or `--hdp-preset balanced_sticky`:
+
+```powershell
+python examples/cas_colon_sfa_clustering.py --records 1 --hdp-preset balanced_sticky
+```
+
+`more_sticky` similarly uses the `more` concentrations with kappa=10. Select
+`HDPConfig(hdp_hyp='more_sticky')` or `--hdp-preset more_sticky`.
+
+It encourages persistence, without imposing a minimum dwell time. Its strength
+is relative to `transAlpha` and the transition counts. The nonzero-kappa
+top-level surrogate score uses the same stick coefficients as the optimizer
+(`K+1-eta1` and `K*kvec(K)+1+gamma-eta0`), correcting the previous sign and
+constant discrepancies. The original presets retain kappa=0 and their values.
 
 `gamma` controls the global stick concentration, `transAlpha` controls
 transition-row concentration around those weights, `startAlpha` affects the
@@ -36,7 +55,9 @@ Only gamma is active in the independent stick-weight prior and linear ELBO:
 | --- | ---: |
 | `less` | 0.001 |
 | `balanced` | 0.1 |
+| `balanced_sticky` | 0.1 |
 | `more` | 1.0 |
+| `more_sticky` | 1.0 |
 | `max` | 100.0 |
 
 Larger gamma spreads prior mass over more mixture components. These
@@ -45,6 +66,9 @@ ordering; the final cluster count still depends on the observations, priors,
 objective and search. They are not calibrated birth probabilities.
 `transAlpha`, `startAlpha` and `kappa` keep their bundle values as inactive
 fields; neither assignment weights nor the independent-mixture ELBO uses them.
+Consequently, `balanced_sticky` and `balanced` behave identically when
+`hmm_switch=False`: their gamma is 0.1 and the sticky mass has no effect.
+Likewise, `more_sticky` matches `more` with gamma=1.0 when HMM is disabled.
 The independent weight posterior remains
 `q(v_k) = Beta(1 + N_k, gamma + sum_{j>k} N_j)`.
 

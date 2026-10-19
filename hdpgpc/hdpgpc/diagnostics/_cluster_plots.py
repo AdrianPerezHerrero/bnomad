@@ -5,6 +5,7 @@ from matplotlib.collections import LineCollection
 from matplotlib.colors import to_rgb, to_rgba
 from matplotlib.lines import Line2D
 from ._lds_plots import model_lds_arrays
+from ._plot_selection import cluster_plot_ids
 
 
 ANNOTATION_COLORS = {
@@ -71,7 +72,7 @@ def _plot_cluster_latent(axis, state, gamma, color, *, pca=False, legend=False):
 
 def plot_clustering_summary(model, values, annotations, *, grid=None, record='', metrics=None,
                         channels=None, warped=False, ordered=True, show_latent=True,
-                        annotation_colors=None):
+                        annotation_colors=None, min_cluster_samples=1):
     """Plot the full-record overview and annotated cluster gallery.
 
     A separate figure is returned for each output channel. Transition entries
@@ -81,6 +82,9 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
     and the overview shows class composition instead of temporal transitions.
     show_latent=False omits the latent process and Gamma overlays.
     annotation_colors optionally overrides label colours for non-ECG datasets.
+    min_cluster_samples filters model means and gallery panels by final MAP
+    counts. Assignment timelines, transition/composition tables and metrics keep
+    the complete fitted clustering.
     """
     values = np.asarray(values)
     if values.ndim != 3 or not all(values.shape):
@@ -91,6 +95,9 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
     cluster_ids = np.asarray(model.cluster_ids_).reshape(-1)
     if not len(cluster_ids):
         raise ValueError('model must contain at least one assigned cluster')
+    eligible = set(cluster_plot_ids(assignments, min_cluster_samples).tolist())
+    visible_ids = [int(cluster) for cluster in cluster_ids if cluster in eligible]
+    gallery_positions = {cluster: position for position, cluster in enumerate(visible_ids)}
     pca = (model.config.observation.pca_grid is not None or
            model.config.observation.fixed_grid is not None)
 
@@ -108,9 +115,9 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
         raise ValueError('channels must name each output in values')
 
     predictions = {int(cluster): model.predictive(int(cluster), grid=grid)
-                   for cluster in cluster_ids}
+                   for cluster in visible_ids}
     latent_states = ({int(cluster): model.posterior(int(cluster))
-                      for cluster in cluster_ids} if show_latent else {})
+                      for cluster in visible_ids} if show_latent else {})
     for prediction in predictions.values():
         if len(prediction.grid) != values.shape[1]:
             raise ValueError('plot grid and observation point count must match')
@@ -154,7 +161,7 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
     )
 
     figures = []
-    gallery_rows = (len(cluster_ids) + 2) // 3
+    gallery_rows = (len(visible_ids) + 2) // 3
     palette = (plt.get_cmap('tab20') if len(cluster_ids) <= 20
                else plt.get_cmap('hsv', len(cluster_ids)))
     tab20_order = list(range(0, 20, 2)) + list(range(1, 20, 2))
@@ -200,6 +207,9 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
                 np.flatnonzero(member), assignments[member], s=7,
                 color=overview_color, linewidths=0, rasterized=True,
             )
+            if cluster not in gallery_positions:
+                continue
+            position = gallery_positions[cluster]
             prediction = predictions[cluster]
             x = prediction.grid.reshape(-1)
             mean = prediction.mean[:, output]
@@ -277,10 +287,11 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
         cluster_handles = [
             Line2D([0], [0], color=cluster_colors[int(cluster)], linewidth=2,
                    label=f'Cluster {cluster}')
-            for cluster in cluster_ids
+            for cluster in visible_ids
         ]
-        cluster_legend_axis.legend(handles=cluster_handles, loc='center', frameon=False,
-                                   ncol=min(3, len(cluster_ids)), fontsize=8)
+        if cluster_handles:
+            cluster_legend_axis.legend(handles=cluster_handles, loc='center', frameon=False,
+                                       ncol=min(3, len(cluster_handles)), fontsize=8)
 
         gallery_header.text(
             0, 0.5,
@@ -301,7 +312,7 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
             if not ordered and len(handles) > 20:
                 gallery_header.get_legend().remove()
 
-        for position in range(len(cluster_ids), gallery_rows * 3):
+        for position in range(len(visible_ids), gallery_rows * 3):
             fig.add_subplot(layout[position // 3 + 2, position % 3]).axis('off')
 
         cluster_word = 'cluster' if len(cluster_ids) == 1 else 'clusters'
@@ -315,6 +326,12 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
                          f" · NMI {metrics['normalized_mutual_information']:.3f}")
         else:
             headline += '\nAnnotation metrics unavailable'
+        if min_cluster_samples > 1:
+            headline += (f'\nDetails: {len(visible_ids)}/{len(cluster_ids)} clusters with >= '
+                         f'{min_cluster_samples} samples; overview and scores include all observations')
+        if not visible_ids:
+            models_axis.text(.5, .5, f'No clusters with >= {min_cluster_samples} samples',
+                             ha='center', va='center', transform=models_axis.transAxes)
         if warped:
             headline += '\nInput waveforms use the original grid; model bands use aligned coordinates'
         fig.suptitle(headline, fontsize=15, fontweight='bold')
