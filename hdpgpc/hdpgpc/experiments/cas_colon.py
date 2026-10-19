@@ -26,7 +26,7 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
     selected = dict(records=['1'], components=10, calibration_samples=400,
                     sigma_prior=1., gamma_prior=.01, sigma_mode='fixed',
                     offline_strategy='split_merge', split_merge_refine_steps=1,
-                    exploration_steps=3, hdp_preset='balanced',
+                    exploration_steps=5, hdp_preset='balanced',
                     fit_gp=False, alignment='none', lds_plots=False,
                     lds_dynamics_plots=False)
     if representation == 'autoencoder':
