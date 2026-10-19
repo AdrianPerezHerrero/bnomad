@@ -40,7 +40,9 @@ Engines share state, not an inference loop. HDP does not orchestrate emissions,
 dynamics or alignment. Dynamics algorithms do not import the main model or GP emission class.
 `dynamics/_independent.py` owns compatible fixed-zero-transition batch
 trajectory operations; `AffineGaussianObservation` owns batched conditioning
-and likelihoods. `inference/_messages.py` dispatches independent assignments
+and likelihoods. Its private pass-local conditioner reuses observation factors
+for batch LDS filtering; final affine scores also batch nonzero-A trajectories.
+`inference/_messages.py` dispatches independent assignments
 directly. [Fast-path conditions](independent_fast_paths.md) document fallbacks.
 Alignment policy owns enable/disable decisions; the warper owns its optimizer/cache.
 

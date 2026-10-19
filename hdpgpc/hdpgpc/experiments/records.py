@@ -50,8 +50,11 @@ def build_parser(dataset='mitbih', representation='waveform', description=None, 
     parser.add_argument('--gamma-mode', choices=NOISE_MODES)
     parser.add_argument('--shrink-strength', type=float, default=10.)
     parser.add_argument('--lds-inducing-points', type=int, default=0)
-    parser.add_argument('--sigma-prior', type=float, default=.1 if dataset == 'daphnet' else 50.)
-    parser.add_argument('--gamma-prior', type=float, default=.1 if dataset == 'daphnet' else 10.)
+    parser.add_argument('--sigma-prior', type=float,
+                        default=(.1 if dataset == 'daphnet' else 50.) if representation == 'waveform' else 1.,
+                        help='Waveform noise variance; for PCA/autoencoder, multiplier of calibrated Sigma (1 preserves calibration).')
+    parser.add_argument('--gamma-prior', type=float, default=.1 if dataset == 'daphnet' else 10.,
+                        help='Process covariance prior center is this variance times identity, including PCA/autoencoder.')
     parser.add_argument('--lengthscale', type=float, default=.15 if dataset == 'daphnet' else 1.)
     parser.add_argument('--gp-noise', type=float, default=.01 if dataset == 'daphnet' else 1.)
     parser.add_argument('--lengthscale-bounds', nargs=2, type=float, default=(.02, 2.) if dataset == 'daphnet' else (.1, 10.))
@@ -89,6 +92,11 @@ def build_parser(dataset='mitbih', representation='waveform', description=None, 
 def make_config(grid, args, outputs=1, decoder=None, noise_scales=None):
     policy = alignment_policy(args)
     sigma, gamma = noise_scales or (args.sigma_prior, args.gamma_prior)
+    if decoder is not None:
+        # Install the scaled covariance as the explicit policy value. Merely
+        # setting ini_sigma would be overridden by the calibrated decoder.
+        decoder = replace(decoder, Sigma=args.sigma_prior * decoder.Sigma)
+        sigma = float(np.diag(decoder.Sigma).mean())
     basis = grid
     if args.lds_inducing_points:
         if not 1 <= args.lds_inducing_points <= len(grid):
@@ -187,7 +195,6 @@ def run_record(values, labels, grid, args, run, metadata, row_metadata, colors=N
                                                grid, estimate.mean, np.diag(estimate.latent_variances))
             metadata.update(calibration_indices=estimate.beat_indices, sampling=sampling,
                             explained_variance_ratio=estimate.explained_variance_ratio)
-        np.savez_compressed(run.path / 'observation_calibration.npz', **decoder.state_dict())
         codes = (values[..., 0] - decoder.offset) @ np.linalg.pinv(decoder.C).T
     noise_scales = None
     if args.calibrate_lds_noise_priors:
@@ -202,8 +209,16 @@ def run_record(values, labels, grid, args, run, metadata, row_metadata, colors=N
         noise_scales = pooled, pooled
         metadata['calibrated_noise_prior'] = pooled
     config = make_config(grid, args, values.shape[2], decoder, noise_scales)
+    if decoder is not None:
+        prior_state = decoder.state_dict()
+        prior_state['Sigma'] = config.observation.Sigma_policy.value
+        np.savez_compressed(run.path / 'observation_calibration.npz', **prior_state)
+        metadata.update(sigma_prior_multiplier=args.sigma_prior,
+                        sigma_prior_diagonal_mean=config.emission.ini_sigma)
     (run.path / 'config.yaml').write_text(config.to_yaml(), encoding='utf-8')
-    log_configuration(config, args, source='calibration' if noise_scales or decoder is not None else 'configured')
+    source = (f'calibration (Sigma multiplier={args.sigma_prior:g})' if decoder is not None else
+              'calibration' if noise_scales else 'configured')
+    log_configuration(config, args, source=source)
     model = HDPGPC(config).fit(values, grid=grid, birth_diagnostic_limit=args.birth_plots)
     metadata.update(evaluation='in-sample ordered clustering; calibration prefixes are replayed',
                     waveform_points=len(grid))
@@ -225,8 +240,10 @@ def run_records(args, parser=None):
         raise ValueError('Birth diagnostic plots require offline inference')
     for bounds, initial in ((args.lengthscale_bounds, args.lengthscale), (args.gp_noise_bounds, args.gp_noise),
                             (args.gp_outputscale_bounds, args.gp_outputscale),
-                            (args.sigma_bounds, args.sigma_prior), (args.gamma_bounds, args.gamma_prior)):
-        if not 0 < bounds[0] <= initial <= bounds[1] or not np.isfinite(bounds).all():
+                            (args.sigma_bounds, args.sigma_prior if args.representation == 'waveform' else None),
+                            (args.gamma_bounds, args.gamma_prior)):
+        if (not np.isfinite(bounds).all() or not 0 < bounds[0] <= bounds[1]
+                or (initial is not None and not bounds[0] <= initial <= bounds[1])):
             raise ValueError('Initial GP and noise values must lie within finite positive bounds')
     settings = experiment_settings(args)
     reports = []

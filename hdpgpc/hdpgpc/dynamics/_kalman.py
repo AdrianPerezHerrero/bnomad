@@ -61,6 +61,9 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
                else A @ cov_prior @ A.T + Gamma)
         fixed_model = getattr(backend, 'fixed_observation_model', None)
         if fixed_model is not None:
+            conditioner = getattr(backend, '_affine_conditioner', None)
+            if conditioner is not None and conditioner.matches(fixed_model, x_basis_mean, Sigma):
+                return conditioner.condition(x_basis_mean, P_t, y, responsibility=h)
             return fixed_model.condition(x_basis_mean, P_t, y,
                                          responsibility=h, noise=Sigma)
         # Information form factors only the latent covariance. PCA calibration

@@ -55,6 +55,7 @@ inference engine. General plotting belongs to `hdpgpc.diagnostics`.
 | Calibration | `--components`, `--calibration-samples`; AE also `--epochs`, `--learning-rate` |
 | Normalization | `--normalize-samples` / `--no-normalize-samples` |
 | UCR covariance priors | `--sigma-prior`, `--gamma-prior`: variances for waveform mode; covariance multipliers for calibrated decoders |
+| Record covariance priors | `--sigma-prior`: waveform variance or calibrated PCA/AE Sigma multiplier; `--gamma-prior`: process variance times identity |
 | Diagnostics | `--plots`, `--projection-plots`, `--lds-plots`, `--lds-dynamics-plots`, `--warp-plots`, `--birth-plots N` |
 | Reproducibility | `--seed`, `--output-dir`, `--resume`, `--verbose silent/progress/debug` |
 
@@ -118,10 +119,20 @@ minibatch, 50 outer iterations, no warp and no GP kernel fitting. Calibration
 reduces the component count if the waveform or minibatch is smaller. PCA's mean
 and decoder remain fixed, A/Gamma learn per cluster, and Sigma defaults to the
 calibrated fixed residual covariance. `--sigma-mode` selects a learned or shared
-covariance when supported by the model. Outputs are saved under
+covariance when supported by the model. `--sigma-prior` multiplies the calibrated
+Sigma before installing its fixed value or learned prior center. Dedicated PCA
+and autoencoder record runners default to multiplier 1, preserving calibration;
+0.1 reduces the covariance tenfold and 10 increases it tenfold. These are
+covariance multipliers, not standard deviations or prior-strength controls.
+For records, `--gamma-prior` continues to set Gamma's prior center to that value
+times identity; it does not scale the calibrated initial state covariance.
+The applied Sigma is recorded in `config.yaml`, `observation_calibration.npz`
+and the report metadata; the initial log identifies its multiplier.
+Outputs are saved under
 `agents/mitbih_pca_runs/<record>/<run_id>/`. The waveform entry point's
 `--representation pca` option remains available with explicit `--no-warp
---no-fit-gp`.
+--no-fit-gp`. With that waveform entry point, also pass `--sigma-prior 1` to
+preserve calibration: its default remains the waveform variance default.
 
 Online record calibration defaults to a prefix and rejects uniform sampling;
 the prefix is replayed during fitting. Offline calibration can sample uniformly.

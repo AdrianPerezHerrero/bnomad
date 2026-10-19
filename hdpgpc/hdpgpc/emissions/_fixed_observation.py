@@ -8,6 +8,7 @@ likelihood; projecting observations through an encoder alone is insufficient.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import numpy as np
@@ -361,3 +362,77 @@ class AffineGaussianObservation(FixedObservationModel):
             raise ValueError('Unknown or malformed affine observation state')
         return cls(state['C'], state['Sigma'], state['grid'],
                    state['offset'], state['latent_covariance'])
+
+
+class _AffineConditioner:
+    """Observation-only factors held during one fixed-parameter filtering pass.
+
+    The changing prior covariance is still factored for every state. Full noise
+    uses the same jitter and solves as `AffineGaussianObservation.condition`.
+    Nothing is attached to the immutable/shared calibration model.
+    """
+
+    def __init__(self, model, reference, noise):
+        self.model, self.noise = model, noise
+        self.C, sigma, self.offset = model._tensors(reference, noise)
+        self.dtype, self.device = self.C.dtype, self.C.device
+        self.inverse_variance = None
+        self.noise_chol = None
+        if torch.equal(sigma, torch.diag(torch.diag(sigma))):
+            self.inverse_variance = 1.0 / torch.diag(sigma)
+            weighted_C = self.inverse_variance[:, None] * self.C
+        else:
+            self.noise_chol = _chol_cov(sigma)
+            weighted_C = torch.cholesky_solve(self.C, self.noise_chol)
+        precision = self.C.T @ weighted_C
+        self.precision = 0.5 * (precision + precision.T)
+
+    def matches(self, model, reference, noise):
+        # The enclosing pass holds Sigma fixed, and ends before its M-step.
+        return (model is self.model and noise is self.noise
+                and reference.dtype == self.dtype and reference.device == self.device)
+
+    def condition(self, prior_mean, prior_covariance, observation, *, responsibility):
+        mean = torch.as_tensor(prior_mean).reshape(-1, 1)
+        covariance = torch.as_tensor(prior_covariance, dtype=mean.dtype, device=mean.device)
+        y = torch.as_tensor(observation, dtype=mean.dtype, device=mean.device).reshape(-1, 1)
+        if y.shape != (self.model.observation_dim, 1) or mean.shape != (self.model.latent_dim, 1):
+            raise ValueError('Observation or latent mean has the wrong dimension')
+        weight = float(responsibility)
+        if not np.isfinite(weight) or weight < 0:
+            raise ValueError('responsibility must be finite and nonnegative')
+        if weight == 0:
+            return mean, covariance
+        prior_precision = torch.cholesky_inverse(_chol_cov(covariance))
+        if self.inverse_variance is not None:
+            weighted_y = self.inverse_variance[:, None] * (y - self.offset)
+        else:
+            weighted_y = torch.cholesky_solve(y - self.offset, self.noise_chol)
+        information = self.C.T @ weighted_y
+        precision = prior_precision + weight * self.precision
+        posterior_cov = torch.cholesky_inverse(_chol_cov(precision))
+        posterior_mean = posterior_cov @ (prior_precision @ mean + weight * information)
+        return posterior_mean, 0.5 * (posterior_cov + posterior_cov.T)
+
+
+@contextmanager
+def _affine_conditioning_pass(emission):
+    """Temporarily cache observation factors where an E-step holds Sigma fixed."""
+    model = getattr(emission, 'fixed_observation_model', None)
+    if (emission.lds_update != 'conjugate_batch' or emission.fit_gp
+            or type(model) is not AffineGaussianObservation
+            or emission.Sigma[-1].requires_grad):
+        yield
+        return
+    backend = emission.gp
+    missing = object()
+    previous = getattr(backend, '_affine_conditioner', missing)
+    conditioner = _AffineConditioner(model, emission.f_star_sm[-1], emission.Sigma[-1])
+    backend._affine_conditioner = conditioner
+    try:
+        yield
+    finally:
+        if previous is missing:
+            del backend._affine_conditioner
+        else:
+            backend._affine_conditioner = previous

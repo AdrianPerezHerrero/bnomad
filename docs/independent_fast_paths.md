@@ -70,8 +70,49 @@ pooling and KL ownership stay in their existing components.
 
 Sequential/natural-gradient/legacy learning, learned A, GP-projected or warped
 observations, custom observation implementations and incompatible cases retain
-the general path. If the scalar filter's initial-covariance equality sentinel
-recurs mid-path, batching falls back before committing states.
+the general trajectory path. The affine optimizations below do not require
+independent states. If the scalar filter's initial-covariance equality sentinel
+recurs mid-path, independent trajectory batching falls back before committing states.
+
+## Affine observations with learned or nonzero A
+
+MIT-BIH PCA and affine autoencoder runs can still share observation algebra
+while retaining chronological LDS filtering and HMM assignments. These automatic
+optimizations do not fix A to zero or remove temporal dependence.
+
+During a `conjugate_batch` filtering pass, the built-in affine decoder and Sigma
+are constant until the M-step. A temporary conditioner computes diagonal inverse
+variances or the full Sigma Cholesky factor, and
+
+```text
+H = C.T Sigma^-1 C
+h_t = C.T Sigma^-1 (y_t - offset)
+V_t = inverse(P_t^-1 + r_t H)
+m_t = V_t (P_t^-1 prior_mean_t + r_t h_t)
+```
+
+The noise factor and H are reused; each changing P_t and observation information
+are still computed for its state. The existing full-noise jitter and triangular
+solves are retained. The cache is local to the GP backend's filtering pass and
+removed even on exceptions, before smoothing and posterior parameter updates.
+It is never stored in the immutable decoder or a checkpoint. Cache use requires
+the built-in affine implementation, GP fitting disabled, matching Sigma object,
+dtype and device, and no Sigma gradient request. Sequential parameter updates
+continue to use uncached conditioning because their Sigma may change per beat.
+
+For `lds_scoring='final'` on the configured common affine observation grid,
+observation likelihoods now batch all selected smoothed state means and
+covariances in one call, even when A is learned or nonzero. Exact member,
+preceding member for a nonmember, and prior-before-first-member lookup are
+unchanged. The first included member retains its existing small noise adjustment
+in a separate call, unless `no_first=True`. Thus the ordinary full Sigma is
+factored once per scoring call rather than once per distinct state. The method
+retains residual, normalization and state-covariance trace contributions.
+
+Historical scoring, irregular grids, GP-projected observations and custom affine
+subclasses retain their existing scoring path. Filtering and smoothing remain
+sequential when A is nonzero; batch MNIW updates, shared parameter ownership,
+split/merge refinement and proposal acceptance are unchanged.
 
 These algebraic optimizations can introduce floating-point differences from
 reordered operations. They do not restrict proposal membership, change acceptance

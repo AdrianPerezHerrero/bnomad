@@ -659,20 +659,22 @@ class GaussianProcessEmission:
         if batch_lds and not self.inducing_points and any(not torch.equal(x_trains[index], self.x_basis)
                              for index in active.tolist()):
             raise NotImplementedError('conjugate_batch requires a common observation grid')
-        for index in active.tolist():
-            h = float(resp[index].item())
-            self.include_weighted_sample(
-                index,
-                x_trains[index],
-                x_trains[index],
-                y_trains[index],
-                h
-            )
-            if batch_lds:
-                _trajectory.hold_lds_params(self)
-            elif model_type == 'dynamic':
-                self.backwards_pair(h)
-                self.bayesian_new_params(h)
+        from ._fixed_observation import _affine_conditioning_pass
+        with _affine_conditioning_pass(self):
+            for index in active.tolist():
+                h = float(resp[index].item())
+                self.include_weighted_sample(
+                    index,
+                    x_trains[index],
+                    x_trains[index],
+                    y_trains[index],
+                    h
+                )
+                if batch_lds:
+                    _trajectory.hold_lds_params(self)
+                elif model_type == 'dynamic':
+                    self.backwards_pair(h)
+                    self.bayesian_new_params(h)
 
         if model_type == 'dynamic':
             self.backwards()
@@ -775,6 +777,25 @@ class GaussianProcessEmission:
         shared_grid = torch.equal(x_trains, x_trains[0:1].expand_as(x_trains))
         if shared_grid:
             x0 = x_trains[0]
+            from ._fixed_observation import AffineGaussianObservation
+            fixed_model = getattr(self, 'fixed_observation_model', None)
+            if type(fixed_model) is AffineGaussianObservation and self.lds_scoring == 'final':
+                if not torch.equal(x0.reshape(-1, 1), self.direct_observation_grid):
+                    raise ValueError('Fixed observation requires its configured waveform grid')
+                # The lookup above includes exact members, preceding members
+                # for nonmembers, and the initial prior before the first member.
+                means = torch.stack(self.f_star_sm)[i_vals]
+                covariances = torch.stack(self.cov_f_sm)[i_vals]
+                sigma = self.Sigma[-1]
+                sq_err = fixed_model.expected_log_likelihood_batch(
+                    y_trains, means, covariances, noise=sigma)
+                if bool(first_mask.any()):
+                    ids = torch.where(first_mask)[0]
+                    first_noise = sigma + torch.diag(sigma).mean() * 1e-2 * torch.eye(
+                        len(sigma), device=sigma.device, dtype=sigma.dtype)
+                    sq_err[ids] = fixed_model.expected_log_likelihood_batch(
+                        y_trains[ids], means[ids], covariances[ids], noise=first_noise)
+                return sq_err
             group_code = i_vals * 2 + first_mask.to(i_vals.dtype)
 
             for code in torch.unique(group_code):
