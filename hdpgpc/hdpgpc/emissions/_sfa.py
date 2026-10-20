@@ -6,6 +6,7 @@ from numbers import Integral
 import numpy as np
 
 from ._fixed_observation import AffineGaussianObservation
+from ._temporal import calibration_pairs
 
 
 @dataclass(frozen=True)
@@ -101,30 +102,8 @@ def estimate_sfa_observation(observations, grid, *, components=10, max_samples=4
     if not np.isfinite(noise_floor) or noise_floor <= 0:
         raise ValueError('SFA noise_floor must be finite and positive')
 
-    segments = np.zeros(len(values), dtype=int) if segment_ids is None else np.asarray(segment_ids)
-    if segments.shape != (len(values),):
-        raise ValueError('segment_ids must have one entry per observation')
-    # Run numbers also prevent pairing across a repeated segment ID after a gap.
-    runs = np.r_[0, np.cumsum(segments[1:] != segments[:-1])]
-    time = np.arange(len(values), dtype=float) if times is None else np.asarray(times, dtype=float)
-    if (time.shape != (len(values),) or not np.isfinite(time).all()
-            or np.any((np.diff(time) <= 0) & (runs[1:] == runs[:-1]))):
-        raise ValueError('SFA times must be finite and strictly increasing within each segment')
-    starts = np.arange(len(values) - lag)
-    starts = starts[runs[starts] == runs[starts + lag]]
-    count = min(int(max_samples), len(values))
-    if sampling == 'prefix':
-        starts = starts[starts + lag < count]
-        indices = np.arange(count)
-    elif count == len(values):
-        indices = np.arange(count)
-    else:
-        pair_count = min(count // 2, len(starts))
-        starts = np.sort(np.random.default_rng(random_state).choice(starts, pair_count, replace=False))
-        indices = np.unique(np.r_[starts, starts + lag])
-    if not len(starts):
-        raise ValueError('SFA calibration has no valid within-segment lagged pairs; increase samples or reduce lag')
-    pairs = np.column_stack((starts, starts + lag))
+    indices, pairs, durations = calibration_pairs(len(values), max_samples=max_samples,
+        sampling=sampling, random_state=random_state, lag=lag, times=times, segment_ids=segment_ids)
     batch = values[indices]
     mean = batch.mean(axis=0)
     centered = batch - mean
@@ -135,8 +114,7 @@ def estimate_sfa_observation(observations, grid, *, components=10, max_samples=4
     white_dim = min(rank, len(pairs), rank if whitening_components is None else int(whitening_components))
     dimension = min(int(components), white_dim)
     whitening = right[:white_dim].T * (np.sqrt(len(batch)) / singular[:white_dim])
-    deltas = ((values[pairs[:, 1]] - values[pairs[:, 0]])
-              / (time[pairs[:, 1]] - time[pairs[:, 0]])[:, None]) @ whitening
+    deltas = ((values[pairs[:, 1]] - values[pairs[:, 0]]) / durations[:, None]) @ whitening
     derivative_covariance = deltas.T @ deltas / len(pairs)
     eigenvalues, directions = np.linalg.eigh(.5 * (derivative_covariance + derivative_covariance.T))
     encoder = whitening @ directions[:, :dimension]

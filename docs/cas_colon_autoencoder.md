@@ -5,6 +5,8 @@ This runner changes the calibrated representation while retaining the dataset
 loader, chronological segments, HDP-GPC inference and image trajectory reports.
 The [Linear SFA example](linear_sfa_observation.md) instead calibrates slow
 features from ordered temporal pairs using the same fixed affine interface.
+The [linear prediction example](linear_prediction_observation.md) combines
+reconstruction and temporal predictability in that interface.
 
 ```powershell
 python examples/cas_colon_autoencoder_clustering.py --records 1

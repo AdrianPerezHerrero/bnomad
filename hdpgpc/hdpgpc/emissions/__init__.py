@@ -4,12 +4,16 @@ __all__ = (
     'FixedObservationModel', 'AffineGaussianObservation',
     'PCAObservationEstimate', 'estimate_pca_observation',
     'SFAObservationEstimate', 'estimate_sfa_observation',
+    'LinearPredictionObservationEstimate', 'estimate_linear_prediction_observation',
     'real_fourier_basis', 'make_fourier_observation',
     'real_wavelet_basis', 'make_wavelet_observation',
     'TiedLinearAutoencoder', 'AutoencoderObservationEstimate', 'estimate_autoencoder_observation',
 )
 
 def __getattr__(name):
+    if name in ('LinearPredictionObservationEstimate', 'estimate_linear_prediction_observation'):
+        from . import _linear_prediction
+        return getattr(_linear_prediction, name)
     if name in ('SFAObservationEstimate', 'estimate_sfa_observation'):
         from . import _sfa
         return getattr(_sfa, name)

@@ -6,6 +6,8 @@ variance, rather than by reconstruction variance alone. Its decoder is installed
 through the same `AffineGaussianObservation` and `with_fixed_observation_model`
 interface as PCA, the tied linear autoencoder and fixed Fourier/wavelet bases.
 There is no additional inference engine or matrix-policy system.
+For a representation that also optimizes reconstruction, see
+[fixed affine linear prediction](linear_prediction_observation.md).
 
 ## CAS-Colon example
 

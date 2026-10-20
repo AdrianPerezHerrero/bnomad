@@ -14,22 +14,23 @@ from ..datasets.cas_colon import cas_colon_annotations, load_cas_colon_frames
 from ..diagnostics import (model_latent_trajectories, plot_latent_trajectories,
                            plot_image_clustering_summary)
 from ..emissions import (AffineGaussianObservation, estimate_pca_observation,
-                         estimate_autoencoder_observation, estimate_sfa_observation)
+                         estimate_autoencoder_observation, estimate_sfa_observation,
+                         estimate_linear_prediction_observation)
 from . import records
 from ._arguments import validate_common, validate_affine
 from ._runs import ExperimentRun, experiment_settings, save_results, append_summary, log_configuration
 
 
 def build_parser(description=None, defaults=None, *, representation='pca'):
-    if representation not in ('pca', 'autoencoder', 'sfa'):
-        raise ValueError('CAS-Colon supports pca, autoencoder or sfa representations')
+    if representation not in ('pca', 'autoencoder', 'sfa', 'linear_prediction'):
+        raise ValueError('CAS-Colon supports pca, autoencoder, sfa or linear_prediction representations')
     selected = dict(records=['1'], components=10, calibration_samples=400,
                     sigma_prior=1., gamma_prior=.01, sigma_mode='fixed',
                     offline_strategy='split_merge', split_merge_refine_steps=1,
                     exploration_steps=5, hdp_preset='balanced',
                     fit_gp=False, alignment='none', lds_plots=False,
                     lds_dynamics_plots=False)
-    if representation == 'autoencoder':
+    if representation in ('autoencoder', 'linear_prediction'):
         selected['epochs'] = 250
     selected.update(defaults or {})
     parser = records.build_parser('cas_colon', representation, description, selected)
@@ -52,6 +53,16 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
                             help='Maximum pilot whitening rank before selecting slow features (default: 64).')
         parser.add_argument('--sfa-rank-tolerance', type=float, default=1e-6,
                             help='Relative singular-value cutoff for numerical covariance rank.')
+    if representation == 'linear_prediction':
+        parser.add_argument('--prediction-weight', type=float, default=1.,
+                            help='Weight of normalized latent prediction error; zero gives a PCA control.')
+        parser.add_argument('--prediction-lag', type=int, default=1,
+                            help='Constant prediction lag in selected frame steps (default: 1).')
+        parser.add_argument('--prediction-whitening-components', type=int, default=64,
+                            help='Maximum pilot whitening rank before learning predictive features.')
+        parser.add_argument('--prediction-rank-tolerance', type=float, default=1e-6)
+        parser.add_argument('--prediction-ridge', type=float, default=1e-6,
+                            help='Small ridge on the calibration predictor; does not regularize LDS A.')
     for action in parser._actions:
         if action.dest == 'schedule':
             action.choices = ('offline',)
@@ -85,8 +96,15 @@ def _validate(args):
     validate_affine(args)
     if args.schedule != 'offline':
         raise ValueError('CAS-Colon trajectory reports currently require offline inference')
-    if args.representation not in ('pca', 'autoencoder', 'sfa'):
-        raise ValueError('CAS-Colon supports pca, autoencoder or sfa representations')
+    if args.representation not in ('pca', 'autoencoder', 'sfa', 'linear_prediction'):
+        raise ValueError('CAS-Colon supports pca, autoencoder, sfa or linear_prediction representations')
+    if args.representation == 'linear_prediction' and (
+            args.prediction_lag < 1 or args.prediction_whitening_components < args.components
+            or not np.isfinite(args.prediction_rank_tolerance) or not 0 < args.prediction_rank_tolerance < 1
+            or not np.isfinite(args.prediction_weight) or args.prediction_weight < 0
+            or not np.isfinite(args.prediction_ridge) or args.prediction_ridge <= 0
+            or args.epochs < 1 or not np.isfinite(args.learning_rate) or args.learning_rate <= 0):
+        raise ValueError('Invalid prediction weight, lag, whitening rank, tolerance, ridge or training controls')
     if args.representation == 'sfa' and (
             args.sfa_lag < 1 or args.sfa_whitening_components < args.components
             or not np.isfinite(args.sfa_rank_tolerance) or not 0 < args.sfa_rank_tolerance < 1):
@@ -120,7 +138,40 @@ def run_sequence(sequence, args, run, *, segment):
     sampling = args.calibration_sampling or 'uniform'
     calibration_start = perf_counter()
     calibration_encoder = None
-    if args.representation == 'sfa':
+    if args.representation == 'linear_prediction':
+        estimate = estimate_linear_prediction_observation(values, grid, components=dimension,
+            max_samples=args.calibration_samples, epochs=args.epochs, learning_rate=args.learning_rate,
+            prediction_weight=args.prediction_weight, prediction_ridge=args.prediction_ridge,
+            whitening_components=args.prediction_whitening_components,
+            rank_tolerance=args.prediction_rank_tolerance, sampling=sampling, random_state=args.seed,
+            times=sequence.seconds, lag=args.prediction_lag, noise_floor=args.noise_floor)
+        decoder, indices = estimate.model, estimate.indices
+        calibration_encoder = estimate.encoder
+        codes = estimate.transform(values)
+        representation_name = 'Linear prediction'
+        best_losses = estimate.losses[estimate.best_iteration]
+        loss_columns = ['total', 'reconstruction', 'prediction', 'predictor_ridge']
+        calibration_metadata = dict(encoder='linear_prediction', lag=args.prediction_lag,
+            prediction_weight=args.prediction_weight, prediction_ridge=args.prediction_ridge,
+            numerical_rank=estimate.numerical_rank, whitening_dimension=estimate.whitening_dimension,
+            rank_tolerance=args.prediction_rank_tolerance, calibration_pair_count=len(estimate.pair_indices),
+            calibration_lag_seconds=float(estimate.pair_durations[0]), epochs_requested=args.epochs,
+            optimizer_steps=len(estimate.losses) - 1, best_iteration=estimate.best_iteration,
+            learning_rate=args.learning_rate, loss_columns=loss_columns,
+            pca_control_losses=estimate.losses[0], best_losses=best_losses,
+            raw_encoder_is_gaussian_measurement=False)
+        np.savez_compressed(run.path / 'linear_prediction_calibration.npz',
+            encoder=estimate.encoder, predictor=estimate.predictor, offset=decoder.offset,
+            indices=indices, pair_indices=estimate.pair_indices,
+            pair_times=sequence.seconds[estimate.pair_indices], pair_durations=estimate.pair_durations,
+            codes=codes, losses=estimate.losses, loss_columns=np.asarray(loss_columns),
+            best_iteration=estimate.best_iteration, numerical_rank=estimate.numerical_rank,
+            whitening_dimension=estimate.whitening_dimension,
+            prediction_weight=args.prediction_weight, prediction_ridge=args.prediction_ridge)
+        calibration_description = (f'{len(estimate.pair_indices)} temporal pairs, '
+            f'objective {estimate.losses[0, 0]:.5g} -> {best_losses[0]:.5g}, '
+            f'reconstruction fraction={best_losses[1]:.5g}, best step={estimate.best_iteration}')
+    elif args.representation == 'sfa':
         estimate = estimate_sfa_observation(values, grid, components=dimension,
             max_samples=args.calibration_samples, sampling=sampling, random_state=args.seed,
             times=sequence.seconds, lag=args.sfa_lag,
@@ -204,6 +255,10 @@ def run_sequence(sequence, args, run, *, segment):
             from ..diagnostics._calibration_plots import plot_autoencoder_calibration
             figures['autoencoder_calibration'] = plot_autoencoder_calibration(
                 values, estimate.network, indices, estimate.losses, image_shape=tuple(args.image_size))
+        if args.representation == 'linear_prediction':
+            from ..diagnostics._calibration_plots import plot_linear_prediction_calibration
+            figures['linear_prediction_calibration'] = plot_linear_prediction_calibration(
+                values, estimate, image_shape=tuple(args.image_size))
         return figures
 
     metadata = dict(video=sequence.video, segment=segment, image_shape=list(args.image_size),

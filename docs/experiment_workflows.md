@@ -18,6 +18,7 @@ python examples/mitbih_pca_clustering.py --records 100 --components 12
 python examples/cas_colon_pca_clustering.py --records 1 --components 10
 python examples/cas_colon_autoencoder_clustering.py --records 1 --components 10 --epochs 250
 python examples/cas_colon_sfa_clustering.py --records 1 --components 10
+python examples/cas_colon_linear_prediction_clustering.py --records 1 --components 20 --prediction-weight 0.1
 python examples/mitbih_autoencoder_clustering.py --records 100 --calibration-samples 400
 python examples/ucr_fourier_clustering.py --datasets ACSF1 --window-size 16
 python examples/ucr_wavelet_clustering.py --datasets ACSF1
@@ -44,7 +45,7 @@ configuration system. Shared builders construct the existing typed
 `hdpgpc.experiments` owns orchestration and files. It contains no alternative
 inference engine. General plotting belongs to `hdpgpc.diagnostics`.
 
-CAS-Colon PCA, affine autoencoder and Linear SFA runners use an image gallery and retained latent-state trajectory plots
+CAS-Colon PCA, affine autoencoder, Linear SFA and linear-prediction runners use an image gallery and retained latent-state trajectory plots
 instead of a flattened-pixel waveform gallery. It retains chronological frames
 and HMM transitions. See the [image experiment guide](cas_colon_pca.md) for data
 layout, frame-gap handling, reconstruction/forecast panels and current restrictions.
@@ -52,6 +53,8 @@ The [autoencoder guide](cas_colon_autoencoder.md) describes its calibration,
 covariance scales and exact affine limitations.
 The [Linear SFA guide](linear_sfa_observation.md) explains calibration using
 genuine temporal pairs and its fixed Gaussian decoder.
+The [linear prediction guide](linear_prediction_observation.md) describes a
+normalized affine objective combining reconstruction and latent prediction.
 
 ## Common arguments
 
@@ -116,7 +119,7 @@ The singular `--dataset` remains an alias for one UCR dataset.
 | Daphnet waveform | Chronological; `only_plastic`; warp off | Gamma per cluster; Sigma fixed |
 | ECG PCA | Chronological; fixed calibrated PCA C | Gamma per cluster; Sigma fixed (selectable) |
 | ECG autoencoder | Chronological; fixed trained affine C | Gamma per cluster; Sigma fixed |
-| CAS-Colon PCA / autoencoder / SFA | Chronological images; HMM on; fixed calibrated affine C | A/Gamma per cluster; Sigma fixed (selectable) |
+| CAS-Colon PCA / autoencoder / SFA / linear prediction | Chronological images; HMM on; fixed calibrated affine C | A/Gamma per cluster; Sigma fixed (selectable) |
 | UCR waveform | HMM off; A=0, C=I; DTW-GP enabled | Sigma full per cluster; Gamma fixed |
 | UCR PCA | HMM off; A=0; fixed PCA C | Gamma full and Sigma diagonal per cluster |
 | UCR autoencoder | HMM off; A=0; fixed trained affine C | Gamma full per cluster; Sigma fixed |

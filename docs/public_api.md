@@ -104,6 +104,13 @@ pair indices and derivative eigenvalues. Install `estimate.model` with
 features. See [Linear SFA](linear_sfa_observation.md) for sampling and the
 distinction between raw encoding and Gaussian posterior inference.
 
+`LinearPredictionObservationEstimate` and
+`estimate_linear_prediction_observation` are exported from `hdpgpc.emissions`
+(implementation `emissions._linear_prediction`). The estimate supplies the
+ordinary affine `model`, raw `transform`, calibration `predictor` B, temporal
+pairs and loss history. B is not installed as the LDS A. See
+[linear prediction observations](linear_prediction_observation.md).
+
 `hdpgpc.emissions.make_fourier_observation` creates an
 `AffineGaussianObservation` from a full or selected real windowed Fourier basis.
 `window_size` defaults to 16 non-overlapping points; setting it to the waveform

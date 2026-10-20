@@ -9,6 +9,8 @@ For the same workflow with a trained tied linear encoder/decoder, see the
 [CAS-Colon autoencoder example](cas_colon_autoencoder.md).
 For calibration that uses temporal order explicitly, see the
 [Linear SFA example](linear_sfa_observation.md).
+A [linear prediction example](linear_prediction_observation.md) balances
+reconstruction with latent predictability using the same affine observation.
 
 ## Prepare the dataset
 

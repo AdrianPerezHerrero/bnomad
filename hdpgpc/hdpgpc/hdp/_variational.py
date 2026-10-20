@@ -66,12 +66,12 @@ class HDPVariational:
             self.transAlpha = 1e+02
             self.startAlpha = 1e+00
             self.kappa = 10.0 if hdp_hyp == 'balanced_sticky' else 0.0
-        elif hdp_hyp in ('more', 'more_sticky'):
+        elif hdp_hyp in ('more', 'more_sticky', 'more_extra_sticky'):
             #More clusters scheme
             self.gamma = 1e+01
             self.transAlpha = 1e+02
             self.startAlpha = 1e+00
-            self.kappa = 10.0 if hdp_hyp == 'more_sticky' else 0.0
+            self.kappa = {'more': 0.0, 'more_sticky': 10.0, 'more_extra_sticky': 100.0}[hdp_hyp]
         elif hdp_hyp == 'max':
             self.gamma = 1e+00
             self.transAlpha = 1e-02
@@ -80,7 +80,8 @@ class HDPVariational:
 
         if not self._state.hmm_switch:
             self.gamma = {'less': 0.001, 'balanced': 0.1, 'balanced_sticky': 0.1,
-                          'more': 1.0, 'more_sticky': 1.0, 'max': 100.0}[hdp_hyp]
+                          'more': 1.0, 'more_sticky': 1.0, 'more_extra_sticky': 1.0,
+                          'max': 100.0}[hdp_hyp]
 
 
     def init_global_params(self, d_dim, M):

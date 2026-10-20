@@ -8,6 +8,7 @@
 - [CAS-Colon PCA image sequences and latent trajectories](cas_colon_pca.md)
 - [CAS-Colon affine autoencoder image sequences](cas_colon_autoencoder.md)
 - [Linear SFA fixed affine observation and CAS-Colon example](linear_sfa_observation.md)
+- [Fixed affine features trained for linear prediction](linear_prediction_observation.md)
 - [UCR archive autoencoder experiment](ucr_autoencoder_archive.md)
 - [UCR archive fixed PCA experiment](ucr_pca_archive.md)
 - [UCR direct-waveform DTW-GP experiment](ucr_dtw_gp_archive.md)

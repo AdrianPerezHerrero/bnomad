@@ -15,6 +15,7 @@ These are the **current HMM implementation values**:
 | `balanced_sticky` | 1000 | 100 | 1 | 10 |
 | `more` | 10 | 100 | 1 | 0 |
 | `more_sticky` | 10 | 100 | 1 | 10 |
+| `more_extra_sticky` | 10 | 100 | 1 | 100 |
 | `max` | 1 | 0.01 | 1 | 0 |
 
 Select a bundle with `HDPConfig(hdp_hyp='max')`, or pass
@@ -31,6 +32,8 @@ python examples/cas_colon_sfa_clustering.py --records 1 --hdp-preset balanced_st
 
 `more_sticky` similarly uses the `more` concentrations with kappa=10. Select
 `HDPConfig(hdp_hyp='more_sticky')` or `--hdp-preset more_sticky`.
+`more_extra_sticky` keeps those concentrations and raises kappa to 100. Select
+`HDPConfig(hdp_hyp='more_extra_sticky')` or `--hdp-preset more_extra_sticky`.
 
 It encourages persistence, without imposing a minimum dwell time. Its strength
 is relative to `transAlpha` and the transition counts. The nonzero-kappa
@@ -58,6 +61,7 @@ Only gamma is active in the independent stick-weight prior and linear ELBO:
 | `balanced_sticky` | 0.1 |
 | `more` | 1.0 |
 | `more_sticky` | 1.0 |
+| `more_extra_sticky` | 1.0 |
 | `max` | 100.0 |
 
 Larger gamma spreads prior mass over more mixture components. These
@@ -69,6 +73,7 @@ fields; neither assignment weights nor the independent-mixture ELBO uses them.
 Consequently, `balanced_sticky` and `balanced` behave identically when
 `hmm_switch=False`: their gamma is 0.1 and the sticky mass has no effect.
 Likewise, `more_sticky` matches `more` with gamma=1.0 when HMM is disabled.
+`more_extra_sticky` also resolves gamma=1.0 with inactive stickiness in that mode.
 The independent weight posterior remains
 `q(v_k) = Beta(1 + N_k, gamma + sum_{j>k} N_j)`.
 

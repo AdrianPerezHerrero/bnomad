@@ -103,6 +103,14 @@ which generally differs from the raw SFA map with diagonal residual noise.
 See [Linear SFA observations](linear_sfa_observation.md) for the mathematics,
 pair sampling and CAS-Colon example.
 
+`estimate_linear_prediction_observation` learns an affine representation with
+unit calibration feature covariance and a normalized reconstruction-plus-linear-
+prediction objective. It returns `LinearPredictionObservationEstimate`, whose
+`model` is the same `AffineGaussianObservation` installed above. Its calibration
+predictor B is a separate artifact; cluster A/Gamma still learn through native
+LDS inference. Raw features remain distinct from Gaussian conditioning. See
+[linear prediction observations](linear_prediction_observation.md).
+
 [The UCR archive example](../examples/ucr_autoencoder_clustering.py) then fixes
 A to the zero matrix while learning a separate Gamma for each cluster from a
 calibrated latent-covariance prior. It also sets `hmm_switch=False`. Thus the
