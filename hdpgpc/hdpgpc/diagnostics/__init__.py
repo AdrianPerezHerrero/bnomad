@@ -8,10 +8,14 @@ __all__ = ('plot_warp_diagnostics', 'model_warp_arrays',
            'plot_latent_trajectories', 'plot_image_clustering_summary',
            'plot_birth_warp_diagnostic',
            'cluster_label_statistics', 'format_confusion_matrix',
-           'format_lds_priors', 'Tee', 'plot_switching_lds_images')
+           'format_lds_priors', 'Tee', 'plot_switching_lds_images',
+           'plot_mfa_image_summary', 'plot_mfa_image_gallery')
 
 
 def __getattr__(name):
+    if name in ('plot_mfa_image_summary', 'plot_mfa_image_gallery'):
+        from . import _mfa_images
+        return getattr(_mfa_images, name)
     if name == 'plot_switching_lds_images':
         from ._synthetic_images import plot_switching_lds_images
         return plot_switching_lds_images

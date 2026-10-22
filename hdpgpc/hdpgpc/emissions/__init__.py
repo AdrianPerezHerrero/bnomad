@@ -1,6 +1,8 @@
-"""GP emissions and fixed observation encoders/decoders; implementations are private."""
+"""GP/FA emissions and fixed observation encoders/decoders; implementations are private."""
 __all__ = (
     'EmissionModel', 'GaussianProcessEmission',
+    'FactorAnalysisEmission', 'FactorAnalysisPosterior',
+    'FactorAnalysisStatistics', 'FactorAnalysisMoments',
     'FixedObservationModel', 'AffineGaussianObservation',
     'PCAObservationEstimate', 'estimate_pca_observation',
     'SFAObservationEstimate', 'estimate_sfa_observation',
@@ -11,6 +13,10 @@ __all__ = (
 )
 
 def __getattr__(name):
+    if name in ('FactorAnalysisEmission', 'FactorAnalysisPosterior',
+                'FactorAnalysisStatistics', 'FactorAnalysisMoments'):
+        from . import _factor_analysis
+        return getattr(_factor_analysis, name)
     if name in ('LinearPredictionObservationEstimate', 'estimate_linear_prediction_observation'):
         from . import _linear_prediction
         return getattr(_linear_prediction, name)

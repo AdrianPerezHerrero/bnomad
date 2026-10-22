@@ -68,6 +68,7 @@ include = ["hdpgpc", "hdpgpc.*"]
 namespaces = false
 
 [tool.setuptools.package-data]
+"hdpgpc" = ["py.typed"]
 "hdpgpc.examples" = ["configurations/*.yaml", "reference_offline.json"]
 
 [tool.pytest.ini_options]

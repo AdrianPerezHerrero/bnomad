@@ -1,9 +1,20 @@
 """Public model and immutable result types. Native state modules are private."""
+from typing import TYPE_CHECKING
 
-__all__ = ('HDPGPC', 'UpdateResult', 'Prediction', 'LatentState', 'WarpPosterior')
+if TYPE_CHECKING:
+    from ._mfa import HDPMFA
+    from ._mfa_results import MFAFactors
+
+__all__ = ('HDPGPC', 'HDPMFA', 'MFAFactors', 'UpdateResult', 'Prediction', 'LatentState', 'WarpPosterior')
 
 
 def __getattr__(name):
+    if name == 'HDPMFA':
+        from ._mfa import HDPMFA
+        return HDPMFA
+    if name == 'MFAFactors':
+        from ._mfa_results import MFAFactors
+        return MFAFactors
     if name == 'HDPGPC':
         from ._api import HDPGPC
         return HDPGPC

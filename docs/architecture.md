@@ -7,11 +7,11 @@ imports a retired implementation class.
 
 | Area | Actual responsibility | Public surface |
 | --- | --- | --- |
-| `model` | Input/result adaptation, initialization, mutable state, cluster lifecycle, representation conversion | `HDPGPC`, `UpdateResult`, `Prediction`, `LatentState` |
-| `config` | Typed options, validation and data-only dictionary/YAML codec | `HDPGPCConfig`, eight section dataclasses |
-| `inference` | Separate standard/fast online, selectable legacy/split–merge offline, classification and label-conditioned schedules; HMM messages and objective aggregation | `InferenceEngine`, `OnlineInference`, `OfflineInference` |
+| `model` | Input/result adaptation, initialization, mutable state, cluster lifecycle, representation conversion | `HDPGPC`, `HDPMFA`, `UpdateResult`, `Prediction`, `LatentState` |
+| `config` | Typed options, validation and data-only dictionary/YAML codec | `HDPGPCConfig`, `HDPMFAConfig`, shared section dataclasses |
+| `inference` | Separate standard/fast online, selectable legacy/splitâ€“merge offline, classification and label-conditioned schedules; HMM messages, DP/HDP-HMM-MFA CAVI and objective aggregation | `InferenceEngine`, `OnlineInference`, `OfflineInference`, `MFAOfflineInference` |
 | `hdp` | Sticks, transitions, concentration presets, expected logs, entropy, attributed bnpy optimizer | `HDPVariational` |
-| `emissions` | GP/output trajectories, observation policies and histories, fixed interfaces, affine decoders, PCA/linear-AE calibration, Fourier/wavelet bases, prediction, fitting and SNR weights | `EmissionModel`, `GaussianProcessEmission`, `FixedObservationModel`, `AffineGaussianObservation`, calibration/basis helpers |
+| `emissions` | GP/output trajectories, standalone Bayesian FA emission, observation policies and histories, fixed interfaces, affine decoders, PCA/linear-AE calibration, Fourier/wavelet bases, prediction, fitting and SNR weights | `EmissionModel`, `GaussianProcessEmission`, `FactorAnalysisEmission`, `FixedObservationModel`, `AffineGaussianObservation`, calibration/basis helpers |
 | `dynamics` | Static/LDS initialization, filtering, smoothing, learning and conjugate distributions | `DynamicsModel`, `StaticDynamics`, `LinearDynamics` |
 | `alignment` | Identity/AMTGP policies, grids, optimization, prior and caches | `NoAlignment`, `GPAlignment`, `GaussianProcessWarp` |
 | `numerics` | Shared low-level normalization | private |
@@ -97,6 +97,35 @@ and `LatentState`. Underscore modules and mutable fields are private. Namespace
 imports remain lazy. Scientific-state initialization preserves import-time
 float64/seed settings, followed by explicit numerical configuration. There is no
 generic facade forwarding of private state.
+
+`HDPMFA` and `HDPMFAConfig` are additional explicit lazy root imports; the
+established root star-import list above is preserved. DP-MFA owns its state in
+`model._mfa_state`, its schedule/objective in `inference._mfa`, and its typed
+recipe in `config._mfa`. It reuses `HDPVariational` and the verbatim independent
+assignment core extracted from `_messages`. It supplies no dummy GP settings
+or LDS trajectories. IID assignments retain their original mathematics.
+HMM assignments reuse the native recurrences in `inference._hmm_messages`,
+through boundary-aware `inference._mfa_assignments`. `hdp._markov` adapts the
+native HDP bound/optimizer to K active source rows and a tail destination;
+it does not change legacy GP scoring. `model._mfa_lifecycle` isolates and
+objective-gates optional births/pruning, using generic marginal-routing and
+partition keys in `inference._partitions` (the GP split/merge engine shares
+that same key helper). See [DP-MFA](dp_mfa.md) and [HDP-HMM-MFA](hmm_mfa.md).
+
+Typed MFA result snapshots live in `model._mfa_results`; data-only schema checks
+and atomic file replacement live in `model._mfa_serialization`. The facade's
+public methods are annotated and exported for type checkers without eager
+namespace imports. `experiments.mfa` owns synthetic comparisons and provenance;
+its independent finite-MFA EM comparator is in `experiments._mfa_reference`,
+outside the Bayesian inference and emission implementations. See
+[MFA validation](mfa_validation.md).
+
+`emissions._factor_analysis` implements independent local factors and learnable
+Gaussian centroid/loading rows. It has no HDP, GP, LDS or model-state dependency.
+Its small posterior/statistics/moment result classes and emission are exposed
+lazily from `emissions`. The existing GP-specific `EmissionModel` protocol is
+unchanged; DP-MFA directly consumes the FA component's named operations. See
+[the standalone FA component](factor_analysis_emission.md) for milestone scope.
 
 The flat scientific state and its aliases intentionally remain. This migration
 does not redesign optimizer policies, caches, covariance formulas, precision or

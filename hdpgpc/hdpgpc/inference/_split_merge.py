@@ -6,29 +6,14 @@ existing implementations in the corresponding components. The legacy optimizer
 in _offline is deliberately independent of this opt-in strategy.
 """
 from copy import copy, deepcopy
-from array import array
-from hashlib import blake2b
 import math
 
 import torch
 
+from ._partitions import _partition_key
 from . import _offline as legacy
 from ._birth_diagnostics import capture_seed, capture_refit
 from ._messages import assignment_messages
-
-
-def _partition_key(resp):
-    """Compact MAP membership key, invariant to any permutation of cluster slots.
-
-    The first observed member names each group. Occupancy totals alone cannot
-    distinguish partitions, and slot numbers change when components are merged.
-    Deliberately omit parameters/representers so refitting cannot disguise a
-    structural cycle. Soft-weight refinement is still unrestricted.
-    """
-    names = {}
-    labels = resp.argmax(1).detach().cpu().tolist()
-    canonical = array('q', (names.setdefault(label, len(names)) for label in labels))
-    return blake2b(canonical.tobytes(), digest_size=16).digest()
 
 
 def _convergence(previous, current, accepted, streak):

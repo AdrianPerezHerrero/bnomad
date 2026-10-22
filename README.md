@@ -39,6 +39,27 @@ model defaults. Predictions and stored latent states are available through
 soft assignment probabilities are explicitly unavailable. Online warping and
 online multi-output paths have known limitations; use the offline tutorials.
 
+## Bayesian mixtures of factor analyzers
+
+For feature or activation matrices shaped `(observations, features)`, the
+offline MFA family learns component centroids and local low-rank subspaces:
+
+```python
+from hdpgpc import HDPMFA, HDPMFAConfig
+from hdpgpc.config import HDPConfig
+
+config = HDPMFAConfig(n_factors=2, hdp=HDPConfig(M=5, hmm_switch=False))
+model = HDPMFA(config).fit(X)
+labels = model.labels_
+local_coordinates = model.transform_components(X)
+model.save('mfa.json')
+```
+
+Use `hmm_switch=True` with sequence lengths for Markov regimes. Continuous
+factors remain independent given the regime. See the [MFA API and validation
+guide](docs/mfa_validation.md) for scores, persistence, adaptive births/pruning
+and a runnable comparison against standard finite MFA.
+
 ## Documentation
 
 - [Installation, dependency extras and Python support](docs/installation.md)

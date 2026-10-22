@@ -64,7 +64,7 @@ properties on `HDPGPC` are:
 | `warp_posterior(x, *, grid=None, cluster=None)` | Fit candidate-conditioned warp posteriors from the current model state without committing `x`; requires `gp_flow` |
 | `config` | An independent copy of the construction recipe |
 
-There is deliberately no ambiguous `predict(X)` method: assigning new curves,
+On `HDPGPC` there is deliberately no ambiguous `predict(X)` method: assigning new curves,
 forecasting latent evolution, and querying a GP observation distribution are
 different scientific operations. `predictive` performs the last of these.
 
@@ -72,6 +72,16 @@ The eight section dataclasses and their serialization/factory methods remain
 public in `hdpgpc.config`. The previously documented component APIs remain
 available for advanced use: emission, dynamics, alignment, HDP and inference
 exports are listed in [architecture.md](architecture.md). The 0.3 engine interfaces replace the retired research entry points.
+
+### MFA family
+
+`HDPMFA` and `HDPMFAConfig` are explicit lazy imports from `hdpgpc` and from
+`hdpgpc.model` / `hdpgpc.config`. The established five-name root `__all__`
+remains unchanged. `hdpgpc.model.MFAFactors` is the typed local-coordinate
+snapshot. The facade supports `fit`, `fit_predict`, soft `predict_proba`, MAP
+`predict`, separate component coordinates, normalized plug-in density scoring,
+and versioned data-only save/load. See the complete [MFA API contract and
+validation guide](mfa_validation.md); feature coordinates have no temporal order.
 
 For record experiments, `hdpgpc.preprocessing.prepare_sequences` selects
 channels, optional first-sequence scaling, and a common grid without assuming

@@ -10,6 +10,18 @@
 
 # Changelog
 
+## Unreleased - Bayesian MFA extension
+
+- Added standalone Bayesian factor-analysis emissions and offline variational
+  DP-MFA/HDP-HMM-MFA, reusing native HDP and HMM machinery.
+- Added sequence boundaries, soft assignments and objective-gated birth/pruning.
+- Added the typed `HDPMFA` / `HDPMFAConfig` API, immutable factor snapshots,
+  validated JSON persistence and recipe YAML using the existing codec convention.
+- Added reproducible synthetic comparisons against independent finite-MFA EM,
+  held-out density metrics, covariance diagnostics and installable experiments.
+- Existing GP APIs and scientific outputs are preserved; validation notes
+  distinguish pre-existing fixture failures from numerical regression checks.
+
 ## 0.2.0 — release preparation (not yet published)
 
 - Added eight public-API, real-record Colab tutorials, shared plotting/loading
