@@ -35,23 +35,51 @@ jobs:
           python -m twine check dist/*
           python tools/check_artifacts.py dist
       - name: Install noneditably in a fresh environment
+        shell: python
         run: |
-          python -m venv "$RUNNER_TEMP/clean"
-          if [ "$RUNNER_OS" = Windows ]; then
-            echo "$RUNNER_TEMP/clean/Scripts" >> "$GITHUB_PATH"
-            "$RUNNER_TEMP/clean/Scripts/python" -m pip install dist/*.whl
-          else
-            echo "$RUNNER_TEMP/clean/bin" >> "$GITHUB_PATH"
-            "$RUNNER_TEMP/clean/bin/python" -m pip install dist/*.whl
-          fi
+          import os
+          from pathlib import Path
+          import subprocess
+          import venv
+
+          environment = Path(os.environ['RUNNER_TEMP']) / 'clean'
+          venv.EnvBuilder(with_pip=True).create(environment)
+          scripts = environment / ('Scripts' if os.name == 'nt' else 'bin')
+          python = str(scripts / ('python.exe' if os.name == 'nt' else 'python'))
+          subprocess.check_call([python, '-m', 'pip', 'install', '--upgrade', 'pip'])
+          # Release gates run on CPU; avoid downloading/installing CUDA libraries.
+          subprocess.check_call([python, '-m', 'pip', 'install', '--no-cache-dir',
+                                 'torch==2.9.0', '--index-url',
+                                 'https://download.pytorch.org/whl/cpu'])
+          wheels = list(Path('dist').glob('*.whl'))
+          if len(wheels) != 1:
+              raise RuntimeError('Expected exactly one built wheel')
+          subprocess.check_call([python, '-m', 'pip', 'install', '--no-cache-dir',
+                                 str(wheels[0].resolve())])
+          with open(os.environ['GITHUB_PATH'], 'a', encoding='utf-8') as path:
+              path.write(str(scripts) + '\n')
       - name: Unpack source archive outside checkout
+        shell: python
         run: |
-          mkdir -p "$RUNNER_TEMP/source"
-          tar -xzf dist/*.tar.gz -C "$RUNNER_TEMP/source" --strip-components=1
+          import os
+          from pathlib import Path
+          import shutil
+
+          archives = list(Path('dist').glob('*.tar.gz'))
+          if len(archives) != 1:
+              raise RuntimeError('Expected exactly one built source archive')
+          destination = Path(os.environ['RUNNER_TEMP']) / 'source'
+          destination.mkdir(parents=True, exist_ok=False)
+          shutil.unpack_archive(str(archives[0].resolve()), str(destination))
+          roots = list(destination.iterdir())
+          if len(roots) != 1 or not roots[0].is_dir():
+              raise RuntimeError('Expected one source archive root directory')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
+              env.write('HDPGPC_SOURCE=' + str(roots[0].resolve()) + '\n')
       - name: Installed examples and complete regression suite
         run: |
           unset PYTHONPATH
-          cd "$RUNNER_TEMP/source"
+          cd "$HDPGPC_SOURCE"
           hdpgpc-reference --mode online --output online.json
           python tools/verify_installed.py --output "$RUNNER_TEMP/evidence"
       - uses: actions/upload-artifact@v4
@@ -59,6 +87,6 @@ jobs:
         with:
           name: evidence-${{ matrix.os }}-${{ matrix.python }}
           path: |
-            ${{ runner.temp }}/source/*json
+            ${{ runner.temp }}/source/**/*json
             ${{ runner.temp }}/evidence/*
             dist/*
