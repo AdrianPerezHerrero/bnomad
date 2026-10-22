@@ -66,7 +66,7 @@ def _times(times, count):
 
 
 def plot_latent_trajectories(model, *, times=None, output=0, title='', trajectories=None,
-                             min_cluster_samples=1):
+                             min_cluster_samples=1, time_label='Video time (s)', time_unit='s'):
     """Per cluster: state path, component uncertainty and final-A changes.
 
     Uses the first two common latent coordinates (one-dimensional states get a
@@ -101,7 +101,7 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
         axes[row, 0].set(title=f'Cluster {cluster}: {len(indices)} MAP frames (color = time)',
                          xlabel='Latent component 1', ylabel='Latent component 2')
         axes[row, 1].set(title='Smoothed components +/- 2 posterior SD',
-                         xlabel='Video time (s)', ylabel='Latent coefficient')
+                         xlabel=time_label, ylabel='Latent coefficient')
         axes[row, 2].set(title='Orange: final A one-step change',
                          xlabel='Latent component 1', ylabel='Latent component 2')
         if not len(indices):
@@ -119,7 +119,7 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
         axes[row, 0].scatter(xy[:, 0], xy[:, 1], c=times[indices], cmap='viridis', s=10)
         for position, marker in ((0, 'o'), (-1, 'X')):
             axes[row, 0].scatter(*xy[position], s=50, marker=marker, color=color, edgecolor='k')
-            axes[row, 0].annotate(f'{times[indices[position]]:g}s', xy[position], fontsize=8,
+            axes[row, 0].annotate(f'{times[indices[position]]:g}{time_unit}', xy[position], fontsize=8,
                                    xytext=(4, 4), textcoords='offset points')
         selected = np.unique(np.linspace(0, len(indices) - 1, min(20, len(indices)), dtype=int))
         delta = predicted[selected] - xy[selected]
@@ -140,12 +140,15 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
                                   grid=None, ordered=True, warped=False, show_latent=True,
                                   annotation_colors=None, evaluation_mask=None,
                                   representation_name='PCA', random_state=42,
-                                  calibration_encoder=None, min_cluster_samples=1):
+                                  calibration_encoder=None, min_cluster_samples=1,
+                                  time_label='Video time (s)', time_unit='s',
+                                  reference_title='Reference anatomical regions (evaluation only)',
+                                  image_limits=(0., 1.)):
     """Image-native replacement for the waveform gallery; returns [figure].
 
     Frame rows show observations, fixed affine encoder/decoder reconstructions, actual smoothed
-    LDS reconstructions and one-step means from final A. All use [0,1] display
-    limits; reconstruction clipping is display-only. Image labels are evaluation
+    LDS reconstructions and one-step means from final A. All use common display
+    limits (default [0,1]); reconstruction clipping is display-only. Image labels are evaluation
     metadata. Only fixed affine one-output decoders are supported here.
     Gallery frames are sampled without replacement and displayed in time order.
     The majority-label timeline uses only evaluation-included reference labels;
@@ -160,6 +163,9 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
     from ..emissions._fixed_observation import AffineGaussianObservation
 
     values = np.asarray(values, dtype=float)
+    if len(image_limits) != 2 or not np.isfinite(image_limits).all() or image_limits[0] >= image_limits[1]:
+        raise ValueError('image_limits must be two increasing finite intensity values')
+    low, high = image_limits
     shape = tuple(image_shape)
     if (values.ndim != 3 or values.shape[2] != 1 or len(shape) != 2
             or int(np.prod(shape)) != values.shape[1] or frames_per_cluster < 1):
@@ -198,17 +204,17 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
     class_colors = {name: plt.get_cmap('tab10')(i % 10) for i, name in enumerate(classes)}
     truth_axis.scatter(times, [classes.index(label) for label in annotations],
                        c=[class_colors[label] for label in annotations], s=8)
-    truth_axis.set(title='Reference anatomical regions (evaluation only)', xlabel='Video time (s)')
+    truth_axis.set(title=reference_title, xlabel=time_label)
     truth_axis.set_yticks(np.arange(len(classes)), classes, fontsize=7)
     for tick, label in zip(truth_axis.get_yticklabels(), classes):
         tick.set_color(class_colors[label])
     assignment_axis.scatter(times, labels, c=[colors[int(label)] for label in labels], s=8)
-    assignment_axis.set(title='Inferred regimes', xlabel='Video time (s)', ylabel='Cluster')
+    assignment_axis.set(title='Inferred regimes', xlabel=time_label, ylabel='Cluster')
     assignment_axis.set_yticks(ids)
     majority_axis.scatter(times, labels,
                           c=[class_colors.get(majorities[int(cluster)], '0.6') for cluster in labels], s=8)
     majority_axis.set(title='Inferred regimes colored by majority label',
-                      xlabel='Video time (s)', ylabel='Cluster')
+                      xlabel=time_label, ylabel='Cluster')
     majority_axis.set_yticks(ids)
     majority_axis.set_ylim(assignment_axis.get_ylim())
     for cluster in visible_ids:
@@ -282,9 +288,9 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
                 if column >= len(selected):
                     axis.axis('off')
                     continue
-                axis.imshow(np.clip(frames[column].reshape(shape), 0., 1.), cmap='gray', vmin=0, vmax=1)
+                axis.imshow(np.clip(frames[column].reshape(shape), low, high), cmap='gray', vmin=low, vmax=high)
                 if image_row == 0:
-                    axis.set_title(f'{times[selected[column]]:g}s | {annotations[selected[column]]}', fontsize=8)
+                    axis.set_title(f'{times[selected[column]]:g}{time_unit} | {annotations[selected[column]]}', fontsize=8)
                 for spine in axis.spines.values():
                     spine.set_edgecolor(colors[cluster]); spine.set_linewidth(1.5)
     metric_text = f' | Purity {purity:.3f}' if purity is not None else ' | Purity N/A'

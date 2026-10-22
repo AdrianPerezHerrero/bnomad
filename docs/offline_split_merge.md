@@ -91,7 +91,7 @@ generator and leaves inference's random state untouched. Feature construction
 and affine pseudoinverses are computed once per fit; merge ranking continues
 using its original standardized waveform features.
 
-Every parent with at least two MAP members gets up to two cheap partitions,
+Every parent with at least two MAP members gets up to two cheap appearance partitions,
 starting respectively from its worst-scoring member and the member farthest
 from its weighted center. The other seed is the farthest member from that seed.
 Each partition uses at most six weighted two-means steps. Complement-equivalent
@@ -100,6 +100,34 @@ of two observations into two singletons. Both children must have positive parent
 responsibility mass; in soft mode a singleton may carry fractional mass. The
 existing variance floor keeps a singleton's proxy covariance nonzero. Full-model
 refinement and objective-based acceptance still determine whether to retain it.
+
+### Worst latent-score window
+
+An additional proposal separates the worst `q_lat` window from its parent.
+It uses the existing output aggregation and responsibility weights, with no
+emission contribution. Eligible rows must be MAP members retained by every
+output's parent model. Each output's first retained state is excluded because
+its score describes the initial prior rather than a transition. Missing,
+nonfinite or constant transition scores do not generate a window proposal.
+
+Window length is `max(2, floor(sqrt(parent_MAP_count)))`, capped by eligible
+states and by `parent_MAP_count - 1`. Prefix sums find the lowest weighted
+average in linear time. Windows follow the parent's ordered retained-state
+clock; adjacent states need not have adjacent global observation indices.
+The proposal moves the parent's responsibility inside the selected interval
+to the newborn, leaving other clusters' responsibilities intact. This also
+routes fractional parent responsibility inside the interval in soft mode.
+The newborn seed is the lowest-`q_lat` member of that window. The usual
+`offline_representer_selection` policy still governs representative selection.
+
+This is a temporal partition, not another appearance two-means initialization.
+It can propose a coherent poor-fitting interval even when its individual
+observations overlap other regimes in appearance. Native fitting recomputes
+both children's histories; subsequent refinement can reassign observations.
+`q_lat` contains state entropy as well as transition fit, so this is a search
+heuristic, not a separate dynamics likelihood or an ELBO gain estimate.
+
+### Screening and proposal budget
 
 For each partition, parent weights `w_t = r_tk` over those MAP members supply
 the count, first moment and diagonal variance of one Gaussian and each child.
@@ -126,10 +154,15 @@ miss structure, and a two-Gaussian fit can also favor some non-Gaussian unimodal
 distributions.
 
 The total gain is used, not gain per observation, so recurring structure in a
-large parent can outweigh isolated outliers. When at least two split slots are
-available, `max(1, split_slots // 5)` are reserved for the previous parent-loss
-criterion among remaining valid partitions. Other slots use descending proxy
-gain. Negative proxy gain does not veto a full-model trial: this ranking is
+large parent can outweigh isolated outliers. When latent windows are available,
+up to `max(1, split_slots // 3)` slots are reserved for them, ranked by the gap
+between the parent's weighted mean transition score and its worst window mean.
+Even with one split slot, a valid latent-window proposal receives that slot.
+The remaining slots use the appearance proxy, reserving
+`max(1, appearance_slots // 5)` for the previous parent-loss criterion when
+there are at least two appearance slots. Spare appearance slots can try more
+latent windows. Complement-equivalent partitions across both families are
+deduplicated. Negative proxy gain does not veto a full-model trial: this ranking is
 only a shortlist. Invalid or too-small children are excluded from both routes.
 
 The cheap screening uses O(N*p) work per bounded two-means pass over MAP groups,
@@ -140,6 +173,10 @@ debug logs and `split_merge_history_` include `selection`, `proxy_gain`,
 `proxy_dimension`. Actual proposal refinement still uses all responsibility
 mass and the original observations, scores and matrices. Full-model acceptance,
 cycle prevention, merge policy and the legacy optimizer are unchanged.
+Latent proposals additionally record `selection='q_lat_window'`,
+`proposal='worst_q_lat_window'`, `window_start`, `window_end`, `window_length`,
+`window_q_lat_mean`, `parent_transition_q_lat_mean` and `window_q_lat_gap`.
+Bounds and seeds use zero-based global observation indices.
 
 ## Objective and posterior reuse
 

@@ -284,6 +284,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         self._iteration_birth_search_complete = False
         self._iteration_reallocation_accepted = False
         self._birth_iteration = iteration + 1
+        _log(self, f'\n=== Offline iteration {iteration + 1} ===', flush=True)
         resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains,
                                                                                                    y_trains,
                                                                                                    y_trains_w,
@@ -537,8 +538,6 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
     # Compute q with best index of the old model.
     snr_temp = torch.zeros(y_trains.shape[0], M, self.n_outputs)
     for ld in range(self.n_outputs):
-        if self.verbose:
-            _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
         for m in range(M):
             gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
             if gp.fitted:
@@ -576,11 +575,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         q_lat = torch.clone(q_lat_)
         gpmodels_temp = [[] for _ in range(self.n_outputs)]
         for ld in range(self.n_outputs):
-            if self.verbose:
-                _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
             for m in range(M):
-                if self.verbose:
-                    _log(self, "\n   -----------Model " + str(m + 1) + "-----------")
                 if not torch.allclose(resp[:, reorder[m]], resp_temp[:, m]):
                     gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                     if gp.fitted:
@@ -832,8 +827,9 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                         f_ind_old=f_ind_old_temp)
                     q, q_lat, snr_aux = torch.clone(q_def), torch.clone(q_lat_def), torch.clone(snr_aux_def)
                     q__, q_lat__, snr__ = torch.clone(q__def), torch.clone(q_lat__def), torch.clone(snr__def)
-                    _log(self, "Step " + str(step + 1) + "/" + str(n_steps) + "- Trying to divide: " + str(
-                        m_chosen) + " with beat " + str(f_ind_new.item()))
+                    _log(self, f'Exploring step {step + 1}/{n_steps}: '
+                         f'trying to divide cluster {int(m_chosen)} with beat {int(f_ind_new)}',
+                         flush=True)
                     step = step + 1
                     for ld in range(self.n_outputs):
                         gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
@@ -1118,11 +1114,7 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     indexes_ = [[] for _ in range(self.n_outputs)]
     gpmodels_temp = [[] for _ in range(self.n_outputs)]
     for ld in range(self.n_outputs):
-        if self.verbose:
-            _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
         for m in range(M):
-            if self.verbose:
-                _log(self, "\n   -----------Model " + str(m + 1) + "-----------")
             indexes_[ld].append(_owned_indices(resp_temp, m).int())
             if len(gpmodels[ld]) > reorder[m]:
                 gp = gpmodels[ld][reorder[m]]
@@ -1296,11 +1288,7 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
 
         gpmodels_temp = [[] for _ in range(self.n_outputs)]
         for ld in range(self.n_outputs):
-            if self.verbose:
-                _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
             for m in range(self.M):
-                if self.verbose:
-                    _log(self, "\n   -----------Model " + str(m + 1) + "-----------")
                 gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                 if gp.fitted:
                     gp.reinit_LDS(save_last=False)
@@ -1351,6 +1339,8 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
             M = self.M
             if end:
                 break
+            _log(self, f'\n=== Offline iteration {iteration + 1} (classification learning) ===',
+                 flush=True)
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains,
                                                                                                        y_trains,
                                                                                                        y_trains_w,
@@ -1389,14 +1379,15 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
             if self.T > 1:
                 elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                      respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
-                _log(self, '\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
                 q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                       self.gpmodels, self.M, snr='saved', post=False,
                                                       birth_score=False)
                 elbo_ = elbo_ + elbo_lin + q_obs
-                _log(self, "ELBO + Nonlinear: " + str(elbo_))
+                if self.verbose:
+                    _log(self, f'Iteration {iteration + 1}: ELBO={float(elbo_):.6g}, '
+                         f'delta_ELBO={float(elbo_ - elbo):+.6g}, '
+                         f'responsibilities={resp.sum(0).detach().cpu().tolist()}', flush=True)
                 iteration = iteration + 1
-                _log(self, '\n-------Start lower Bound Iteration ' + str(iteration) + '-------')
                 if it_limit is not None and iteration >= it_limit:
                     self.train_elbo.append(elbo_)
                     self.resp_assigned.append(torch.argmax(resp, dim=1))

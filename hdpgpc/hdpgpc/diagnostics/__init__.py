@@ -8,10 +8,13 @@ __all__ = ('plot_warp_diagnostics', 'model_warp_arrays',
            'plot_latent_trajectories', 'plot_image_clustering_summary',
            'plot_birth_warp_diagnostic',
            'cluster_label_statistics', 'format_confusion_matrix',
-           'format_lds_priors', 'Tee')
+           'format_lds_priors', 'Tee', 'plot_switching_lds_images')
 
 
 def __getattr__(name):
+    if name == 'plot_switching_lds_images':
+        from ._synthetic_images import plot_switching_lds_images
+        return plot_switching_lds_images
     if name in ('model_latent_trajectories', 'plot_latent_trajectories', 'plot_image_clustering_summary'):
         from . import _image_trajectories
         return getattr(_image_trajectories, name)

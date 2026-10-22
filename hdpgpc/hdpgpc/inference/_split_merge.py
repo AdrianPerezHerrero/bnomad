@@ -121,6 +121,53 @@ def _split_gain(features, weights, assignment):
             'proxy_dimension': dimension}
 
 
+def _latent_window(state, parent, included, latent_scores):
+    """Propose a low-q_lat interval on the parent's retained-state clock.
+
+    q_lat is zero for unretained observations, and the first retained state has
+    an initial-prior score rather than a transition score. Neither is eligible
+    for window selection. Prefix sums keep this screening linear in parent size.
+    """
+    if len(included) < 3 or state.dynamic_factor == 0:
+        return None
+    eligible = torch.ones_like(included, dtype=torch.bool)
+    for models in state.gpmodels:
+        indexes = models[parent].indexes
+        retained = torch.zeros(state.T, dtype=torch.bool, device=included.device)
+        if len(indexes) > 1:
+            retained[torch.as_tensor(indexes[1:], device=included.device, dtype=torch.long)] = True
+        eligible &= retained[included]
+    rows = included[eligible]
+    if len(rows) < 2:
+        return None
+    weights, scores = state.resp_last[rows, parent], latent_scores[rows, parent]
+    # Do not bridge missing/nonfinite scores to invent a valid transition run.
+    if not bool(torch.isfinite(scores).all() and torch.isfinite(weights).all()
+                and (weights > 0).all()):
+        return None
+    length = min(max(2, math.isqrt(len(included))), len(rows), len(included) - 1)
+    cumulative_weight = torch.cat((weights.new_zeros(1), weights.cumsum(0)))
+    cumulative_score = torch.cat((scores.new_zeros(1), (weights * scores).cumsum(0)))
+    means = ((cumulative_score[length:] - cumulative_score[:-length])
+             / (cumulative_weight[length:] - cumulative_weight[:-length]))
+    start = int(means.argmin())
+    mean = (weights * scores).sum() / weights.sum()
+    gap = mean - means[start]
+    tolerance = 32 * torch.finfo(scores.dtype).eps * scores.abs().max().clamp_min(1.)
+    if not bool(torch.isfinite(gap) and gap > tolerance):
+        return None
+    window = rows[start:start + length]
+    # Use a time interval also for fractional responsibility outside MAP members.
+    assignment = ((included >= window[0]) & (included <= window[-1])).long()
+    seed = int(window[scores[start:start + length].argmin()])
+    details = {'proposal': 'worst_q_lat_window', 'window_start': int(window[0]),
+               'window_end': int(window[-1]), 'window_length': length,
+               'window_q_lat_mean': float(means[start]),
+               'parent_transition_q_lat_mean': float(mean),
+               'window_q_lat_gap': float(gap)}
+    return seed, assignment, details
+
+
 def _warps(work, previous, sources):
     """Reuse DTW posteriors with unchanged observation references/hyperparameters."""
     x, y, resp = work.x_train, work._split_merge_y, work.resp_last
@@ -345,15 +392,32 @@ def _moves(state, features, split_features=None):
     split_budget = budget - min(len(merges), budget // 2)
     splits = []
     if count < state.T and (state.max_models is None or count < state.max_models):
+        latent_scores = state.weight_mean(state.q_lat_last, state.snr_last)
         losses = -(state.static_factor * state.weight_mean(state.q_last, state.snr_last)
-                   + state.dynamic_factor * state.weight_mean(state.q_lat_last, state.snr_last))
+                   + state.dynamic_factor * latent_scores)
         members = {k: torch.where(labels == k)[0] for k in range(count)}
         parents = [k for k in range(count) if len(members[k]) >= 2]
         parent_loss = {k: float((resp[:, k] * losses[:, k]).sum()) for k in parents}
-        candidates = []
+        candidates, windows = [], []
         used = set()
+        for parent in parents:
+            included = members[parent]
+            window = _latent_window(state, parent, included, latent_scores)
+            if window is None:
+                continue
+            seed, assignment, details = window
+            child_rows = included[assignment == 1]
+            key = (parent, min(tuple(child_rows.tolist()), tuple(included[assignment == 0].tolist())))
+            local, weights = split_features[included], resp[included, parent]
+            proxy = _split_gain(local, weights, assignment)
+            if proxy is None:
+                continue
+            used.add(key)
+            centers_local = [(local[assignment == child] * weights[assignment == child, None]).sum(0)
+                             / weights[assignment == child].sum() for child in range(2)]
+            windows.append((parent, seed, included, assignment, *centers_local, {**proxy, **details}))
         # Screen every eligible parent before allocating expensive fit slots.
-        # At most two cheap restarts per parent keep work linear in batch size.
+        # Two appearance restarts and one latent window keep screening linear.
         for restart in range(2):
             for parent in parents:
                 included = members[parent]
@@ -389,13 +453,21 @@ def _moves(state, features, split_features=None):
                     continue
                 child_seed = child_rows[torch.argmin((split_features[child_rows] - second).square().sum(1))]
                 candidates.append((parent, int(child_seed), included, assignment, first, second, details))
+        windows.sort(key=lambda item: item[-1]['window_q_lat_gap'], reverse=True)
+        window_slots = min(len(windows), max(1, split_budget // 3))
+        splits = [(item, 'q_lat_window') for item in windows[:window_slots]]
+        appearance_slots = split_budget - len(splits)
         candidates.sort(key=lambda item: item[-1]['proxy_gain'], reverse=True)
         # Preserve some score-driven exploration without letting it dominate.
-        reserve = max(1, split_budget // 5) if split_budget >= 2 else 0
-        splits = [(item, 'proxy_gain') for item in candidates[:split_budget - reserve]]
-        remaining = candidates[split_budget - reserve:]
+        reserve = max(1, appearance_slots // 5) if appearance_slots >= 2 else 0
+        selected = candidates[:appearance_slots - reserve]
+        splits += [(item, 'proxy_gain') for item in selected]
+        remaining = candidates[appearance_slots - reserve:]
         remaining.sort(key=lambda item: (parent_loss[item[0]], item[-1]['proxy_gain']), reverse=True)
         splits += [(item, 'score_exploration') for item in remaining[:split_budget - len(splits)]]
+        # Unused appearance slots can explore other parents' latent windows.
+        splits += [(item, 'q_lat_window') for item in windows[window_slots:
+                    window_slots + split_budget - len(splits)]]
     # Reserve merge slots when the exploration budget permits both move types.
     queue = [('split', item) for item in splits]
     queue += [('merge', item[1:]) for item in merges[:budget - len(queue)]]
@@ -414,8 +486,13 @@ def _moves(state, features, split_features=None):
         else:
             candidate, selection = item
             parent, seed, included, assignment, first, second, details = candidate
-            allocation = ((split_features - second).square().sum(1)
-                          < (split_features - first).square().sum(1)).to(resp.dtype)
+            if details.get('proposal') == 'worst_q_lat_window':
+                rows = torch.arange(state.T, device=resp.device)
+                allocation = ((rows >= details['window_start'])
+                              & (rows <= details['window_end'])).to(resp.dtype)
+            else:
+                allocation = ((split_features - second).square().sum(1)
+                              < (split_features - first).square().sum(1)).to(resp.dtype)
             allocation[included] = assignment.to(resp.dtype)
             child = resp[:, parent] * allocation
             proposed[:, parent] -= child
