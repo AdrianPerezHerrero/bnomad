@@ -31,7 +31,9 @@ class GaussianProcessEmission:
         """
 
     def __init__(self, kernel, x_basis, annealing=True, bayesian=False, cuda=False, inducing_points=False,
-                 estimation_limit=None, free_deg_MNIV=5, verbose=True):
+                 estimation_limit=None, free_deg_MNIV=5, verbose=True,
+                 lds_update='conjugate_sequential', lds_step_size=0.2,
+                 lds_scoring='final', fit_gp=True):
         self.gp = GaussianProcessPrior(kernel, x_basis, cuda=cuda, verbose=verbose)
         self.x_basis = self.cond_to_torch(x_basis)
         self.x_train = []
@@ -60,7 +62,9 @@ class GaussianProcessEmission:
         if estimation_limit is None:
             estimation_limit = np.inf
         self.estimation_limit = estimation_limit
-        self.fitted = False
+        self.fit_gp = fit_gp
+        self.fitted = not fit_gp
+        self.gp.fitted = not fit_gp
         self.A_def, self.Gamma_def, self.C_def, self.Sigma_def = None, None, None, None
         self.ini_cov_def = None
         self.ini_kernel_theta = self.gp.kernel.theta
@@ -71,6 +75,9 @@ class GaussianProcessEmission:
             self.device = 'cpu'
         self.sq_lat_last = torch.zeros(1, device=self.device)
         self.free_deg_MNIV = free_deg_MNIV
+        self.lds_update = lds_update
+        self.lds_scoring = lds_scoring
+        self.lds_step_size = lds_step_size
         self.verbose = verbose
         self.disable = not verbose
 
@@ -82,20 +89,85 @@ class GaussianProcessEmission:
             self._eye_cache[key] = torch.eye(n, device=device, dtype=dtype)
         return self._eye_cache[key]
 
-    def _chol_spd(self, M, jitter_scale=1e-8):
+    def _chol_spd(self, M, jitter_scale=1e-8, *, context='covariance'):
         M = 0.5 * (M + M.T)
         eye = self._eye_cached(M.shape[0], M.device, M.dtype)
         diag_mean = torch.mean(torch.diag(M).abs()).clamp_min(torch.finfo(M.dtype).eps)
-        return torch.linalg.cholesky(M + jitter_scale * diag_mean * eye)
+        try:
+            # Preserve the usual numerical path unless factorization fails.
+            return torch.linalg.cholesky(M + jitter_scale * diag_mean * eye)
+        except torch.linalg.LinAlgError as error:
+            last_error = error
+
+        # A nearly singular covariance may need more than the usual jitter.
+        # Use the matrix scale when the diagonal alone is unusually small.
+        scale = torch.maximum(diag_mean, M.abs().amax())
+        for multiplier in (10.0, 1e2, 1e3, 1e4, 1e5, 1e6):
+            relative_jitter = jitter_scale * multiplier
+            try:
+                factor = torch.linalg.cholesky(M + relative_jitter * scale * eye)
+            except torch.linalg.LinAlgError as error:
+                last_error = error
+                continue
+            recoveries = getattr(self, '_chol_jitter_recoveries', 0) + 1
+            self._chol_jitter_recoveries = recoveries
+            if self.verbose and (recoveries & (recoveries - 1)) == 0:
+                print(f'Cholesky recovered for {context} with relative jitter '
+                      f'{relative_jitter:.0e} (recoveries={recoveries})', flush=True)
+            return factor
+
+        raise torch.linalg.LinAlgError(
+            f'Cholesky failed for {context} after relative jitter up to '
+            f'{jitter_scale * 1e6:.0e}; covariance may be indefinite or non-finite'
+        ) from last_error
 
     def _log2pi(self, ref):
         return torch.tensor(math.log(2.0 * math.pi), device=ref.device, dtype=ref.dtype)
 
-    def _gaussian_score_shared_cov(self, Y, mean, cov):
+    def _observation_latent_cov(self, x_post, latent_cov, C):
+        """Project C Var[f] C.T onto the grid used by an observation score."""
+        latent_cov = torch.as_tensor(latent_cov, dtype=C.dtype, device=C.device)
+        projected = C @ latent_cov @ C.T
+        x_post = self.cond_to_torch(x_post).to(self.x_basis.device)
+        if getattr(self, 'direct_observation_offset', None) is not None:
+            if not torch.equal(x_post.reshape(-1, 1), self.direct_observation_grid):
+                raise ValueError('PCA emission requires its calibrated observation grid')
+            return projected
+        if torch.equal(x_post, self.x_basis):
+            return projected
+
+        x_basis_np = self.x_basis.detach().cpu().numpy()
+        x_post_np = x_post.detach().cpu().numpy()
+        K_ff = torch.as_tensor(self.gp.kernel(x_basis_np, x_basis_np),
+                               dtype=C.dtype, device=C.device)
+        K_fp = torch.as_tensor(self.gp.kernel(x_basis_np, x_post_np),
+                               dtype=C.dtype, device=C.device)
+        projection = torch.cholesky_solve(K_fp, self._chol_spd(K_ff)).T
+        return projection @ projected @ projection.T
+
+    def _observation_params(self, i=None, params=None):
+        """Return the scoring state covariance and selected observation map."""
+        if params is not None:
+            return params[1], params[2]
+        if i is None:
+            return self.cov_f_sm[-1], self.C[-1]
+        if not self.indexes:
+            C = self.C[-1] if self.lds_scoring == 'final' else self.C[0]
+            return self.cov_f_sm[0], C
+        if i < 0 or len(self.indexes) <= i:
+            return self.cov_f_sm[-1], self.C[-1]
+        if self.lds_scoring == 'historical' and self.estimation_limit > i:
+            return self.cov_f_sm[i], self.get_params(i)[2]
+        return self.cov_f_sm[i], self.C[-1]
+
+    def _gaussian_score_shared_cov(self, Y, mean, cov, latent_cov=None):
         """
+        Expected Gaussian observation log density on a shared grid.
+
         Y    : (B,T,1) or (B,T)
         mean : (T,1) or (T,)
-        cov  : (T,T)
+        cov  : (T,T) observation noise covariance
+        latent_cov : (T,T) projected latent posterior covariance
         returns: (B,)
         """
         if Y.ndim == 3:
@@ -112,7 +184,12 @@ class GaussianProcessEmission:
         L = self._chol_spd(cov)
         alpha = torch.cholesky_solve(diff, L)
         q = diff.shape[0]
-        return -0.5 * torch.sum(diff * alpha, dim=0) - 0.5 * q * self._log2pi(diff)
+        logdet = 2.0 * torch.log(torch.diag(L)).sum()
+        trace = 0.0
+        if latent_cov is not None:
+            trace = torch.trace(torch.cholesky_solve(latent_cov, L))
+        return -0.5 * (torch.sum(diff * alpha, dim=0) + trace
+                       + logdet + q * self._log2pi(diff))
 
     def initial_conditions(self, ini_mean=None, ini_cov=None,
                            ini_A=None, ini_Gamma=None, ini_C=None, ini_Sigma=None):
@@ -166,15 +243,29 @@ class GaussianProcessEmission:
         self.Gamma_def = self.cond_to_cuda(self.cond_to_torch(ini_Gamma))
         self.C_def = self.cond_to_cuda(self.cond_to_torch(ini_C))
         self.Sigma_def = self.cond_to_cuda(self.cond_to_torch(ini_Sigma))
+        if not self.fit_gp:
+            self.gp.assign_alpha_ini(self.Sigma_def, self.Gamma_def)
         self.var.append(np.atleast_2d(np.diag(ini_Gamma)).T)
         self.y_var.append(np.atleast_2d(np.diag(ini_Sigma)).T)
         # DEGREES OF FREEDOM AT LEAST 3
         if self.bayesian:
-            self.internal_params = matrix_normal_inv_wishart(ini_A, np.eye(ini_A.shape[0]),  self.free_deg_MNIV, ini_Gamma)
-            if torch.all(ini_Gamma == torch.zeros(ini_Gamma.shape)):
-                self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
+            pair_policies = getattr(self, 'lds_pair_policies', None)
+            if pair_policies is not None:
+                from ..dynamics._parameter_posterior import make_pair_prior
+                self.internal_params = make_pair_prior(
+                    ini_A, ini_Gamma, self.free_deg_MNIV, *pair_policies['transition'])
+                self.observation_params = make_pair_prior(
+                    ini_C, ini_Sigma, self.free_deg_MNIV, *pair_policies['observation'])
             else:
+                self.internal_params = matrix_normal_inv_wishart(ini_A, np.eye(ini_A.shape[0]),  self.free_deg_MNIV, ini_Gamma)
+            if pair_policies is None and torch.all(ini_Gamma == torch.zeros(ini_Gamma.shape)):
+                self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
+            elif pair_policies is None:
                 self.observation_params = matrix_normal_inv_wishart(ini_C, np.eye(ini_C.shape[0]), self.free_deg_MNIV, ini_Sigma)
+        if self.lds_scoring == 'historical':
+            self.lds_internal_score_history = []
+            self.lds_observation_score_history = []
+            _trajectory.record_lds_parameter_score(self)
 
 
     def GPR_static(self, ini_Sigma=None):
@@ -190,6 +281,8 @@ class GaussianProcessEmission:
     def fit_kernel_params(self, x_train, y, alpha_ini, gamma_ini, valid=True):
         """ Optimize RBF kernel hyperparameters
         """
+        if not self.fit_gp:
+            raise ValueError('GP hyperparameter fitting is disabled for this emission')
         alph_ = self.cond_to_torch(alpha_ini[0][0])
         gam_ = self.cond_to_torch(gamma_ini[0][0])
         if valid:
@@ -198,13 +291,14 @@ class GaussianProcessEmission:
         noise = self.gp.kernel.get_params()["k2__noise_level"]
         noise = alph_
         self.x_basis = self.cond_to_cuda(self.cond_to_torch(self.gp.x_basis))
-        self.Sigma[-1] = self.cond_to_cuda(self.cond_to_torch(torch.mul(noise, torch.eye(len(self.x_basis), device=noise.device))))
-        self.Sigma_def = torch.clone(self.Sigma[-1])
-        self.y_var[-1] = self.cond_to_cuda(self.cond_to_torch(np.atleast_2d(np.diag(self.cond_to_cpu(self.Sigma[-1]))).T))
-        self.C[-1] = self.cond_to_cuda(torch.eye(len(self.x_basis)))
-        self.A[-1] = self.cond_to_cuda(torch.eye(len(self.x_basis)))
-        self.Gamma[-1] = self.cond_to_cuda(self.cond_to_torch(torch.mul(torch.mean(torch.diag(self.Gamma[-1])),
-                                                                        torch.eye(len(self.x_basis), device=self.device))))
+        if getattr(self, 'lds_pair_policies', None) is None:
+            self.Sigma[-1] = self.cond_to_cuda(self.cond_to_torch(torch.mul(noise, torch.eye(len(self.x_basis), device=noise.device))))
+            self.Sigma_def = torch.clone(self.Sigma[-1])
+            self.y_var[-1] = self.cond_to_cuda(self.cond_to_torch(np.atleast_2d(np.diag(self.cond_to_cpu(self.Sigma[-1]))).T))
+            self.C[-1] = self.cond_to_cuda(torch.eye(len(self.x_basis)))
+            self.A[-1] = self.cond_to_cuda(torch.eye(len(self.x_basis)))
+            self.Gamma[-1] = self.cond_to_cuda(self.cond_to_torch(torch.mul(torch.mean(torch.diag(self.Gamma[-1])),
+                                                                            torch.eye(len(self.x_basis), device=self.device))))
         self.f_star[-1] = self.cond_to_cuda(self.cond_to_torch(self.compute_mean()))
         self.f_star_sm[-1] = self.cond_to_cuda(self.cond_to_torch(self.compute_mean()))
         ini_cov = self.cond_to_cuda(self.cond_to_torch(
@@ -213,14 +307,17 @@ class GaussianProcessEmission:
         self.ini_cov_def = ini_cov
         self.cov_f[-1] = ini_cov
         self.cov_f_sm[-1] = ini_cov
-        if self.bayesian:
+        if self.bayesian and getattr(self, 'lds_pair_policies', None) is None:
             self.observation_params.set_scale(self.cond_to_cuda(self.cond_to_torch(torch.mul(noise, torch.eye(len(self.x_basis), device=noise.device)))))
             self.observation_params.m_mean = self.C[-1]
             self.internal_params.set_scale(self.Gamma[-1])
             self.internal_params.m_mean = self.A[-1]
+        if self.lds_scoring == 'historical':
+            _trajectory.record_lds_parameter_score(self, replace_last=True)
         self.fitted = True
-        print("---Kernel estimated---")
-        print(self.gp.kernel)
+        if self.verbose:
+            print("---Kernel estimated---")
+            print(self.gp.kernel)
         return self.x_basis, ini_cov
 
     def log_lik_sample(self, y):
@@ -231,7 +328,7 @@ class GaussianProcessEmission:
         return lik_post
 
     def log_sq_error(self, x_train, y, mean=None, cov=None, C=None, Sigma=None, i=None, proj=False, first=False):
-        """Compute the log-squared-error of a sample assuming a specific iteration of the model."""
+        """Expected Gaussian observation log density at a model iteration."""
         y = self.cond_to_cuda(self.cond_to_torch(y)).to(torch.float64)
         mean = self.cond_to_torch(mean)
         cov = self.cond_to_torch(cov)
@@ -239,20 +336,43 @@ class GaussianProcessEmission:
         Sigma = self.cond_to_torch(Sigma)
 
         if x_train is None:
-            x_train = self.x_basis
+            x_train = (self.direct_observation_grid
+                       if getattr(self, 'direct_observation_offset', None) is not None
+                       else self.x_basis)
 
         if mean is None:
             params = None
         else:
             params = [mean, cov, C, Sigma]
 
+        fixed_model = getattr(self, 'fixed_observation_model', None)
+        if fixed_model is not None:
+            if not torch.equal(self.cond_to_torch(x_train).reshape(-1, 1),
+                               self.direct_observation_grid):
+                raise ValueError('Fixed observation requires its configured waveform grid')
+            state = -1 if i is None or i < 0 or i >= len(self.f_star_sm) else i
+            score_sigma = (params[3] if params is not None else
+                           self.Sigma[-1] if self.lds_scoring == 'final' else self.Sigma[state])
+            if first:
+                small = torch.mean(torch.diag(score_sigma)) * 1e-2
+                score_sigma = score_sigma + small * torch.eye(
+                    len(score_sigma), device=score_sigma.device, dtype=score_sigma.dtype)
+            return fixed_model.expected_log_likelihood(
+                y, params[0] if params is not None else self.f_star_sm[state],
+                params[1] if params is not None else self.cov_f_sm[state],
+                noise=score_sigma)
+
         if i is not None:
-            f_star, cov_f = self.observe(x_train, i, params, proj=proj)
+            f_star, cov_f = self.observe(x_train, i, params, proj=proj,
+                                         final_lds=params is None and self.lds_scoring == 'final',
+                                         smoothed=params is None)
         else:
             f_star, cov_f = self.step_forward_last(x_train, params)
 
         if first:
-            ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-2
+            score_sigma = (params[3] if params is not None else
+                           self.Sigma[-1] if self.lds_scoring == 'final' else self.Sigma[0])
+            ini_noise = torch.mean(torch.diag(score_sigma)) * 1e-2
             cov_f = cov_f + ini_noise * self._eye_cached(len(x_train), cov_f.device, cov_f.dtype)
 
         if y.ndim == 1:
@@ -264,46 +384,73 @@ class GaussianProcessEmission:
         L = self._chol_spd(cov_f)
         alpha = torch.cholesky_solve(diff, L)
         q = diff.shape[0]
-
-        err = -0.5 * torch.sum(diff * alpha) - 0.5 * q * self._log2pi(diff)
+        latent_cov, C_mat = self._observation_params(i, params)
+        output_latent_cov = self._observation_latent_cov(x_train, latent_cov, C_mat)
+        trace = torch.trace(torch.cholesky_solve(output_latent_cov, L))
+        logdet = 2.0 * torch.log(torch.diag(L)).sum()
+        err = -0.5 * (torch.sum(diff * alpha) + trace
+                      + logdet + q * self._log2pi(diff))
         return err
 
     def log_lat_error(self, i, h_ini):
-        """Compute the log-squared-error of the latent process."""
+        """Expected Gaussian state log density plus its chain entropy."""
+        mean_cur = self.f_star_sm[i + 1].reshape(-1, 1)
+        cov_cur = self.cov_f_sm[i + 1]
         if i == 0:
-            cov_f_prev = self.cov_f_sm[i + 1]
-            lat_prev = self.f_star_sm[i + 1]
-            Gamma_mat = self.Gamma[-1] * h_ini
-            A = self.A[-1]
+            # The filtering code starts at the GP prior, without an A/Gamma step.
+            prior_mean = self.f_star_sm[0].reshape(-1, 1)
+            prior_cov = self.cov_f_sm[0] * h_ini
+            residual = mean_cur - prior_mean
+            residual_cov = cov_cur
+            L_cur = self._chol_spd(cov_cur)
+            logdet_conditional = 2.0 * torch.log(torch.diag(L_cur)).sum()
+            noise_cov = prior_cov
         else:
-            cov_f_prev = self.cov_f_sm[i]
-            lat_prev = self.f_star_sm[i]
-            if i + 1 < len(self.Gamma):
-                Gamma_mat = self.Gamma[i + 1]
-                A = self.A[i + 1]
+            mean_prev = self.f_star_sm[i].reshape(-1, 1)
+            filtered_prev = self.cov_f[i]
+            # The pair covariance and entropy describe the saved q trajectory
+            # under its historical transition in either scoring mode.
+            A_q = self.A[i] if i < len(self.A) else self.A[-1]
+            Gamma_q = self.Gamma[i] if i < len(self.Gamma) else self.Gamma[-1]
+            if self.lds_scoring == 'final':
+                noise_cov, A = self.Gamma[-1], self.A[-1]
             else:
-                Gamma_mat = self.Gamma[-1]
-                A = self.A[-1]
+                noise_cov, A = Gamma_q, A_q
+            predicted_cov = A_q @ filtered_prev @ A_q.T + Gamma_q
+            gain = torch.cholesky_solve(A_q @ filtered_prev,
+                                        self._chol_spd(predicted_cov)).T
+            # Build the RTS pair posterior from positive covariance sums.
+            # This avoids a near-singular forward Schur complement subtraction.
+            eye = self._eye_cached(filtered_prev.shape[0], filtered_prev.device,
+                                   filtered_prev.dtype)
+            projection = eye - gain @ A_q
+            reverse_conditional = (projection @ filtered_prev @ projection.T
+                                   + gain @ Gamma_q @ gain.T)
+            cov_prev_pair = reverse_conditional + gain @ cov_cur @ gain.T
+            residual = mean_cur - A @ mean_prev
+            residual_projection = eye - A @ gain
+            residual_cov = (residual_projection @ cov_cur @ residual_projection.T
+                            + A @ reverse_conditional @ A.T)
+            L_cur = self._chol_spd(cov_cur)
+            L_reverse = self._chol_spd(reverse_conditional,
+                                       context='latent reverse conditional')
+            L_prev = self._chol_spd(cov_prev_pair)
+            logdet_conditional = 2.0 * (
+                torch.log(torch.diag(L_cur)).sum()
+                + torch.log(torch.diag(L_reverse)).sum()
+                - torch.log(torch.diag(L_prev)).sum())
 
-        lat_cur = self.f_star_sm[i + 1]
-
-        if lat_prev.ndim == 1:
-            lat_prev = lat_prev.unsqueeze(-1)
-        if lat_cur.ndim == 1:
-            lat_cur = lat_cur.unsqueeze(-1)
-
-        resid = lat_cur - A @ lat_prev
-        Lg = self._chol_spd(Gamma_mat)
-
-        alpha_resid = torch.cholesky_solve(resid, Lg)  # Gamma^{-1} resid
-        Gamma_inv_A = torch.cholesky_solve(A, Lg)  # Gamma^{-1} A
-
-        q = resid.shape[0]
-        mahal = torch.sum(resid * alpha_resid)
-        trace_term = torch.trace(A.T @ Gamma_inv_A @ cov_f_prev)
-
-        err = -0.5 * (mahal + trace_term) - 0.5 * q * self._log2pi(resid)
-        return err
+        L_noise = self._chol_spd(noise_cov)
+        logdet_noise = 2.0 * torch.log(torch.diag(L_noise)).sum()
+        quadratic = torch.sum(residual * torch.cholesky_solve(residual, L_noise))
+        trace = torch.trace(torch.cholesky_solve(residual_cov, L_noise))
+        dimension = residual.shape[0]
+        expected_log_transition = -0.5 * (quadratic + trace + logdet_noise
+                                          + dimension * self._log2pi(residual))
+        # H[q(f_1)] or H[q(f_t | f_{t-1})] completes the Gaussian latent term.
+        entropy = 0.5 * (dimension * (1.0 + self._log2pi(residual))
+                         + logdet_conditional)
+        return expected_log_transition + entropy
 
     def condition_observation(self, index, x_train, y, x_warped=None, h=1.0, posterior=True, embedding=True, include_index=False):
         """ Method to include sample in the model, compute the posterior and add the data.
@@ -314,8 +461,8 @@ class GaussianProcessEmission:
             self.x_train.append(x_train)
             self.y_train.append(self.cond_to_torch(y))
             f_star_, cov_f_ = self.gp.posterior(self.f_star_sm[-1], self.cov_f_sm[-1], self.y_train[-1], self.A[-1],
-                                                self.Gamma[-1], self.C[-1], self.Sigma[-1] / h, x_train=x_train,
-                                                x_warped=x_warped, embedding=embedding)
+                                                self.Gamma[-1], self.C[-1], self.Sigma[-1], x_train=x_train,
+                                                x_warped=x_warped, embedding=embedding, h=h)
             self.f_star.append(f_star_)
             self.f_star_sm.append(f_star_)
             self.cov_f.append(cov_f_)
@@ -339,8 +486,7 @@ class GaussianProcessEmission:
         y = self.cond_to_cuda(self.cond_to_torch(y))
         x_train = self.cond_to_cuda(self.cond_to_torch(x_train))
         new_x_basis = self.x_basis
-        #Responsability truncated to 0.9 for stability purposes.
-        if h == 1.0:
+        if h > 0.0:
             if self.N == 0 and not self.fitted:
                 if torch.allclose(torch.from_numpy(self.gp.kernel.theta), torch.from_numpy(self.ini_kernel_theta)):
                     new_x_basis, _ = self.fit_kernel_params(x_train, y, self.Sigma[-1], self.Gamma[-1], valid=True)
@@ -348,41 +494,192 @@ class GaussianProcessEmission:
                     new_x_basis, _ = self.fit_kernel_params(x_train, y, self.Sigma[-1], self.Gamma[-1], valid=False)
             if snr is not None:
                 if snr > 0.5:
-                    self.condition_observation(index, x_train, y, x_warped, h=1.0)
+                    self.condition_observation(index, x_train, y, x_warped, h=h)
                 else:
                     self.condition_observation(index, x_train, y, x_warped, posterior=False, include_index=True)
             else:
-                self.condition_observation(index, x_train, y, x_warped, h=1.0)
+                self.condition_observation(index, x_train, y, x_warped, h=h)
         else:
             self.condition_observation(index, x_train, y, x_warped, posterior=False)
         return new_x_basis
 
+    def include_weighted_sample_flow(self, index, x_train, grid_samples, y, h):
+        """Variational Gaussian state update averaged over sampled input warps.
+
+        With q(g) fixed, E_q(g)[log p(y | f, g)] is quadratic in the basis
+        state f.  Averaging its precision and linear natural parameter gives
+        the optimal Gaussian coordinate update for this observation.
+        """
+        from ..alignment._gp_flow import _column, _kernel_torch
+
+        if h <= 0:
+            return self.x_basis
+        device = self.f_star_sm[-1].device
+        dtype = torch.float64
+        grids = torch.as_tensor(grid_samples, dtype=dtype, device=device)
+        if grids.ndim == 2:
+            grids = grids.unsqueeze(-1)
+        observation = _column(y, device=device)
+        mean_grid = grids.mean(0)
+        new_basis = self.x_basis
+        if self.N == 0 and not self.fitted:
+            valid = torch.allclose(torch.from_numpy(self.gp.kernel.theta),
+                                   torch.from_numpy(self.ini_kernel_theta))
+            new_basis, _ = self.fit_kernel_params(mean_grid, observation,
+                                                   self.Sigma[-1], self.Gamma[-1],
+                                                   valid=valid)
+
+        basis = _column(self.x_basis, device=device)
+
+        a = torch.as_tensor(self.A[-1], dtype=dtype, device=device)
+        gamma = torch.as_tensor(self.Gamma[-1], dtype=dtype, device=device)
+        c = torch.as_tensor(self.C[-1], dtype=dtype, device=device)
+        sigma = torch.as_tensor(self.Sigma[-1], dtype=dtype, device=device)
+        previous_mean = _column(self.f_star_sm[-1], device=device)
+        previous_cov = torch.as_tensor(self.cov_f_sm[-1], dtype=dtype, device=device)
+        first = self.N == 0
+        prior_mean = previous_mean if first else a @ previous_mean
+        prior_cov = previous_cov if first else a @ previous_cov @ a.T + gamma
+        eye_basis = torch.eye(len(basis), dtype=dtype, device=device)
+        prior_cov = 0.5 * (prior_cov + prior_cov.T) + 1e-6 * eye_basis
+        prior_chol = torch.linalg.cholesky(prior_cov)
+        prior_precision = torch.cholesky_inverse(prior_chol)
+
+        kernel = self.gp.kernel
+        kbb = _kernel_torch(kernel, basis, basis)
+        kbb_chol = torch.linalg.cholesky(0.5 * (kbb + kbb.T) + 1e-4 * eye_basis)
+        eye_y = torch.eye(len(observation), dtype=dtype, device=device)
+        natural_precision = prior_precision.clone()
+        natural_mean = prior_precision @ prior_mean
+        weight = float(h) / len(grids)
+        constant_noise = bool(torch.all(torch.isclose(
+            torch.diagonal(sigma), torch.diagonal(sigma).mean())))
+
+        for grid in grids:
+            kbg = _kernel_torch(kernel, basis, grid)
+            projection = torch.cholesky_solve(kbg, kbb_chol).T
+            measurement = projection @ c
+            if constant_noise:
+                residual_cov = torch.diagonal(sigma).mean() * eye_y
+            else:
+                kgg = _kernel_torch(kernel, grid)
+                residual_cov = (kgg - kbg.T @ projection.T
+                                + projection @ sigma @ projection.T)
+            residual_cov = 0.5 * (residual_cov + residual_cov.T) + 1e-6 * eye_y
+            residual_chol = torch.linalg.cholesky(residual_cov)
+            inv_measurement = torch.cholesky_solve(measurement, residual_chol)
+            inv_observation = torch.cholesky_solve(observation, residual_chol)
+            natural_precision = natural_precision + weight * measurement.T @ inv_measurement
+            natural_mean = natural_mean + weight * measurement.T @ inv_observation
+
+        posterior_chol = torch.linalg.cholesky(0.5 * (natural_precision + natural_precision.T))
+        posterior_cov = torch.cholesky_inverse(posterior_chol)
+        posterior_mean = posterior_cov @ natural_mean
+        self.N += 1
+        self.indexes.append(index)
+        self.x_train.append(mean_grid.detach())
+        self.y_train.append(observation.detach())
+        self.f_star.append(posterior_mean.detach())
+        self.f_star_sm.append(posterior_mean.detach())
+        self.cov_f.append(posterior_cov.detach())
+        self.cov_f_sm.append(posterior_cov.detach())
+        return new_basis
+
+    @staticmethod
+    def _active_weighted_indices(resp):
+        """Drop only a numerically negligible tail of fractional mass.
+
+        This bounds omitted responsibility by 1e-8 of the cluster total,
+        while retaining every one-hot assignment in the legacy path.
+        """
+        active = torch.nonzero(resp > 0, as_tuple=False).squeeze(1)
+        if active.numel() == 0:
+            return active
+        weights = resp[active]
+        if weights.sum() < 1e-8:
+            return active[:0]
+        if active.numel() == 1:
+            return active
+        order = torch.argsort(weights)
+        sorted_indices = active[order]
+        omitted = torch.cumsum(weights[order], dim=0)
+        retained = sorted_indices[omitted > weights.sum() * 1e-8]
+        return torch.sort(retained).values
+
+    def full_pass_weighted_flow(self, x_trains, y_trains, resp, grid_samples,
+                                q=None, q_lat=None, snr=None,
+                                deterministic_warp=False):
+        """Offline pass using sampled grids or one deterministic grid per beat."""
+        batch_lds = self.lds_update == 'conjugate_batch'
+        if batch_lds and not deterministic_warp:
+            raise NotImplementedError('conjugate_batch does not support uncertain GP-flow input warps')
+        if batch_lds and any(len(samples) != 1 for samples in grid_samples):
+            raise ValueError('conjugate_batch requires one deterministic input grid per beat')
+        self.deterministic_input_warp = bool(deterministic_warp)
+        active = self._active_weighted_indices(resp)
+        if active.numel() == 0:
+            return q, q_lat
+        dynamic = bool(torch.count_nonzero(self.Gamma[-1]))
+        for index in active.tolist():
+            h = float(resp[index].item())
+            self.include_weighted_sample_flow(index, x_trains[index],
+                                               grid_samples[index],
+                                               y_trains[index], h)
+            if batch_lds:
+                _trajectory.hold_lds_params(self)
+            elif dynamic:
+                self.backwards_pair(h)
+                self.bayesian_new_params(h)
+        if dynamic:
+            self.backwards()
+        if batch_lds:
+            self.bayesian_batch_params(resp, grid_samples=grid_samples,
+                                       deterministic_warp=True)
+        mean_grids = torch.stack([samples.mean(0) for samples in grid_samples])
+        return (self.compute_sq_err_all(mean_grids, y_trains),
+                self.compute_q_lat_all(mean_grids))
+
     def full_pass_weighted(self, x_trains, y_trains, resp, q=None, q_lat=None, snr=None):
         """Full forward pass method used in the offline scheme."""
+        self.deterministic_input_warp = False
         if len(torch.nonzero(self.Gamma[-1])) < 1:
             model_type = 'static'
         else:
             model_type = 'dynamic'
 
-        active = torch.nonzero(resp > 0.99, as_tuple=False).squeeze(1)
+        active = self._active_weighted_indices(resp)
         if active.numel() == 0:
             return q, q_lat
 
-        for index in active.tolist():
-            h = float(resp[index].item())
-            self.include_weighted_sample(
-                index,
-                x_trains[index],
-                x_trains[index],
-                y_trains[index],
-                h
-            )
-            if model_type == 'dynamic':
-                self.backwards_pair(h)
-                self.bayesian_new_params(h)
+        from ..dynamics import _independent
+        if _independent.full_pass(self, x_trains, y_trains, resp, active):
+            return self.compute_sq_err_all(x_trains, y_trains), self.compute_q_lat_all(x_trains)
+
+        batch_lds = self.lds_update == 'conjugate_batch'
+        if batch_lds and not self.inducing_points and any(not torch.equal(x_trains[index], self.x_basis)
+                             for index in active.tolist()):
+            raise NotImplementedError('conjugate_batch requires a common observation grid')
+        from ._fixed_observation import _affine_conditioning_pass
+        with _affine_conditioning_pass(self):
+            for index in active.tolist():
+                h = float(resp[index].item())
+                self.include_weighted_sample(
+                    index,
+                    x_trains[index],
+                    x_trains[index],
+                    y_trains[index],
+                    h
+                )
+                if batch_lds:
+                    _trajectory.hold_lds_params(self)
+                elif model_type == 'dynamic':
+                    self.backwards_pair(h)
+                    self.bayesian_new_params(h)
 
         if model_type == 'dynamic':
             self.backwards()
+        if batch_lds:
+            self.bayesian_batch_params(resp)
 
         q_ = self.compute_sq_err_all(x_trains, y_trains)
         q_lat_ = self.compute_q_lat_all(x_trains)
@@ -417,10 +714,26 @@ class GaussianProcessEmission:
         self.N = 0
 
 
-    def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=False):
+    def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=False,
+                   *, warm_start=False):
         """ Method to reinitiate LDS parameters. Can save some of them.
         """
+        if self.lds_update == 'conjugate_batch' and self.N > 0 and warm_start:
+            # Carry the last fit into the next offline E-step, while resetting
+            # the MNIW posterior to the original prior for its next batch step.
+            filter_start = (self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1])
+            result = _trajectory.reinit_LDS(self, False, save_last_diag, return_likelihood)
+            self.A[0], self.Gamma[0], self.C[0], self.Sigma[0] = filter_start
+            return result
+        if self.lds_update == 'conjugate_batch':
+            return _trajectory.reinit_LDS(self, False, save_last_diag, return_likelihood)
         return _trajectory.reinit_LDS(self, save_last, save_last_diag, return_likelihood)
+
+    def bayesian_batch_params(self, resp, grid_samples=None,
+                              deterministic_warp=False):
+        """Update the cluster LDS once from its offline smoothed trajectory."""
+        return _trajectory.bayesian_batch_params(
+            self, resp, grid_samples, deterministic_warp=deterministic_warp)
 
     def return_LDS_param_likelihood(self, first=False):
         """ Method to compute the likelihood of LDS parameters over the prior.
@@ -436,6 +749,12 @@ class GaussianProcessEmission:
         if len(self.indexes) == 0:
             return sq_err
 
+        from ..dynamics import _independent
+        if _independent.compatible(self):
+            independent_scores = _independent.observation_scores(self, x_trains, y_trains, no_first=no_first)
+            if independent_scores is not None:
+                return independent_scores
+
         idx_t = torch.as_tensor(self.indexes, device=device, dtype=torch.long)
         sample_ids = torch.arange(n_samps, device=device, dtype=torch.long)
 
@@ -444,13 +763,13 @@ class GaussianProcessEmission:
 
         exact_mask = pos_of_sample >= 0
         closest_pos0 = torch.searchsorted(idx_t, sample_ids, right=True) - 1
-        closest_pos0 = torch.clamp(closest_pos0, min=0)
 
-        # Keep your current behavior
+        # State zero is the prior; state p + 1 has assimilated member p.
+        # A nonmember uses the most recent member, or the prior if none exists.
         i_vals = torch.where(
             exact_mask,
             pos_of_sample + 1,
-            torch.clamp(closest_pos0, min=1)
+            closest_pos0 + 1,
         )
         first_mask = exact_mask & (i_vals == 1) & (not no_first)
 
@@ -458,6 +777,25 @@ class GaussianProcessEmission:
         shared_grid = torch.equal(x_trains, x_trains[0:1].expand_as(x_trains))
         if shared_grid:
             x0 = x_trains[0]
+            from ._fixed_observation import AffineGaussianObservation
+            fixed_model = getattr(self, 'fixed_observation_model', None)
+            if type(fixed_model) is AffineGaussianObservation and self.lds_scoring == 'final':
+                if not torch.equal(x0.reshape(-1, 1), self.direct_observation_grid):
+                    raise ValueError('Fixed observation requires its configured waveform grid')
+                # The lookup above includes exact members, preceding members
+                # for nonmembers, and the initial prior before the first member.
+                means = torch.stack(self.f_star_sm)[i_vals]
+                covariances = torch.stack(self.cov_f_sm)[i_vals]
+                sigma = self.Sigma[-1]
+                sq_err = fixed_model.expected_log_likelihood_batch(
+                    y_trains, means, covariances, noise=sigma)
+                if bool(first_mask.any()):
+                    ids = torch.where(first_mask)[0]
+                    first_noise = sigma + torch.diag(sigma).mean() * 1e-2 * torch.eye(
+                        len(sigma), device=sigma.device, dtype=sigma.dtype)
+                    sq_err[ids] = fixed_model.expected_log_likelihood_batch(
+                        y_trains[ids], means[ids], covariances[ids], noise=first_noise)
+                return sq_err
             group_code = i_vals * 2 + first_mask.to(i_vals.dtype)
 
             for code in torch.unique(group_code):
@@ -465,12 +803,32 @@ class GaussianProcessEmission:
                 i_cur = int((code // 2).item())
                 first_cur = bool((code % 2).item())
 
-                f_star, cov_f = self.observe(x0, i_cur, params=None, proj=False)
+                fixed_model = getattr(self, 'fixed_observation_model', None)
+                if fixed_model is not None:
+                    if not torch.equal(x0.reshape(-1, 1), self.direct_observation_grid):
+                        raise ValueError('Fixed observation requires its configured waveform grid')
+                    score_sigma = self.Sigma[-1] if self.lds_scoring == 'final' else self.Sigma[i_cur]
+                    if first_cur:
+                        small = torch.mean(torch.diag(score_sigma)) * 1e-2
+                        score_sigma = score_sigma + small * torch.eye(
+                            len(score_sigma), device=score_sigma.device, dtype=score_sigma.dtype)
+                    sq_err[ids] = fixed_model.expected_log_likelihood_batch(
+                        y_trains[ids], self.f_star_sm[i_cur], self.cov_f_sm[i_cur],
+                        noise=score_sigma)
+                    continue
+
+                f_star, cov_f = self.observe(x0, i_cur, params=None, proj=False,
+                                             final_lds=self.lds_scoring == 'final',
+                                             smoothed=True)
                 if first_cur:
-                    ini_noise = torch.mean(torch.diag(self.Sigma[0])) * 1e-2
+                    score_sigma = self.Sigma[-1] if self.lds_scoring == 'final' else self.Sigma[0]
+                    ini_noise = torch.mean(torch.diag(score_sigma)) * 1e-2
                     cov_f = cov_f + ini_noise * self._eye_cached(len(x0), cov_f.device, cov_f.dtype)
 
-                sq_err[ids] = self._gaussian_score_shared_cov(y_trains[ids], f_star, cov_f)
+                latent_cov, C_mat = self._observation_params(i_cur)
+                output_latent_cov = self._observation_latent_cov(x0, latent_cov, C_mat)
+                sq_err[ids] = self._gaussian_score_shared_cov(
+                    y_trains[ids], f_star, cov_f, output_latent_cov)
 
             return sq_err
 
@@ -478,7 +836,7 @@ class GaussianProcessEmission:
         i_vals_cpu = i_vals.cpu().tolist()
         first_mask_cpu = first_mask.cpu().tolist()
 
-        for index in trange(n_samps, desc="Compute_sq_error", disable=self.disable):
+        for index in range(n_samps):
             sq_err[index] = self.log_sq_error(
                 x_trains[index],
                 y_trains[index],
@@ -489,13 +847,16 @@ class GaussianProcessEmission:
         return sq_err
 
     def compute_q_lat_all(self, x_trains, h_ini=1.0):
-        """Method to compute the latent squared error accumulated.
+        """Compute each included state's Gaussian prior and entropy contribution.
         """
         sq_err = torch.zeros(x_trains.shape[0], device=x_trains[0].device)
         if self.N == 0:
             return sq_err
         if len(torch.nonzero(self.Gamma[-1]))< 1:
             return sq_err
+        from ..dynamics import _independent
+        if _independent.compatible(self):
+            return _independent.latent_scores(self, len(x_trains), h_ini)
         for j, index in enumerate(self.indexes):
             sq_err[index] = self.log_lat_error(j, h_ini)
         return sq_err
@@ -516,8 +877,11 @@ class GaussianProcessEmission:
                 Gamma = self.Gamma[-1]
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
+            observation_noise = (Sigma if getattr(self, 'direct_observation_offset', None)
+                                 is not None else Sigma / h)
             f_star_, cov_f_ = self.gp.posterior(f_star_sm_, cov_f_sm_, y, A,
-                                                Gamma / h, C, Sigma / h, x_train=x_train, h=h)
+                                                Gamma / h, C, observation_noise,
+                                                x_train=x_train, h=h)
         else:
             f_star_ = torch.clone(self.f_star[-1])
             cov_f_ = torch.clone(self.cov_f[-1])
@@ -554,54 +918,89 @@ class GaussianProcessEmission:
         mean = torch.linalg.multi_dot([C, mean])
         Sigma = Sigma# + torch.linalg.multi_dot([C, Gamma, C.T])
         x_basis = self.x_basis
-        return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
+        return self._observation_distribution(x_post, x_basis, mean, Sigma)
+
+    def _observation_distribution(self, x_post, x_basis, mean, Sigma):
+        """Use a fixed direct decoder or the original GP grid projection."""
+        offset = getattr(self, 'direct_observation_offset', None)
+        if offset is None:
+            return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
+        x_post = self.cond_to_torch(x_post).reshape(-1, 1)
+        if not torch.equal(x_post, self.direct_observation_grid):
+            raise ValueError('Fixed observation requires its configured waveform grid')
+        return mean.reshape(-1, 1) + offset, Sigma
+
+    def _project_process_noise(self, Gamma, C):
+        if getattr(self, 'direct_observation_offset', None) is not None:
+            return C @ Gamma @ C.T
+        return Gamma
 
     def observe_last(self, x_post):
         """ Compute the last observation distribution over new x_post.
         """
         C = self.C[-1]
         Sigma = self.Sigma[-1]
+        fixed_model = getattr(self, 'fixed_observation_model', None)
+        if fixed_model is not None:
+            if not torch.equal(self.cond_to_torch(x_post).reshape(-1, 1),
+                               self.direct_observation_grid):
+                raise ValueError('Fixed observation requires its configured waveform grid')
+            return fixed_model.predictive_moments(
+                self.f_star_sm[-1], self.cov_f_sm[-1], noise=Sigma)
         mean = torch.matmul(C, self.f_star_sm[-1])
         x_basis = self.x_basis
-        return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
+        return self._observation_distribution(x_post, x_basis, mean, Sigma)
 
-    def observe(self, x_post, t, params=None, proj=False):
+    def observe(self, x_post, t, params=None, proj=False, *, final_lds=False,
+                smoothed=False):
         """
         Method to resample the emission GP distribution at time t or using the parameters given.
         :param x_post: time set to resample
         :param t: step n where to resample the model
-        :param params: tuple (mean, cov, Gamma, Sigma)
+        :param params: tuple (mean, cov, C, Sigma)
+        :param final_lds: use final C and Sigma with the state at t
+        :param smoothed: use the saved smoothed state mean for ELBO scoring
         """
+        states = self.f_star_sm if smoothed else self.f_star
+        if final_lds and params is None:
+            # Preserve the state associated with t while evaluating every
+            # observation under the cluster's final C and Sigma.
+            state_index = t if 0 <= t < len(states) else -1
+            mean = self.C[-1] @ states[state_index]
+            Sigma = self.Sigma[-1]
+            if proj:
+                Sigma = Sigma + self._project_process_noise(self.Gamma[-1], self.C[-1])
+            return self._observation_distribution(x_post, self.x_basis, mean, Sigma)
         if params is None:
             #Case when model is not initialited
             if len(self.indexes) == 0:
                 C = self.C[0]
                 Sigma = self.Sigma[0]
-                mean = torch.matmul(C, self.f_star[0])
+                mean = torch.matmul(C, states[0])
             #Case when computing error with last (predict)
             elif len(self.indexes) <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 A = self.A[-1]
                 Gamma = self.Gamma[-1]
-                mean = torch.linalg.multi_dot([C, self.f_star[-1]])
+                mean = torch.linalg.multi_dot([C, states[-1]])
             elif self.estimation_limit <= t:
                 C = self.C[-1]
                 Sigma = self.Sigma[-1]
                 if proj:
-                    Sigma = Sigma + self.Gamma[-1]
-                mean = torch.matmul(C, self.f_star[t])
+                    Sigma = Sigma + self._project_process_noise(self.Gamma[-1], C)
+                mean = torch.matmul(C, states[t])
             else:
                 A, Gamma, C, Sigma = self.get_params(t)
                 if proj:
-                    Sigma = Sigma + Gamma
-                mean = torch.matmul(C, self.f_star[t])
+                    Sigma = Sigma + self._project_process_noise(Gamma, C)
+                mean = torch.matmul(C, states[t])
         else:
             mean = params[0]
             Sigma = params[3]
             mean = torch.matmul(params[2], mean)
         x_basis = self.x_basis
-        return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
+        return self._observation_distribution(x_post, x_basis, mean, Sigma)
 
     def get_params(self, t):
         """Method to return params on a specific iteration of the model
@@ -746,6 +1145,21 @@ class GaussianProcessEmission:
     def sample_last(self, num_samples=1, random_state=0):
         """ Method to resample last GP as a distribution.
         """
+        if getattr(self, 'direct_observation_offset', None) is not None:
+            fixed_model = getattr(self, 'fixed_observation_model', None)
+            if fixed_model is not None:
+                mean, covariance = fixed_model.predictive_moments(
+                    self.f_star_sm[-1], self.cov_f_sm[-1], noise=self.Sigma[-1])
+                mean = mean.reshape(-1)
+            else:
+                mean = ((self.C[-1] @ self.f_star_sm[-1]).reshape(-1, 1)
+                        + self.direct_observation_offset).reshape(-1)
+                covariance = (self.C[-1] @ self.cov_f_sm[-1] @ self.C[-1].T
+                              + self.Sigma[-1])
+            draws = np.random.default_rng(random_state).multivariate_normal(
+                mean.detach().cpu().numpy(), covariance.detach().cpu().numpy(),
+                size=num_samples)
+            return [draw.copy() for draw in np.atleast_2d(draws)]
         samples = self.gp.sample_y(self.f_star_sm[-1], self.cov_f_sm[-1], self.C[-1], self.Sigma[-1], num_samples,
                                    random_state).T
         rav_samples = []
@@ -756,11 +1170,35 @@ class GaussianProcessEmission:
     def reduce_noise_matrix(self, x_basis=None, x_train=None):
         return self.gp.projection_matrix(x_basis, x_train)
 
-    def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False, snr=1.0):
+    def project_observation_to_basis(self, y, x_train, *, allow_warped=False):
+        """Map a waveform to the LDS basis for its observation update.
+
+        ``allow_warped`` permits a deterministic input warp even when the
+        basis has the same point count as the original waveform.
+        """
+        observation = self.cond_to_cuda(self.cond_to_torch(y)).reshape(-1, 1)
+        if getattr(self, 'direct_observation_offset', None) is not None:
+            if not torch.equal(self.cond_to_torch(x_train).reshape(-1, 1),
+                               self.direct_observation_grid):
+                raise ValueError('Fixed observation requires its configured waveform grid')
+            return self.C[-1].T @ (observation - self.direct_observation_offset)
+        if torch.equal(self.x_basis, x_train):
+            return observation
+        if not self.inducing_points and not allow_warped:
+            raise NotImplementedError('LDS observation projection requires inducing_points=True')
+        projection = self.reduce_noise_matrix(self.x_basis, x_train)
+        return projection.to(device=observation.device, dtype=observation.dtype) @ observation
+
+    def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False,
+                            snr=1.0, first_observation=False):
         """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
             Can use full data batch n-step estimation or 1-step estimation.
         """
-        return _trajectory.bayesian_new_params(self, h, model_type, full_data, q, force, snr)
+        if self.lds_update == 'conjugate_batch':
+            raise ValueError('conjugate_batch updates require an offline full pass')
+        return _trajectory.bayesian_new_params(
+            self, h, model_type, full_data, q, force, snr,
+            first_observation=first_observation)
 
 
     #Methods to perform the conversion from NumPy to torch and from Cuda to cpu. Still have to solve this.
@@ -822,8 +1260,10 @@ class GaussianProcessEmission:
         self.Sigma = recursive_numpy(self.Sigma)
         self.likelihood = recursive_numpy(self.likelihood)
         self.K = recursive_numpy(self.K)
-        self.internal_params.to_numpy()
-        self.observation_params.to_numpy()
+        if getattr(self, 'transition_policy', None) is None:
+            self.internal_params.to_numpy()
+        if getattr(self, 'observation_policy', None) is None:
+            self.observation_params.to_numpy()
 
     def model_to_torch(self):
         def recursive_torch(x):
@@ -853,8 +1293,10 @@ class GaussianProcessEmission:
         self.Sigma = recursive_torch(self.Sigma)
         self.likelihood = recursive_torch(self.likelihood)
         self.K = recursive_torch(self.K)
-        self.internal_params.to_torch()
-        self.observation_params.to_torch()
+        if getattr(self, 'transition_policy', None) is None:
+            self.internal_params.to_torch()
+        if getattr(self, 'observation_policy', None) is None:
+            self.observation_params.to_torch()
 
     def model_to_cuda(self):
         if torch.cuda.is_available() and self.cuda:
@@ -887,8 +1329,10 @@ class GaussianProcessEmission:
             self.Sigma = recursive_cuda(self.Sigma)
             self.likelihood = recursive_cuda(self.likelihood)
             self.K = recursive_cuda(self.K)
-            self.internal_params.to_cuda()
-            self.observation_params.to_cuda()
+            if getattr(self, 'transition_policy', None) is None:
+                self.internal_params.to_cuda()
+            if getattr(self, 'observation_policy', None) is None:
+                self.observation_params.to_cuda()
             self.cuda = True
             self.gp.cuda = True
 
@@ -920,7 +1364,9 @@ class GaussianProcessEmission:
         self.Sigma = recursive_cpu(self.Sigma)
         self.likelihood = recursive_cpu(self.likelihood)
         self.K = recursive_cpu(self.K)
-        self.internal_params.to_cpu()
-        self.observation_params.to_cpu()
+        if getattr(self, 'transition_policy', None) is None:
+            self.internal_params.to_cpu()
+        if getattr(self, 'observation_policy', None) is None:
+            self.observation_params.to_cpu()
         self.cuda = False
         self.gp.cuda = False

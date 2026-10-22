@@ -19,7 +19,7 @@ Entry: [GPI_HDP.include_sample:1906](/C:/Users/Adrian/Projects/Thesis/gpexplore/
 
 ```text
 Experiment loop
-└── H.include_sample(x_train, y, with_warp, force_model, ...)
+└── H.include_sample(x_train, y, warp, force_model, ...)
     ├── increment T; initialize output weights; append input history
     ├── optional H.compute_warp_y
     │   ├── optional H.estimate_new for greedy candidate ordering

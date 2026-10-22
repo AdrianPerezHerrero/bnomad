@@ -130,7 +130,7 @@ GP fitting consumes the selected waveform. These schedules remain unchanged.
 
 ### Existing disabled behavior
 
-Online `with_warp=False` appends raw waveforms to candidate histories without
+Online `warp=False` appends raw waveforms to candidate histories without
 appending the enabled path's `y_w`, `x_w` or `liks` history entries. The first enabled
 online sample is also not optimized, but does append those histories. Standard
 and fast first-sample zero allocations differ in device spelling and stay distinct.
@@ -177,8 +177,8 @@ model = GPI_HDP(x_basis, alignment=GPAlignment())
 ```
 
 Existing constructor options can still be supplied. NoAlignment takes
-precedence over `include_sample(...,with_warp=True)`, its fast variant,
-`include_batch(...,warp=True)` and classification/reload requests. Set the policy
+precedence over `update(..., warp=True)`, its fast variant,
+`fit(..., warp=True)` and classification/reload requests. Set the policy
 at construction; switching a trained model's policy in place is not an added API.
 
 The smallest useful boundary has two levels:

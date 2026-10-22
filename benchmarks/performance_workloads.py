@@ -52,7 +52,7 @@ def run(name):
         max_models=4, free_deg_MNIV=5, reestimate_initial_params=False, use_snr=False)
     if name == 'online_dynamic':
         for y in ys:
-            model.online.update(x, y, with_warp=False)
+            model.online.update(x, y, warp=False)
     else:
         model.offline.fit(np.repeat(x[None], n, axis=0), ys, it_limit=3, warp=False)
     return model

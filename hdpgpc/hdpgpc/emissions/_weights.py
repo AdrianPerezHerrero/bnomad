@@ -68,8 +68,9 @@ def reduce_num_outputs(self, y_trains):
     num_final_outputs = int(np.rint(y_trains.shape[2] * ratio))
     var = np.var(np.sum(y_trains, axis=1), axis=0)
     final_outputs = np.sort(var.argsort()[::-1][:num_final_outputs])
-    print("Performed reduction of outputs based on variance.")
-    print("Ratio of reduction: " + str(ratio) + " Final outputs: " + str(final_outputs))
+    if self.verbose:
+        print("Performed reduction of outputs based on variance.")
+        print("Ratio of reduction: " + str(ratio) + " Final outputs: " + str(final_outputs))
     self.n_outputs = num_final_outputs
     self.wp_sys = [self.wp_sys[ld] for ld in final_outputs]
     self.gpmodels = [self.gpmodels[ld] for ld in final_outputs]

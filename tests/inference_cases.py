@@ -154,9 +154,9 @@ def edge_case(name):
     elif name == 'reload_labels':
         model.fit_labels(xs, y, torch.tensor([0, 0, 1, 1, 0, 1]), 2, warp=False)
     elif name == 'known_failure_forced_reuse':
-        model.online.update(x, y[0], with_warp=False)
+        model.online.update(x, y[0], warp=False)
         try:
-            model.online.update(x, y[1], with_warp=False, force_model=0)
+            model.online.update(x, y[1], warp=False, force_model=0)
         except UnboundLocalError as error:
             return dict(exception_type=type(error).__name__, message=str(error), partial_state=model_state(model))
         raise AssertionError('Forced-reuse failure changed: review this path explicitly')

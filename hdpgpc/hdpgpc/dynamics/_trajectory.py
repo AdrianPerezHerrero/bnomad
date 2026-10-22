@@ -25,44 +25,116 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
         ini_A, ini_Gamma, ini_C, ini_Sigma = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def
         if return_likelihood:
             A_, Gam_, C_, Sig_ = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1]
-    self.A = [ini_A]
-    self.Gamma = [ini_Gamma]
-    self.C = [ini_C]
-    self.Sigma = [ini_Sigma]
-    self.internal_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
-    self.observation_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
+    transition_policy = getattr(self, 'transition_policy', None)
+    if transition_policy is None:
+        self.A = [ini_A]
+        self.Gamma = [ini_Gamma]
+    else:
+        from ._transition import TransitionHistory
+        self.A = TransitionHistory(transition_policy, 'A')
+        self.Gamma = TransitionHistory(transition_policy, 'Gamma')
+    policy = getattr(self, 'observation_policy', None)
+    if policy is None:
+        self.C = [ini_C]
+        self.Sigma = [ini_Sigma]
+    else:
+        from ..emissions._observation import ObservationHistory
+        self.C = ObservationHistory(policy, 'C', self)
+        self.Sigma = ObservationHistory(policy, 'Sigma', self)
+    pair_policies = getattr(self, 'lds_pair_policies', None)
+    if pair_policies is None:
+        self.internal_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
+    else:
+        from ._parameter_posterior import make_pair_prior
+        self.internal_params = make_pair_prior(ini_A, ini_Gamma, self.free_deg_MNIV,
+                                               *pair_policies['transition'])
+    if transition_policy is not None:
+        self.internal_params = transition_policy.posterior
+    if policy is not None:
+        self.observation_params = policy.posterior
+    elif pair_policies is not None:
+        self.observation_params = make_pair_prior(ini_C, ini_Sigma, self.free_deg_MNIV,
+                                                  *pair_policies['observation'])
+    elif torch.count_nonzero(ini_Gamma) == 0:
+        self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
+    else:
+        self.observation_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
+    if self.lds_scoring == 'historical':
+        self.lds_internal_score_history = []
+        self.lds_observation_score_history = []
+        record_lds_parameter_score(self)
     if return_likelihood:
         return self.internal_params.log_likelihood_MNIW(A_, Gam_), self.observation_params.log_likelihood_MNIW(C_, Sig_)
 
 
+def _lds_parameter_score_components(self):
+    """Negative transition and observation MNIW KLs at the current posterior."""
+    from ._parameter_posterior import make_pair_prior
+    if not self.bayesian:
+        zero = self.Sigma_def.new_zeros(())
+        return zero, zero
+
+    transition = self.Sigma_def.new_zeros(())
+    pair_policies = getattr(self, 'lds_pair_policies', None)
+    if torch.count_nonzero(self.Gamma_def) > 0 and getattr(self, 'transition_policy', None) is None:
+        if pair_policies is None:
+            prior_A = matrix_normal_inv_wishart(
+                self.A_def, torch.eye(self.A_def.shape[1], device=self.A_def.device,
+                                      dtype=self.A_def.dtype),
+                self.free_deg_MNIV, self.Gamma_def)
+        else:
+            prior_A = make_pair_prior(self.A_def, self.Gamma_def, self.free_deg_MNIV,
+                                      *pair_policies['transition'])
+        transition = transition - self.internal_params.kl_divergence(prior_A)
+
+    if getattr(self, 'observation_policy', None) is not None:
+        return transition, transition.new_zeros(())
+
+    if pair_policies is not None:
+        prior_C = make_pair_prior(self.C_def, self.Sigma_def, self.free_deg_MNIV,
+                                  *pair_policies['observation'])
+    elif isinstance(self.observation_params, inv_wishart):
+        prior_C = inv_wishart(self.free_deg_MNIV, self.Sigma_def, self.C_def)
+    else:
+        prior_C = matrix_normal_inv_wishart(
+            self.C_def, torch.eye(self.C_def.shape[1], device=self.C_def.device,
+                                  dtype=self.C_def.dtype),
+            self.free_deg_MNIV, self.Sigma_def)
+    return transition, -self.observation_params.kl_divergence(prior_C)
+
+
+def record_lds_parameter_score(self, replace_last=False):
+    """Cache one KL pair for the LDS history slot just created or updated."""
+    if self.lds_scoring != 'historical':
+        return
+    transition, observation = _lds_parameter_score_components(self)
+    pair = (float(transition.detach()), float(observation.detach()))
+    if replace_last:
+        self.lds_internal_score_history[-1] = pair[0]
+        self.lds_observation_score_history[-1] = pair[1]
+    else:
+        self.lds_internal_score_history.append(pair[0])
+        self.lds_observation_score_history.append(pair[1])
+
+
 def return_LDS_param_likelihood(self, first=False):
-    """ Method to compute the likelihood of LDS parameters over the prior.
-    """
-    elb_LDS = 0
-    #for i in range(len(self.A)):
-    ini_A, ini_Gamma, ini_C, ini_Sigma, n0 = self.A_def, self.Gamma_def, self.C_def, self.Sigma_def, self.internal_params.n0
-    if first:
-        #ini_noise = self.cond_to_cuda(self.cond_to_torch(self.gp.kernel.get_params()["k2__noise_level"]))
-        ini_noise = torch.mean(torch.diag(self.Sigma[-1])) * 2e-0
-        ini_noise_ = torch.mean(torch.diag(self.Gamma[-1])) * 2e-0
-        A_, Gam_, C_, Sig_ = (self.A[-1],
-                              self.Gamma[-1] + torch.mul(ini_noise_, torch.eye(self.Gamma[-1].shape[0],
-                                                                              device=ini_noise.device)),
-                              self.C[-1],
-                              self.Sigma[-1] + torch.mul(ini_noise, torch.eye(self.Sigma[-1].shape[0],
-                                                                              device=ini_noise.device)))
-        # A_, Gam_, C_, Sig_ = (self.A[-1], self.Gamma[-1] + self.cov_f[-1], self.C[-1],
-        #                        self.Sigma[-1] + self.cov_f[-1])
-    else:
-        A_, Gam_, C_, Sig_, n0 = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1], self.internal_params.n0
-    if len(torch.nonzero(ini_Gamma))< 1:
-        log_lik_A_Gam = 0.0
-    else:
-        int_params = matrix_normal_inv_wishart(ini_A, torch.eye(ini_A.shape[0], device=self.device), self.free_deg_MNIV, ini_Gamma)
-        log_lik_A_Gam = int_params.log_likelihood_MNIW(A_, Gam_, n0)
-    obs_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
-    elb_LDS = elb_LDS + log_lik_A_Gam + obs_params.log_likelihood_MNIW(C_, Sig_, n0)
-    return elb_LDS / ini_A.shape[0] * 100
+    """Return final KL, or the per-observation mean of historical LDS KLs."""
+    if not self.bayesian:
+        return self.Sigma_def.new_zeros(())
+    if self.lds_scoring == 'historical' and self.indexes:
+        transition = getattr(self, 'lds_internal_score_history', [])
+        observation = getattr(self, 'lds_observation_score_history', [])
+        if not transition or not observation:
+            raise RuntimeError('historical LDS scoring requires parameter KL history')
+        # Beat j uses observation state j+1. Its latent transition (j > 0)
+        # uses state j, before beat j was incorporated. Once estimation stops,
+        # both scoring paths reuse their final available parameter state.
+        total = sum(observation[min(j + 1, len(observation) - 1)]
+                    + (transition[min(j, len(transition) - 1)] if j else 0.0)
+                    for j in range(len(self.indexes)))
+        return self.Sigma_def.new_tensor(total / len(self.indexes))
+    transition, observation = _lds_parameter_score_components(self)
+    return transition + observation
 
 
 def backwards(self, h=1.0):
@@ -72,7 +144,7 @@ def backwards(self, h=1.0):
         model_type = 'static'
     else:
         model_type = 'dynamic'
-    if h == 1.0:
+    if h > 0.0:
         mean = list(self.f_star[1:])
         covs = list(self.cov_f[1:])
         if model_type == 'dynamic':
@@ -88,7 +160,7 @@ def backwards_pair(self, h, snr=None):
     """ Fast method to compute the last two backward iterations.
     """
     if len(self.indexes) > 1:
-        if h == 1.0:
+        if h > 0.0:
             if snr is None:
                 mean = list(self.f_star[-2:])
                 covs = list(self.cov_f[-2:])
@@ -131,7 +203,8 @@ def new_params(self, batch=None, reestimate=True, model_type='dynamic', verbose=
             lik_pre = self.gp.log_likelihood(N - batch, batch - 1, means[N - batch:], covs[N - batch:], A_prior,
                                              Gamma_prior, y_samples[N - batch:], C_prior, Sigma_prior)
         except RuntimeWarning:
-            print("Starting parameters are divergent, using initials.")
+            if verbose:
+                print("Starting parameters are divergent, using initials.")
             converged = True
         lik_best = lik_pre
         trials = 0
@@ -239,39 +312,231 @@ def new_params_weighted(self, h, batch=None, reestimate=True, model_type='dynami
             self.new_params(0, reestimate=False, verbose=verbose)
 
 
-def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False, snr=1.0):
+def _lds_posterior(self, distribution, n_k, y1, y2, cov, cov_, cov_cross,
+                   *, sse_matrix=None, annealing=False):
+    """Select the configured update without changing sufficient-statistic routing."""
+    kwargs = {'sse_matrix': sse_matrix, 'annealing': annealing}
+    policy = getattr(self, 'lds_update', 'conjugate_sequential')
+    if policy == 'natural_gradient':
+        return distribution.posterior_natural_gradient(
+            n_k, y1, y2, cov, cov_, cov_cross,
+            step_size=getattr(self, 'lds_step_size', 0.2), **kwargs,
+        )
+    if policy == 'legacy' and isinstance(distribution, matrix_normal_inv_wishart):
+        return distribution.posterior_legacy(n_k, y1, y2, cov, cov_, cov_cross, **kwargs)
+    if policy not in ('conjugate_sequential', 'legacy'):
+        raise ValueError(f'Unknown LDS update policy: {policy}')
+    return distribution.posterior(n_k, y1, y2, cov, cov_, cov_cross, **kwargs)
+
+
+def _require_spd_posterior(distribution, component):
+    """Reject an invalid MNIW/IW update before it enters the LDS trajectory."""
+    matrices = [('covariance scale', distribution.scale)]
+    if isinstance(distribution, matrix_normal_inv_wishart):
+        matrices.append(('column precision', distribution.m_r_cov))
+    for name, matrix in matrices:
+        symmetric = 0.5 * (matrix + matrix.T)
+        if not torch.isfinite(symmetric).all():
+            raise torch.linalg.LinAlgError(
+                f'{component} posterior {name} contains non-finite values')
+        _, info = torch.linalg.cholesky_ex(symmetric)
+        if int(info.item()) != 0:
+            raise torch.linalg.LinAlgError(
+                f'{component} posterior {name} is not positive-definite '
+                f'(leading minor {int(info.item())})')
+
+
+def _lds_scale(self, distribution, *, final):
+    scale = distribution.get_scale(final=final)
+    # The historical MNIW getter inflated the online scale but returned the
+    # stored scale for a full-data update. Keep that behavior with legacy.
+    if (getattr(self, 'lds_update', 'conjugate_sequential') == 'legacy'
+            and isinstance(distribution, matrix_normal_inv_wishart) and not final):
+        return scale * distribution.n0 / (distribution.n0 - 2)
+    return scale
+
+
+def hold_lds_params(self):
+    """Keep one parameter slot per filtered beat without a sequential update."""
+    for name in ('A', 'Gamma', 'C', 'Sigma', 'var', 'y_var'):
+        history = getattr(self, name)
+        history.append(history[-1])
+    record_lds_parameter_score(self)
+
+
+def bayesian_batch_params(self, resp, grid_samples=None, *,
+                          deterministic_warp=False):
+    """One responsibility-weighted MNIW update from the smoothed cluster path.
+
+    The first included state has an observation but no LDS transition. A
+    transition receives the responsibility of its destination observation.
+    The distributions on entry are the original cluster priors, even when
+    filtering was warm-started from a previous offline iteration. A fixed
+    point warp is projected onto the LDS basis before pooling its observation
+    statistic, like the existing inducing-basis approximation. Projection
+    uncertainty is not part of this conjugate surrogate.
+    """
+    if not self.indexes:
+        return
+    if not self.bayesian:
+        raise ValueError('conjugate_batch requires Bayesian LDS parameters')
+    if grid_samples is not None and not deterministic_warp:
+        raise NotImplementedError('conjugate_batch does not support uncertain GP-flow input warps')
+    if grid_samples is not None and any(len(samples) != 1 for samples in grid_samples):
+        raise ValueError('conjugate_batch requires one deterministic input grid per beat')
+
+    count = len(self.indexes)
+    limit = count if np.isinf(self.estimation_limit) else min(count, int(self.estimation_limit))
+    if limit == 0:
+        return
+    prior_obs = self.observation_params
+    prior_int = self.internal_params
+    device, dtype = self.f_star_sm[0].device, self.f_star_sm[0].dtype
+    dim = self.f_star_sm[0].numel()
+    obs_cov = torch.zeros((dim, dim), device=device, dtype=dtype)
+    observation_dim = prior_obs.get_mean().shape[0]
+    obs_noise_cov = torch.zeros((observation_dim, observation_dim), device=device, dtype=dtype)
+    obs_cross_cov = torch.zeros((observation_dim, dim), device=device, dtype=dtype)
+    obs_y, obs_f = [], []
+    transition_y, transition_f = [], []
+    transition_cov_y = torch.zeros_like(obs_cov)
+    transition_cov_f = torch.zeros_like(obs_cov)
+    transition_cov_cross = torch.zeros_like(obs_cov)
+    observation_mass = 0.0
+    transition_mass = 0.0
+
+    for position, index in enumerate(self.indexes[:limit]):
+        weight = float(resp[index].item())
+        if weight <= 0:
+            continue
+        root = weight ** 0.5
+        mean = self.f_star_sm[position + 1].reshape(-1, 1)
+        covariance = self.cov_f_sm[position + 1]
+        if getattr(self, 'observation_policy', None) is None:
+            if getattr(self, 'direct_observation_offset', None) is not None:
+                observation = (self.y_train[position].reshape(-1, 1)
+                               - self.direct_observation_offset).to(device=device, dtype=dtype)
+            else:
+                observation = self.project_observation_to_basis(
+                    self.y_train[position], self.x_train[position],
+                    allow_warped=deterministic_warp).to(device=device, dtype=dtype)
+            if observation.shape[0] != prior_obs.get_mean().shape[0]:
+                raise ValueError('conjugate_batch observation dimension differs from the observation map')
+            obs_y.append(root * observation)
+            obs_f.append(root * mean)
+            obs_cov = obs_cov + weight * covariance
+        observation_mass += weight
+
+        if position == 0 or torch.count_nonzero(self.Gamma[0]) == 0:
+            continue
+        previous_mean = self.f_star_sm[position].reshape(-1, 1)
+        previous_cov = self.cov_f_sm[position]
+        filtered_previous_cov = self.cov_f[position]
+        A_q, Gamma_q = self.A[position], self.Gamma[position]
+        if not A_q.requires_grad and torch.count_nonzero(A_q) == 0:
+            # Exactly independent states: the lag covariance is zero, so a
+            # Cholesky solve for the zero RTS gain would be redundant.
+            gain = torch.zeros_like(filtered_previous_cov)
+        else:
+            predicted_cov = A_q @ filtered_previous_cov @ A_q.T + Gamma_q
+            gain = torch.cholesky_solve(A_q @ filtered_previous_cov.T,
+                                        self._chol_spd(predicted_cov)).T
+        transition_y.append(root * mean)
+        transition_f.append(root * previous_mean)
+        transition_cov_y = transition_cov_y + weight * covariance
+        transition_cov_f = transition_cov_f + weight * previous_cov
+        transition_cov_cross = transition_cov_cross + weight * covariance @ gain.T
+        transition_mass += weight
+
+    if observation_mass <= 0:
+        return
+    if getattr(self, 'observation_policy', None) is not None:
+        new_obs = prior_obs
+    else:
+        observations = torch.cat(obs_y, dim=1)
+        latent_observations = torch.cat(obs_f, dim=1)
+        if isinstance(prior_obs, inv_wishart):
+            C_fixed = prior_obs.get_C()
+            residual = observations - C_fixed @ latent_observations
+            scatter = residual @ residual.T + C_fixed @ obs_cov @ C_fixed.T
+            new_n0 = prior_obs.n0 + observation_mass
+            new_scale = ((prior_obs.n0 - 2) * prior_obs.scale + scatter) / (new_n0 - 2)
+            new_obs = inv_wishart(new_n0, 0.5 * (new_scale + new_scale.T), C_fixed)
+        else:
+            new_obs = prior_obs.posterior(
+                observation_mass, observations, latent_observations,
+                obs_noise_cov, obs_cov, obs_cross_cov)
+    new_int = prior_int
+    if transition_y and getattr(self, 'transition_policy', None) is None:
+        new_int = prior_int.posterior(
+            transition_mass, torch.cat(transition_y, dim=1),
+            torch.cat(transition_f, dim=1), transition_cov_y,
+            transition_cov_f, transition_cov_cross)
+
+    self.observation_params = new_obs
+    self.internal_params = new_int
+    A_new = new_int.get_mean()
+    Gamma_new = _lds_scale(self, new_int, final=True) if transition_y else self.Gamma[-1]
+    C_new = new_obs.get_mean()
+    Sigma_new = _lds_scale(self, new_obs, final=True)
+    if self.annealing:
+        mass = max(observation_mass, 1.0)
+        if transition_y:
+            Gamma_new = Gamma_new + self.Gamma_def / (mass ** 2)
+        if getattr(self, 'direct_observation_offset', None) is None:
+            Sigma_new = Sigma_new + self.Sigma_def / (mass ** 2)
+    if getattr(self, 'lds_pair_policies', None) is not None:
+        if self.lds_pair_policies['transition'][1].mode == 'fixed':
+            Gamma_new = self.Gamma_def
+        if self.lds_pair_policies['observation'][1].mode == 'fixed':
+            Sigma_new = self.Sigma_def
+    self.A[-1], self.Gamma[-1] = A_new, Gamma_new
+    self.C[-1], self.Sigma[-1] = C_new, Sigma_new
+    self.var[-1] = torch.atleast_2d(torch.sqrt(torch.diag(Gamma_new).clamp_min(0))).T
+    self.y_var[-1] = torch.atleast_2d(torch.sqrt(torch.diag(Sigma_new).clamp_min(0))).T
+    record_lds_parameter_score(self, replace_last=True)
+
+
+def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, force=False,
+                        snr=1.0, first_observation=False):
     """ Method to compute the variational Bayesian step for LDS parameters. Can deal with dynamic or static models.
         Can use full data batch n-step estimation or 1-step estimation.
+        Online first_observation updates C/Sigma from one beat without an A/Gamma transition.
     """
     if len(torch.nonzero(self.Gamma[-1]))< 1:
         model_type = 'static'
-    if h == 1.0:
+    first_observation_update = (first_observation and model_type == 'dynamic'
+                                and self.N == 1 and not full_data)
+    if h > 0.0:
         if snr > 0.5:
-            if (full_data and 1 < self.N) or 1 < self.N < self.estimation_limit or force:
+            if ((full_data and 1 < self.N) or 1 < self.N < self.estimation_limit
+                    or force or first_observation_update):
+                failure_stage = 'internal predictive covariance'
                 try:
                     # if not full_data:
                     #     self.backwards()
-                    if model_type == 'dynamic':
+                    if model_type == 'dynamic' and not first_observation_update:
                         if not full_data:
                             A, Gamma = self.A[-1], self.Gamma[-1]
-                            # samples_A = self.f_star_sm[-1]
-                            # samples_A_ = self.f_star_sm[-2]
                             samples_A = self.f_star_sm[-1]
                             samples_A_ = self.f_star_sm[-2]
-                            #samples_A_ = torch.matmul(A, self.f_star_sm[-2])
                             cov = self.cov_f_sm[-1]
                             cov_ = self.cov_f_sm[-2]
-                            cov_f_ = self.cov_f[-1]
-                            cov_f__ = self.cov_f[-2]
-                            P = A @ cov_ @ A.T + Gamma
-                            L_P = self._chol_spd(P)
-                            J = torch.cholesky_solve(A @ cov_.T, L_P).T
-                            cov_cross = J @ cov
-                            cov_cross = 0.5 * (cov_cross + cov_cross.T)
-                            if True:
-                                cov = torch.zeros(cov.shape, device=cov.device)
-                                cov_ = torch.zeros(cov.shape, device=cov.device)
-                                cov_cross = torch.zeros(cov.shape, device=cov.device)
+                            if self.lds_update == 'legacy':
+                                # Preserve the historical mean-only update.
+                                cov = torch.zeros_like(cov)
+                                cov_ = torch.zeros_like(cov_)
+                                cov_cross = torch.zeros_like(cov)
+                            else:
+                                # E[f_t f_t^T], E[f_{t-1} f_{t-1}^T], and
+                                # E[f_t f_{t-1}^T] use the current smoothed pair.
+                                # The RTS gain uses the filtered previous
+                                # covariance, before the current beat was seen.
+                                filtered_prev = self.cov_f[-2]
+                                predicted = A @ filtered_prev @ A.T + Gamma
+                                gain = torch.cholesky_solve(
+                                    A @ filtered_prev.T, self._chol_spd(predicted)).T
+                                cov_cross = cov @ gain.T
                         else:
                             n_f = min(self.estimation_limit,len(self.f_star_sm)-2) if (
                                     self.estimation_limit != np.PINF) else len(self.f_star_sm)-2
@@ -288,36 +553,79 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                                 cov_cross = cov_cross + J @ self.cov_f_sm[t + 1]
                             cov_cross = 0.5 * (cov_cross + cov_cross.T)
                         if not full_data:
-                            N_k = 1
+                            N_k = h
                         elif self.estimation_limit != np.PINF:
                             N_k = self.estimation_limit
                         else:
                             N_k = samples_A.shape[1]
-                        new_int_dist = self.internal_params.posterior(N_k, samples_A, samples_A_, cov, cov_, cov_cross,
-                                                                      annealing=self.annealing)
+                        if h < 1.0 and not full_data:
+                            root_h = np.sqrt(h)
+                            samples_A, samples_A_ = samples_A * root_h, samples_A_ * root_h
+                            cov, cov_, cov_cross = cov * h, cov_ * h, cov_cross * h
+                        failure_stage = 'internal MNIW posterior'
+                        if getattr(self, 'transition_policy', None) is None:
+                            new_int_dist = _lds_posterior(
+                                self, self.internal_params, N_k, samples_A, samples_A_,
+                                cov, cov_, cov_cross, annealing=self.annealing,
+                            )
+                            _require_spd_posterior(new_int_dist, 'internal')
+                        else:
+                            new_int_dist = self.transition_policy.posterior
+                    elif model_type == 'dynamic':
+                        # One beat has an observation but no state transition.
+                        N_k = h
+                        new_int_dist = self.internal_params
                     elif model_type == 'static':
-                        N_k = 1
+                        N_k = h
                         new_int_dist = self.internal_params
                     else:
                         print("Only programmed static and dynamic models.")
                         new_int_dist = self.internal_params
-                    if not full_data:
-                        samples_C = self.y_train[-1]
-                        #samples_C_, _ = self.observe_last(self.x_train[-1])
-                        if torch.equal(self.x_basis, self.x_train[-1]):
-                            samples_C_ = self.f_star_sm[-1]
-                            C, Sigma = self.C[-1], self.Sigma[-1]
-                            cov = torch.zeros(Sigma.shape, device=Sigma.device)
-                            cov_ = torch.zeros(cov.shape, device=cov.device)
-                            cov_cross = torch.zeros(cov.shape, device=cov.device)
+                    if getattr(self, 'direct_observation_offset', None) is not None:
+                        # A direct fixed decoder may be rectangular. Work in the
+                        # waveform grid, centered by its calibration mean.
+                        # Only latent-state uncertainty enters the noise
+                        # posterior; the observed waveform is known.
+                        if full_data:
+                            n_obs = min(len(self.y_train), int(self.estimation_limit)) if (
+                                self.estimation_limit != np.PINF) else len(self.y_train)
+                            samples_C = torch.stack(self.y_train[:n_obs])[:, :, 0].T
+                            samples_C = samples_C - self.direct_observation_offset
+                            samples_C_ = torch.stack(self.f_star_sm[1:n_obs + 1])[:, :, 0].T
+                            cov_ = torch.sum(torch.stack(self.cov_f_sm[1:n_obs + 1]), dim=0)
+                            N_k = n_obs
                         else:
-                            samples_C_, cov = self.resample_latent_mean(self.x_train[-1])
-                            cov = torch.zeros(cov.shape, device=cov.device)
-                            cov_ = torch.zeros(cov.shape, device=cov.device)
-                            cov_cross = torch.zeros(cov.shape, device=cov.device)
-                        if model_type == 'static':
-                            samples_C_, _ = self.resample_latent_mean(self.x_train[-1])
+                            samples_C = self.y_train[-1].reshape(-1, 1) - self.direct_observation_offset
+                            samples_C_ = self.f_star_sm[-1]
+                            cov_ = self.cov_f_sm[-1]
+                        obs_dim = samples_C.shape[0]
+                        latent_dim = samples_C_.shape[0]
+                        cov = torch.zeros((obs_dim, obs_dim), device=cov_.device, dtype=cov_.dtype)
+                        cov_cross = torch.zeros((obs_dim, latent_dim), device=cov_.device, dtype=cov_.dtype)
+                    elif not full_data:
+                        sparse_observation = (self.inducing_points and
+                                              not torch.equal(self.x_basis, self.x_train[-1]))
+                        if sparse_observation:
+                            samples_C = self.project_observation_to_basis(
+                                self.y_train[-1], self.x_train[-1])
+                            samples_C_ = self.f_star_sm[-1]
+                            cov_ = self.cov_f_sm[-1]
+                        elif torch.equal(self.x_basis, self.x_train[-1]):
+                            samples_C = self.y_train[-1]
+                            samples_C_ = self.f_star_sm[-1]
+                            cov_ = self.cov_f_sm[-1]
+                        else:
+                            samples_C = self.y_train[-1]
+                            samples_C_, cov_ = self.resample_latent_mean(self.x_train[-1])
+                        if model_type == 'static' and not sparse_observation:
+                            samples_C_, cov_ = self.resample_latent_mean(self.x_train[-1])
                         samples_C_ = self.cond_to_cuda(samples_C_)
+                        if self.lds_update == 'legacy':
+                            cov_ = torch.zeros_like(cov_)
+                        # The observation is known, so only its latent input
+                        # contributes posterior covariance to the MNIW update.
+                        cov = torch.zeros_like(cov_)
+                        cov_cross = torch.zeros_like(cov_)
                     else:
                         samples_C  = torch.stack(self.y_train[:n_f])[:, :, 0].T
                         samples_C_ = torch.stack(self.f_star_sm[1:n_f+1])[:, :, 0].T
@@ -325,6 +633,7 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                         cov = torch.zeros(cov_.shape, device=cov_.device)
                         C, Sigma = self.C[-1], self.Sigma[-1]
                         cov_cross = torch.zeros_like(cov_)
+                        failure_stage = 'observation predictive covariance'
                         for t in range(n_f + 1):
                             P = C @ self.cov_f_sm[t] @ C.T + Sigma
                             L_P = self._chol_spd(P)
@@ -335,14 +644,34 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                             cov = torch.zeros(cov.shape, device=cov.device)
                             cov_ = torch.zeros(cov.shape, device=cov.device)
                             cov_cross = torch.zeros(cov.shape, device=cov.device)
-                    if torch.equal(self.x_basis, self.x_train[-1]):
+                    failure_stage = 'observation projection'
+                    if (getattr(self, 'direct_observation_offset', None) is not None or
+                            torch.equal(self.x_basis, self.x_train[-1]) or
+                            (not full_data and sparse_observation)):
                         project_mat = None
                     else:
                         project_mat = self.reduce_noise_matrix(self.x_basis, self.x_train[-1])
-                    new_obs_dist = self.observation_params.posterior(N_k, samples_C, samples_C_, cov, cov_, cov_cross,
-                                                                     sse_matrix=project_mat, annealing=self.annealing)
-                except torch.linalg.LinAlgError:
-                    print("Alg error matrix ill conditioned.")
+                    if h < 1.0 and not full_data:
+                        root_h = np.sqrt(h)
+                        samples_C, samples_C_ = samples_C * root_h, samples_C_ * root_h
+                        cov, cov_, cov_cross = cov * h, cov_ * h, cov_cross * h
+                    failure_stage = 'observation MNIW posterior'
+                    if getattr(self, 'observation_policy', None) is None:
+                        new_obs_dist = _lds_posterior(
+                            self, self.observation_params, N_k, samples_C, samples_C_,
+                            cov, cov_, cov_cross, sse_matrix=project_mat,
+                            annealing=self.annealing,
+                        )
+                        _require_spd_posterior(new_obs_dist, 'observation')
+                    else:
+                        new_obs_dist = self.observation_policy.posterior
+                except torch.linalg.LinAlgError as exc:
+                    failures = getattr(self, '_lds_update_failures', 0) + 1
+                    self._lds_update_failures = failures
+                    if self.verbose and (failures == 1 or failures & (failures - 1) == 0):
+                        print(f"LDS update skipped at {failure_stage}: "
+                              f"responsibility={h:.3g}, included={self.N}, "
+                              f"failures={failures}; {exc}", flush=True)
                     new_int_dist = self.internal_params
                     new_obs_dist = self.observation_params
             else:
@@ -350,9 +679,10 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                 new_obs_dist = self.observation_params
             self.internal_params = new_int_dist
             self.observation_params = new_obs_dist
-            if 1 < self.N:
-                Gamma_ = new_int_dist.get_scale(final=full_data)
-                Sigma_ = new_obs_dist.get_scale(final=full_data)
+            if 1 < self.N or first_observation_update:
+                Gamma_ = (self.Gamma[-1] if first_observation_update else
+                          _lds_scale(self, new_int_dist, final=full_data))
+                Sigma_ = _lds_scale(self, new_obs_dist, final=full_data)
             else:
                 Gamma_ = self.Gamma[-1]
                 Sigma_ = self.Sigma[-1]
@@ -361,11 +691,18 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                     factor_S = self.Sigma[0] / (self.N ** 2)
                     factor_G = self.Gamma[0]
                 else:
-                    factor_G = self.Gamma[0] / (self.N ** 2)
+                    factor_G = (torch.zeros_like(self.Gamma[0]) if first_observation_update
+                                else self.Gamma[0] / (self.N ** 2))
                     factor_S = self.Sigma[0] / (self.N ** 2)
                 Gamma_ = Gamma_ + factor_G
-                Sigma_ = Sigma_ + factor_S
-            if self.N < self.estimation_limit or full_data:
+                if getattr(self, 'direct_observation_offset', None) is None:
+                    Sigma_ = Sigma_ + factor_S
+            if getattr(self, 'lds_pair_policies', None) is not None:
+                if self.lds_pair_policies['transition'][1].mode == 'fixed':
+                    Gamma_ = self.Gamma_def
+                if self.lds_pair_policies['observation'][1].mode == 'fixed':
+                    Sigma_ = self.Sigma_def
+            if self.N < self.estimation_limit or full_data or first_observation_update:
                 self.A.append(new_int_dist.get_mean())
                 self.Gamma.append(Gamma_)
                 if model_type == 'static':
@@ -375,17 +712,19 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                 self.Sigma.append(Sigma_)
                 self.var.append(torch.atleast_2d(torch.sqrt(torch.diag(Gamma_))).T)
                 self.y_var.append(torch.atleast_2d(torch.sqrt(torch.diag(Sigma_))).T)
+                record_lds_parameter_score(self)
         else:
             new_int_dist = self.internal_params
             new_obs_dist = self.observation_params
-            Gamma_ = new_int_dist.get_scale(final=full_data)
-            Sigma_ = new_obs_dist.get_scale(final=full_data)
+            Gamma_ = _lds_scale(self, new_int_dist, final=full_data)
+            Sigma_ = _lds_scale(self, new_obs_dist, final=full_data)
             self.A.append(new_int_dist.get_mean())
             self.Gamma.append(Gamma_)
-            if model_type == 'static':
+            if model_type == 'static' and getattr(self, 'observation_policy', None) is None:
                 self.C.append(new_obs_dist.get_C())
             else:
                 self.C.append(new_obs_dist.get_mean())
             self.Sigma.append(Sigma_)
             self.var.append(torch.atleast_2d(torch.sqrt(torch.diag(Gamma_))).T)
             self.y_var.append(torch.atleast_2d(torch.sqrt(torch.diag(Sigma_))).T)
+            record_lds_parameter_score(self)

@@ -12,11 +12,11 @@ class OnlineInference(InferenceEngine):
 
     __slots__ = ()
 
-    def update(self, x_train, y, with_warp=True, force_model=None, minibatch=0, classify=False):
+    def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify=False):
         """Run the existing update schedule on the bound owner."""
         from . import _online
 
-        return _online.update(self._model, x_train, y, with_warp, force_model, minibatch, classify)
+        return _online.update(self._model, x_train, y, warp, force_model, minibatch, classify)
 
     def _init_resp_cache_cold_start(self, init_state: int=0):
         """Run the existing _init_resp_cache_cold_start schedule on the bound owner."""
@@ -42,24 +42,27 @@ class OnlineInference(InferenceEngine):
 
         return _online._append_hard_step(self._model, resp_prev, respPair_prev, new_state, K)
 
-    def update_fast(self, x_train, y, with_warp=True, force_model=None, minibatch=0, classify=False):
+    def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, classify=False):
         """Run the existing update_fast schedule on the bound owner."""
         from . import _online
 
-        return _online.update_fast(self._model, x_train, y, with_warp, force_model, minibatch, classify)
+        return _online.update_fast(self._model, x_train, y, warp, force_model, minibatch, classify)
 
 
 class OfflineInference(InferenceEngine):
-    """Repeated batch local/global updates and the existing batch utility paths.
+    """Selectable offline optimizers and the existing batch utility paths.
 
-    Proposal/refinement helpers are compatibility hooks, not interchangeable
-    optimizers. Classification and label reload retain their distinct schedules.
+    Legacy proposal/refinement helpers remain bound to their original schedule.
+    Classification and label reload retain their distinct schedules.
     """
 
     __slots__ = ()
 
     def fit(self, x_trains, y_trains, it_limit=None, warp=False):
-        """Run the existing fit schedule on the bound owner."""
+        """Run the selected offline optimizer; legacy remains the default."""
+        if getattr(self._model, 'offline_strategy', 'legacy') == 'split_merge':
+            from . import _split_merge
+            return _split_merge.fit(self._model, x_trains, y_trains, it_limit, warp)
         from . import _offline
 
         return _offline.fit(self._model, x_trains, y_trains, it_limit, warp)

@@ -39,6 +39,51 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
     x_basis_mean = torch.matmul(A, mean_prior)
     x_basis_cov = cov_prior
     x_basis_ = backend.x_basis
+
+    # A fixed affine decoder acts directly on the observation grid. The
+    # latent coordinates are component indices, so GP interpolation between
+    # those indices and waveform times has no mathematical meaning here.
+    offset = getattr(backend, 'direct_observation_offset', None)
+    if offset is not None:
+        y = y.reshape(-1, 1)
+        x_basis_mean = x_basis_mean.reshape(-1, 1)
+        expected_grid = backend.direct_observation_grid
+        if x_train is not None and not torch.equal(
+                torch.as_tensor(x_train, dtype=expected_grid.dtype).reshape(-1, 1),
+                expected_grid):
+            raise ValueError('Fixed observation requires its configured waveform grid')
+        if x_warped is not None and not torch.equal(
+                torch.as_tensor(x_warped, dtype=expected_grid.dtype).reshape(-1, 1),
+                expected_grid):
+            raise ValueError('Fixed observation does not support warped grids')
+        initial_cov = backend.direct_initial_covariance
+        P_t = (cov_prior if torch.equal(cov_prior, initial_cov)
+               else A @ cov_prior @ A.T + Gamma)
+        fixed_model = getattr(backend, 'fixed_observation_model', None)
+        if fixed_model is not None:
+            conditioner = getattr(backend, '_affine_conditioner', None)
+            if conditioner is not None and conditioner.matches(fixed_model, x_basis_mean, Sigma):
+                return conditioner.condition(x_basis_mean, P_t, y, responsibility=h)
+            return fixed_model.condition(x_basis_mean, P_t, y,
+                                         responsibility=h, noise=Sigma)
+        # Information form factors only the latent covariance. PCA calibration
+        # supplies diagonal Sigma, so waveform length does not drive a cubic
+        # solve at every beat.
+        P_t = 0.5 * (P_t + P_t.T)
+        prior_precision = torch.cholesky_inverse(torch.linalg.cholesky(P_t))
+        if torch.equal(Sigma, torch.diag(torch.diag(Sigma))):
+            inverse_variance = h / torch.diag(Sigma)
+            weighted_C = inverse_variance[:, None] * C
+            weighted_y = inverse_variance[:, None] * (y - offset)
+        else:
+            noise_chol = torch.linalg.cholesky(0.5 * (Sigma + Sigma.T))
+            weighted_C = h * torch.cholesky_solve(C, noise_chol)
+            weighted_y = h * torch.cholesky_solve(y - offset, noise_chol)
+        precision = prior_precision + C.T @ weighted_C
+        cov_post = torch.cholesky_inverse(torch.linalg.cholesky(
+            0.5 * (precision + precision.T)))
+        mean_post = cov_post @ (prior_precision @ x_basis_mean + C.T @ weighted_y)
+        return mean_post, 0.5 * (cov_post + cov_post.T)
     if x_train is None:
         x_train = backend.cond_to_torch(np.atleast_2d(np.arange(0, y_train.shape[0], dtype=np.float64)).T)
     if x_warped is None:
@@ -70,11 +115,15 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
     # First step where initial covariance is needed as a prior, using initial Sigma computed by the GP optim.
     if torch.equal(cov_prior, K_X_X):
         P_t = x_basis_cov
-        f_star = torch.zeros(x_warped.shape, device=backend.device)
-        cov_f = (backend.cond_to_torch(backend.kernel(x_train)) - backend.cond_to_torch(backend.kernel(x_train, x_train))) / h
+        f_star, cov_f = backend.pred_dist(x_warped, backend.x_basis,
+                                          C @ x_basis_mean, Sigma)
     else:
         mean = C @ x_basis_mean
         f_star, cov_f = backend.pred_dist(x_warped, backend.x_basis, mean, Sigma)
+    if h < 1.0:
+        # A fractional assignment supplies h times the observation precision,
+        # including GP interpolation uncertainty.
+        cov_f = cov_f / h
     # Forward equations of Kalman.
     KC = K_cov @ C
     K_t = torch.linalg.solve((KC @ P_t @ KC.T + cov_f).T,
@@ -113,9 +162,13 @@ def smooth_sequence(backend, A_prior, Gamma_prior, means, covars):
         A_prior_ = A_prior[t] if t < len(A_prior) else A_prior[-1]
         Gamma_prior_ = Gamma_prior[t] if t < len(Gamma_prior) else Gamma_prior[-1]
         P_t = torch.linalg.multi_dot([A_prior_, covars[t], A_prior_.T]) + Gamma_prior_
-        J_t = torch.matmul(torch.matmul(covars[t], A_prior_.T), torch.linalg.inv(P_t))
+        J_t = torch.linalg.solve(P_t.T, A_prior_ @ covars[t].T).T
         means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior_, means[t])))
-        covars[t] = covars[t] + torch.linalg.multi_dot([J_t, (covars[t + 1] - P_t), J_t.T])
+        eye = torch.eye(covars[t].shape[0], dtype=covars[t].dtype, device=covars[t].device)
+        projection = eye - J_t @ A_prior_
+        reverse_conditional = (projection @ covars[t] @ projection.T
+                               + J_t @ Gamma_prior_ @ J_t.T)
+        covars[t] = reverse_conditional + J_t @ covars[t + 1] @ J_t.T
     return means, covars
 
 
@@ -146,5 +199,9 @@ def smooth_pair(backend, A_prior, Gamma_prior, means, covars):
         P_t = torch.linalg.multi_dot([A_prior, covars[t], A_prior.T]) + Gamma_prior
         J_t = torch.linalg.solve(P_t.T, torch.matmul(A_prior, covars[t].T)).T
         means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior, means[t])))
-        covars[t] = covars[t] + torch.linalg.multi_dot([J_t, (covars[t + 1] - P_t), J_t.T])
+        eye = torch.eye(covars[t].shape[0], dtype=covars[t].dtype, device=covars[t].device)
+        projection = eye - J_t @ A_prior
+        reverse_conditional = (projection @ covars[t] @ projection.T
+                               + J_t @ Gamma_prior @ J_t.T)
+        covars[t] = reverse_conditional + J_t @ covars[t + 1] @ J_t.T
     return means, covars

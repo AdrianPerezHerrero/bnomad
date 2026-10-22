@@ -38,9 +38,9 @@ class ModelState:
     Bindings are descriptors to those exact functions (no copied bodies/wrappers).
     The public model is HDPGPC; this class is not a compatibility constructor.
     """
-    def __init__(self, config):
-        from ..config._models import _initialization_options
-        options = _initialization_options(config)
+    def __init__(self, config, *, schedule=None):
+        from ..config._models import _initialization_options, resolved_lds_policies
+        options = _initialization_options(config, schedule=schedule)
         x_basis = options['x_basis']
         M = options['M']
         n_outputs = options['n_outputs']
@@ -73,7 +73,37 @@ class ModelState:
         estimation_limit = options['estimation_limit']
         reestimate_initial_params = options['reestimate_initial_params']
         n_explore_steps = options['n_explore_steps']
+        self.offline_representer_selection = options['offline_representer_selection']
+        self.offline_strategy = options['offline_strategy']
+        self.split_merge_refine_steps = options['split_merge_refine_steps']
+        self.split_merge_stability_patience = options['split_merge_stability_patience']
+        self.split_merge_score_rtol = options['split_merge_score_rtol']
         free_deg_MNIV = options['free_deg_MNIV']
+        self.lds_update = options['lds_update']
+        self.lds_scoring = options['lds_scoring']
+        self.lds_step_size = options['lds_step_size']
+        self.observation_scope = options['scope']
+        self.observation_C_initial = options['C']
+        self.observation_Sigma_initial = options['Sigma']
+        self.fixed_observation_grid = (config.observation.fixed_grid if
+                                     config.observation.fixed_grid is not None else
+                                     config.observation.pca_grid)
+        self.fixed_observation_offset = (config.observation.fixed_offset if
+                                     config.observation.fixed_offset is not None else
+                                     config.observation.pca_mean)
+        self.fixed_latent_covariance = (config.observation.fixed_latent_covariance if
+                                     config.observation.fixed_latent_covariance is not None else
+                                     config.observation.pca_variances)
+        self.lds_policies = resolved_lds_policies(config)
+        self.custom_lds_policies = any((config.observation.C_policy,
+                                        config.observation.Sigma_policy,
+                                        config.dynamics.A_policy,
+                                        config.dynamics.Gamma_policy))
+        if self.custom_lds_policies:
+            c_mode = self.lds_policies['C'].mode
+            s_mode = self.lds_policies['Sigma'].mode
+            self.observation_scope = ('shared' if c_mode == 'shared' or s_mode.startswith('shared')
+                                      else 'fixed' if c_mode == s_mode == 'fixed' else 'cluster')
         share_gp = options['share_gp']
         use_snr = options['use_snr']
         reduce_outputs = options['reduce_outputs']
@@ -83,7 +113,13 @@ class ModelState:
         if M is None:
             M = 1
         self.M = M
-        self.verbose = verbose
+        from ..config._verbosity import normalize_verbosity
+        self.verbosity = normalize_verbosity(verbose)
+        self.progress = self.verbosity in ('progress', 'debug')
+        self.verbose = self.verbosity == 'debug'
+        self.hard_assignments = options['hard_assignments']
+        self.fit_gp = options['fit_gp']
+        self.birth_lds_kl_per_dimension = options['birth_lds_kl_per_dimension']
         self.actual_state = 0
         self.cuda = cuda
         self.device = 'cuda' if self.cuda else 'cpu'
@@ -243,13 +279,19 @@ class ModelState:
                 if self.bayesian_params:
                     gp_ = gp.GaussianProcessEmission(kernels[m], x_basis[m], annealing=self.annealing[m],
                                        bayesian=self.bayesian_params, cuda=self.cuda,
+                                       fit_gp=self.fit_gp,
                                        inducing_points=inducing_points[m],
                                        estimation_limit=estimation_limit[m], free_deg_MNIV=self.free_deg_MNIV,
-                                       verbose=self.verbose)
+                                       verbose=self.verbose, lds_update=self.lds_update,
+                                       lds_scoring=self.lds_scoring,
+                                       lds_step_size=self.lds_step_size)
                 else:
                     gp_ = gp.GaussianProcessEmission(kernels[m], x_basis[m], annealing=self.annealing[m], cuda=self.cuda,
+                                       fit_gp=self.fit_gp,
                                        inducing_points=inducing_points[m], estimation_limit=estimation_limit[m],
-                                       free_deg_MNIV=self.free_deg_MNIV, verbose=self.verbose)
+                                       free_deg_MNIV=self.free_deg_MNIV, verbose=self.verbose,
+                                       lds_update=self.lds_update, lds_scoring=self.lds_scoring,
+                                       lds_step_size=self.lds_step_size)
                 # Initiate GP
                 if model_type[m] == 'static':
                     cond = gp_.GPR_static(ini_sigma[m])
@@ -257,9 +299,41 @@ class ModelState:
                     cond = gp_.GPR_dynamic(ini_gamma[m], ini_sigma[m])
                 else:
                     print("Chosen model should be dynamic or static.")
-                gp_.initial_conditions(ini_mean=None, ini_cov=None,
-                                       ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
+                self.initialize_lds_emission(gp_, cond)
                 self.gpmodels[ld].append(gp_)
+
+        self.observation_policies = []
+        if self.observation_scope != 'cluster':
+            from ..emissions._observation import ObservationPolicy
+            for ld in range(n_outputs):
+                template = self.gpmodels[ld][0]
+                initial_C = (self.observation_C_initial if self.observation_C_initial is not None
+                             else template.C[0])
+                initial_Sigma = (self.observation_Sigma_initial if self.observation_Sigma_initial is not None
+                                 else template.Sigma[0])
+                if self.custom_lds_policies:
+                    policy = ObservationPolicy(self.observation_scope, initial_C, initial_Sigma,
+                                               self.free_deg_MNIV,
+                                               self.lds_policies['C'], self.lds_policies['Sigma'])
+                else:
+                    policy = ObservationPolicy(self.observation_scope, initial_C, initial_Sigma,
+                                               self.free_deg_MNIV)
+                self.observation_policies.append(policy)
+                for emission in self.gpmodels[ld]:
+                    policy.attach(emission)
+
+        self.transition_policies = []
+        if (self.lds_policies['A'].mode == 'shared'
+                or self.lds_policies['Gamma'].mode.startswith('shared')):
+            from ..dynamics._transition import TransitionPolicy
+            for ld in range(n_outputs):
+                template = self.gpmodels[ld][0]
+                owner = TransitionPolicy(template.A[0], template.Gamma[0],
+                                         self.free_deg_MNIV, self.lds_policies['A'],
+                                         self.lds_policies['Gamma'])
+                self.transition_policies.append(owner)
+                for emission in self.gpmodels[ld]:
+                    owner.attach(emission)
 
         self.init_global_params(len(x_basis), self.M)
         if self.cuda:
@@ -269,6 +343,54 @@ class ModelState:
     from ..model._clusters import (
         keep_last_all, set_default_options, get_default_options, create_gp_default, create_wp_sys_default, refill, reorder, new_group, remove_last_group, redefine_default, update_initial_sigma, return_model_of_sample, selected_gpmodels, gpmodel_deepcopy
     )
+
+    def initialize_lds_emission(self, emission, initial):
+        if self.custom_lds_policies:
+            emission.lds_pair_policies = {
+                'transition': (self.lds_policies['A'], self.lds_policies['Gamma']),
+                'observation': (self.lds_policies['C'], self.lds_policies['Sigma'])}
+            initial = list(initial)
+            for index, name in enumerate(('A', 'Gamma', 'C', 'Sigma')):
+                value = self.lds_policies[name].value
+                if value is not None:
+                    initial[index] = torch.as_tensor(value, dtype=torch.float64)
+                elif name in ('A', 'C') and self.lds_policies[name].mode == 'fixed':
+                    initial[index] = torch.eye(initial[index].shape[0], dtype=torch.float64)
+        initial_covariance = None
+        if self.fixed_observation_grid is not None:
+            from ..emissions._fixed_observation import AffineGaussianObservation
+            latent_covariance = np.asarray(self.fixed_latent_covariance)
+            if latent_covariance.ndim == 1:
+                latent_covariance = np.diag(latent_covariance)
+            if not hasattr(self, 'fixed_observation_model'):
+                self.fixed_observation_model = AffineGaussianObservation(
+                    torch.as_tensor(initial[2]).detach().cpu().numpy(),
+                    torch.as_tensor(initial[3]).detach().cpu().numpy(),
+                    np.asarray(self.fixed_observation_grid),
+                    np.asarray(self.fixed_observation_offset),
+                    latent_covariance)
+            emission.fixed_observation_model = self.fixed_observation_model
+            emission.gp.fixed_observation_model = self.fixed_observation_model
+            emission.direct_observation_grid = torch.as_tensor(
+                self.fixed_observation_grid, dtype=torch.float64)
+            emission.direct_observation_offset = torch.as_tensor(
+                self.fixed_observation_offset, dtype=torch.float64).reshape(-1, 1)
+            emission.gp.direct_observation_grid = emission.direct_observation_grid
+            emission.gp.direct_observation_offset = emission.direct_observation_offset
+            initial_covariance = torch.as_tensor(latent_covariance, dtype=torch.float64)
+            emission.gp.direct_initial_covariance = initial_covariance
+        emission.initial_conditions(ini_mean=None, ini_cov=initial_covariance,
+                                    ini_A=initial[0], ini_Gamma=initial[1],
+                                    ini_C=initial[2], ini_Sigma=initial[3])
+
+    def update_shared_observation(self, responsibilities, *, online=False):
+        if self.observation_scope == 'shared':
+            for ld, policy in enumerate(self.observation_policies):
+                policy.update(self.gpmodels[ld], responsibilities, online=online,
+                              current_index=self.T - 1 if online else None)
+        for ld, policy in enumerate(self.transition_policies):
+            policy.update(self.gpmodels[ld], responsibilities, online=online,
+                          current_index=self.T - 1 if online else None)
 
     from ..inference._messages import (
         _safe_exp, variational_local_terms, LogLik, forward, backward, coupled_state_coef, sum_coupled_state_coef, compute_h, baum_welch, normalize_log
@@ -367,10 +489,10 @@ class ModelState:
         return self.hdp.elbo_Linears(resp, respPair, post, one_sample)
 
 
-    def refill_resp(self, resp, respPair=None):
+    def refill_resp(self, resp, respPair=None, occupied=None):
         """ Refill HDP parameters if a model is reasignated.
         """
-        return self.hdp.refill_resp(resp, respPair)
+        return self.hdp.refill_resp(resp, respPair, occupied=occupied)
 
 
     def calcELBO_LinearTerms(self, rho, omega, alpha, startAlpha, kappa, gamma, transTheta, startTheta, startStateCount,

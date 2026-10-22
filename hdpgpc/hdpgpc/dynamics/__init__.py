@@ -5,7 +5,10 @@ Private modules preserve the legacy numerical and trajectory-update contracts.
 Importing this namespace alone does not initialize numerical libraries.
 """
 
-__all__ = ("DynamicsModel", "StaticDynamics", "LinearDynamics")
+__all__ = (
+    "DynamicsModel", "StaticDynamics", "LinearDynamics",
+    "LDSNoisePriorEstimate", "estimate_lds_noise_priors",
+)
 
 
 def __getattr__(name):
@@ -17,4 +20,11 @@ def __getattr__(name):
         from ._models import StaticDynamics, LinearDynamics
 
         return {"StaticDynamics": StaticDynamics, "LinearDynamics": LinearDynamics}[name]
+    if name in ("LDSNoisePriorEstimate", "estimate_lds_noise_priors"):
+        from ._calibration import LDSNoisePriorEstimate, estimate_lds_noise_priors
+
+        return {
+            "LDSNoisePriorEstimate": LDSNoisePriorEstimate,
+            "estimate_lds_noise_priors": estimate_lds_noise_priors,
+        }[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

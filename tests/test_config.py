@@ -184,7 +184,7 @@ class ConfigurationTests(unittest.TestCase):
 
     def test_configured_schedule_matches_legacy_entry_point(self):
         for name in ('online', 'online_fast', 'offline'):
-            config = replace(recipe(), inference=InferenceConfig(schedule=name, with_warp=False,
+            config = replace(recipe(), inference=InferenceConfig(schedule=name, warp=False,
                                   it_limit=1 if name == 'offline' else None, n_explore_steps=2))
             actual_config = HDPGPCConfig.from_yaml(config.to_yaml())
             states = []
@@ -200,7 +200,7 @@ class ConfigurationTests(unittest.TestCase):
                     else:
                         for sample in y[:2]:
                             if configured: actual_config.inference.run(model, x, sample)
-                            else: getattr(model.online, 'update_fast' if name == 'online_fast' else 'update')(x, sample, with_warp=False)
+                            else: getattr(model.online, 'update_fast' if name == 'online_fast' else 'update')(x, sample, warp=False)
                 states.append(encode(model_state(model)))
             self.assertEqual(*states, name)
 

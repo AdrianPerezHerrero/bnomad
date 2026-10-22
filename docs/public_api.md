@@ -47,7 +47,8 @@ The root namespace exports exactly these new names through `__all__`:
 | `Prediction` | A component's current observation mean and covariance |
 | `LatentState` | One output's latest stored filtered/smoothed state |
 
-The model/result types are also exported from `hdpgpc.model`. Public methods and
+The model/result types are also exported from `hdpgpc.model`, which additionally
+exports `WarpPosterior` for the opt-in GP-flow policy. Public methods and
 properties on `HDPGPC` are:
 
 | Name | Contract |
@@ -60,16 +61,69 @@ properties on `HDPGPC` are:
 | `n_clusters_` | Number of represented clusters, excluding empty reserved slots |
 | `predictive(cluster, *, grid=None)` | Read a component's current observation distribution |
 | `posterior(cluster)` | Copy its latest stored latent state for each output |
+| `warp_posterior(x, *, grid=None, cluster=None)` | Fit candidate-conditioned warp posteriors from the current model state without committing `x`; requires `gp_flow` |
 | `config` | An independent copy of the construction recipe |
 
 There is deliberately no ambiguous `predict(X)` method: assigning new curves,
 forecasting latent evolution, and querying a GP observation distribution are
 different scientific operations. `predictive` performs the last of these.
 
-The seven section dataclasses and their serialization/factory methods remain
+The eight section dataclasses and their serialization/factory methods remain
 public in `hdpgpc.config`. The previously documented component APIs remain
 available for advanced use: emission, dynamics, alignment, HDP and inference
 exports are listed in [architecture.md](architecture.md). The 0.3 engine interfaces replace the retired research entry points.
+
+For record experiments, `hdpgpc.preprocessing.prepare_sequences` selects
+channels, optional first-sequence scaling, and a common grid without assuming
+an ECG file layout. `hdpgpc.diagnostics` exports label statistics, confusion
+and LDS-prior formatting, log duplication, and fitted LDS/warp plots. See the
+[complete-record workflow](record_workflow.md) for inputs and interpretation.
+
+`hdpgpc.datasets.load_daphnet_record` reads an official ZIP or extracted
+recording, and `window_daphnet_record` constructs chronological windows without
+joining experimental gaps. `daphnet_records` lists IDs and `download_daphnet`
+retrieves the official archive when requested. See the
+[Daphnet waveform workflow](daphnet_workflow.md).
+
+Fixed observation models are exported from `hdpgpc.emissions`:
+`FixedObservationModel`, `AffineGaussianObservation`, `PCAObservationEstimate`,
+`estimate_pca_observation`, and the Fourier/wavelet factories and basis functions.
+Their implementations live in `emissions._fixed_observation`, `_pca`, `_fourier`
+and `_wavelet`. The previous `hdpgpc.dynamics` observation exports and private
+modules have been removed; callers must import these objects from `emissions`.
+Serialized affine state dictionaries and configuration arrays are unchanged.
+Python pickles referring to the removed module paths require migration; no
+legacy module aliases are retained.
+Latent filtering, smoothing and parameter estimation remain in `dynamics`.
+
+`SFAObservationEstimate` and `estimate_sfa_observation` are exported from
+`hdpgpc.emissions` (implementation `emissions._sfa`). Temporal calibration
+returns the existing affine observation model plus raw slow-feature encoder,
+pair indices and derivative eigenvalues. Install `estimate.model` with
+`with_fixed_observation_model`; use `estimate.transform(values)` for raw SFA
+features. See [Linear SFA](linear_sfa_observation.md) for sampling and the
+distinction between raw encoding and Gaussian posterior inference.
+
+`LinearPredictionObservationEstimate` and
+`estimate_linear_prediction_observation` are exported from `hdpgpc.emissions`
+(implementation `emissions._linear_prediction`). The estimate supplies the
+ordinary affine `model`, raw `transform`, calibration `predictor` B, temporal
+pairs and loss history. B is not installed as the LDS A. See
+[linear prediction observations](linear_prediction_observation.md).
+
+`hdpgpc.emissions.make_fourier_observation` creates an
+`AffineGaussianObservation` from a full or selected real windowed Fourier basis.
+`window_size` defaults to 16 non-overlapping points; setting it to the waveform
+length reproduces the former global basis. Harmonic selections apply per window.
+`real_fourier_basis` returns the synthesis matrix itself. Install the decoder
+with `hdpgpc.config.with_fixed_observation_model`, the same helper used for
+fixed linear autoencoders and new PCA configurations. See
+[fixed windowed Fourier observation](fourier_observation.md).
+
+`hdpgpc.emissions.make_wavelet_observation` creates the same affine observation
+model using a full real orthonormal Haar basis. `real_wavelet_basis` returns
+its synthesis matrix. Both require a uniformly spaced grid with a power-of-two
+point count. See [fixed wavelet observation](wavelet_observation.md).
 
 All names beginning with `_`, including `HDPGPC._backend`, are internal. The
 implementation modules `model._api` and `model._results` are internal; import
@@ -167,14 +221,16 @@ For example, the small static streaming fixture records assignments
 
 `Prediction.mean` has shape `(points, outputs)` and `covariance` has shape
 `(outputs, points, points)`. `grid` has shape `(points, 1)`. Every output calls the
-unchanged `GaussianProcessEmission.observe_last` on the same query grid. The
-default query grid is the selected cluster's first-output GP basis. There is no
+`GaussianProcessEmission.observe_last` on the same query grid. The default
+query grid is the fixed decoder's waveform grid when configured, otherwise
+the selected cluster's first-output GP basis. There is no
 cross-output covariance matrix or mixture average.
 
 This is a **current component observation distribution**, not a one-step future
 LDS forecast or pre-update predictive assessment. At the native basis, the
-implementation returns `C[-1] @ f_star_sm[-1]` and `Sigma[-1]`. The facade does not
-add latent/process covariance terms that the original formula omits. At another
+legacy GP implementation returns `C[-1] @ f_star_sm[-1]` and `Sigma[-1]`.
+The fixed affine decoder returns `offset + C @ f_star_sm[-1]` and
+`C @ cov_f_sm[-1] @ C.T + Sigma`. At another
 grid, the existing GP interpolation and stabilization formulas are used. With
 alignment, coordinates are the model/aligned domain; no inverse warp back to raw
 observation coordinates is performed.
@@ -191,6 +247,16 @@ Both kinds of summaries detach/copy arrays for reporting. They do not detach,
 replace or mutate training tensors. Predictions/posteriors are opt-in on `update`
 so normal streaming does not pay for their computation and matrix copies.
 
+`InferenceConfig.offline_strategy` selects `'legacy'` (default) or
+`'split_merge'` for offline fits. The latter returns detached proposal diagnostics
+through `model.split_merge_history_`; legacy fits return an empty list.
+`model.split_merge_convergence_` reports the stopping reason, iteration and
+final assignment/score stability checks (an empty dictionary for legacy fits).
+Split/merge outer stopping uses `split_merge_stability_patience=3` consecutive
+stable iterations and `split_merge_score_rtol=1e-3` by default. See
+[offline split–merge inference](offline_split_merge.md) for its controls and
+relationship to LDS updates and the configured objective.
+
 ## Advanced native engines
 
 For tensor-level classification, label-conditioned fitting and other scientific
@@ -200,3 +266,28 @@ No old model imports, flat constructor adapters or old pickle paths are supporte
 The mutable state returned by `config.build_model()` is opaque and private.
 
 For actual 0.3 verification results see [the migration report](migration_0_3/report.md).
+
+## Dataset experiments and reusable reporting
+
+`hdpgpc.emissions.estimate_autoencoder_observation` calibrates the tied linear
+autoencoder on explicitly supplied observations. It returns an
+`AutoencoderObservationEstimate` containing the frozen network, exact affine
+observation model, selected indices, losses and reconstruction residuals.
+Use `with_fixed_observation_model(config, estimate.model, ...)` to install it.
+The existing PCA/Fourier/wavelet factories share this observation structure.
+
+`hdpgpc.datasets.ucr` supplies `PreparedDataset`, `archive_datasets`,
+`prepare_dataset` and `download_archive`. Preparation returns TRAIN/TEST values
+and labels plus TRAIN normalization statistics and interpolation metadata.
+Importing the dataset namespace does not load numerical libraries.
+
+`hdpgpc.diagnostics.plot_clustering_summary(model, values, annotations, ...)`
+returns a figure per output, using the same overview/gallery for all datasets.
+Pass `ordered=False` for class composition instead of temporal transitions.
+LDS/warp diagnostics remain separate reusable functions.
+
+`hdpgpc.experiments.ExperimentRun` owns one content-derived run directory and
+log; `save_results` emits the common results/assignment/plot schema. The record
+and UCR workflow modules expose `build_parser`, `make_config`, and their
+respective `run_records`/`run_ucr` functions. They orchestrate the public model
+API; they are not model implementations. See [the workflow guide](experiment_workflows.md).

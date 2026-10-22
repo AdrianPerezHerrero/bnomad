@@ -52,6 +52,14 @@ Saved configuration dictionaries remain schema version 1. Change
 an older recipe. The scientific default is still the same GP alignment. `none`
 selects identity. Removed policies/constructors raise errors; no fallback exists.
 
+Inference recipes now have one `inference.warp` flag for both schedules, with
+`False` as the default. To migrate a saved recipe containing both old flags,
+keep its offline `warp` value for an offline schedule or use the old online flag's
+value as `warp` for an online schedule, then remove the extra field. The loader
+rejects the retired field so that a conflicting pair cannot be interpreted
+silently. Call `OnlineInference.update(..., warp=True)` or set
+`InferenceConfig(schedule='online', warp=True)` to enable online alignment.
+
 The inactive alternate warper, side-effect scripts, historical study notebooks
 and old pickle paths are retired. Maintained examples and eight tutorials replace
 the old programs; originals remain in the separate unchanged 0.2 export.

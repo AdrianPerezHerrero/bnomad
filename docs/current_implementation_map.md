@@ -162,7 +162,7 @@ The first pair table produced by `coupled_state_coef` is zero before taking logs
 
 There is no separately encapsulated general merge/death algorithm.
 
-Offline birth proposals rank samples using normalized representative-fit, accumulated emission, and latent scores. They group approximately equal candidate scores using `rtol=0.01`, explore up to `n_explore_steps`, and accept according to the implemented objective.
+Offline birth proposals rank samples using normalized representative-fit, accumulated emission, and latent scores. They group approximately equal candidate scores using `rtol=0.01` and fill one ordered pool of up to `n_explore_steps` distinct beats. The second criterion skips beats selected by the first; if score grouping leaves slots unused, the rankings fill them with other distinct eligible beats. Each pool member is evaluated at most once and acceptance uses the implemented objective.
 
 Online absorption candidates are ordered by emission fit. The provisional birth copies the **worst-ranked** existing model as its template. The first absorption candidate beating the birth comparison is accepted; the algorithm does not necessarily find the best absorption candidate.
 
@@ -435,7 +435,7 @@ Observed behavior should be preserved until separately reviewed:
 
 Static integration defects or incomplete paths:
 
-- `test_offline.py` and `test_offline_multi_output.py` pass `with_warp=`, which `include_batch` does not accept.
+- Historical `test_offline.py` and `test_offline_multi_output.py` used an unsupported batch keyword; current batch inference accepts `warp=`.
 - `test_step.ipynb` unpacks two results from `compute_estimators_LDS`, which returns four.
 - `reorder` shares lists between outputs through list multiplication.
 - Forced-model online branches can reach use of `reorder` without assigning it.
@@ -544,10 +544,10 @@ The two notebooks demonstrate MIT-BIH and ocean data workflows; they are executa
 
 | Caller | Model entry point |
 |---|---|
-| `test_online.py:83` | `include_sample(..., with_warp=False)` |
-| `test_online_warp.py:82` | `include_sample(..., with_warp=True)` |
-| `test_offline.py:79` | Intended `include_batch`; current call uses unsupported `with_warp`. |
-| `test_offline_multi_output.py:76` | Same batch keyword mismatch. |
+| `test_online.py:83` | Unwarped online call (`warp=False` in the current API) |
+| `test_online_warp.py:82` | Warped online call (`warp=True` in the current API) |
+| `test_offline.py:79` | Historical batch call used an unsupported keyword. |
+| `test_offline_multi_output.py:76` | Same historical batch keyword mismatch. |
 | `test_offline_multi_output_load.py:81` | `reload_model_from_labels` |
 | Same script, lines 83/85 | `cluster_new_batch`, then `cluster_new_batch(learning=True)` |
 | `GPI_test.py:114` | `include_sample` |

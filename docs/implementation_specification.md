@@ -747,6 +747,14 @@ fallback, clipping and SciPy status boundaries; the original fixtures are unchan
 
 ### B11. Offline stopping and last-result cache timing
 
+**Current native offline extension:** The historical behaviour below describes
+the legacy implementation. Native `_offline.fit` now requires full responsibility
+and pairwise stability, finite ELBO stability, and no accepted reallocation or
+birth in the current iteration for convergence. Subsequent iterations use the
+normal selection path without forced birth exploration. Limit exits refresh
+the last-result caches before stopping. See
+[offline convergence](offline_convergence.md) for the numerical tolerances.
+
 **Current behaviour:** Outer stopping occurs on refill failure, one sample,
 iteration limit, exact cluster cap, more than one empty group, or identical
 consecutive assignments. It is not an outer ELBO-tolerance test; the diagnostic
@@ -1391,7 +1399,7 @@ CPU fixtures do not establish every possible proposal/convergence branch.
 ### D14. Forced online reuse can fail after mutating state
 
 **Current behaviour:** On the deterministic single-output fixture, one ordinary
-`include_sample` followed by `include_sample(..., force_model=0, with_warp=False)`
+`include_sample` followed by `include_sample(..., force_model=0, warp=False)`
 raises `UnboundLocalError` for local variable `reorder`. It has already advanced
 time and performed intermediate calculations. The engine retains both the
 exception and the partial state; it does not roll back or silently pick a reorder.
@@ -1416,8 +1424,8 @@ fixture and does not claim that every forced-model path fails.
 seven typed sections and translates them back through a factory. All 38 optional
 defaults are unchanged; unspecified GP initializers remain `None`, and an
 incomplete recipe is serializable but cannot build until required values are
-supplied. Legacy direct construction remains untouched. Online `with_warp=True`
-and offline `warp=False` stay distinct. Seed/thread/dtype/determinism controls are
+supplied. Legacy direct construction remains untouched. `warp=False` is the
+common online and offline default. Seed/thread/dtype/determinism controls are
 opt-in and are not applied on each observation.
 
 The stable data-only representation preserves tuple/list distinctions, array

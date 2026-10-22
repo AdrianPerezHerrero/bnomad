@@ -53,7 +53,7 @@ class NoAlignment(GPAlignment):
 
     @staticmethod
     def prepare_online(owner, x_train, y, t, M, y_mod, liks, requested, force_model=None, fast=False):
-        # This is precisely the old with_warp=False branch in both drivers.
+        # This is the warp=False branch in both online drivers.
         for m in range(M):
             y_mod[m].append(owner.cond_cuda(y))
         return y_mod, liks

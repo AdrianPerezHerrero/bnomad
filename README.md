@@ -43,6 +43,9 @@ online multi-output paths have known limitations; use the offline tutorials.
 
 - [Installation, dependency extras and Python support](docs/installation.md)
 - [Online, offline, static, warping and multi-output tutorials](docs/tutorials.md)
+- [Choose LDS, HDP, reduction, and warp options](docs/model_choices.md)
+- [Comparable dataset experiment scripts and run folders](docs/experiment_workflows.md)
+- [Complete-record experiments](docs/record_workflow.md)
 - [Real-record Google Colab notebooks](tutorials/README.md)
 - [Public API](docs/public_api.md) and [typed configuration](docs/configuration.md)
 - [Reproducibility and tests](docs/reproducibility.md)

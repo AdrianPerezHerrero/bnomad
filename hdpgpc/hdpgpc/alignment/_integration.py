@@ -8,7 +8,6 @@ changes; stateless policies select them at the model boundary.
 
 import numpy as np
 import torch
-from tqdm import trange
 
 
 def reset_warp_cache(self):
@@ -26,8 +25,7 @@ def compute_warp_actual_state(self, x_trains, y_trains, q=None, q_lat=None, snr=
     self.x_w = torch.zeros(y_trains.shape)
     self.liks_w = torch.zeros((y_trains.shape[0], self.n_outputs))
     for ld in range(self.n_outputs):
-        print("--Compute warp--")
-        for j in trange(y_trains.shape[0]):
+        for j in range(y_trains.shape[0]):
             y = y_trains[j, :, [ld]]
             m_ = 0
             for m, gp in enumerate(self.gpmodels[ld]):
@@ -147,8 +145,6 @@ def compute_warp_y(self, x_train, y, strategie='standard', force_model=None, gpm
             model = gpmodel
         wp_sys_ = self.wp_sys[ld][m]
         if len(model.indexes) != 0:
-            if self.verbose and False:
-                print("Warp respect model: ", m + 1)
             if i is None:
                 mean, cov = model.observe_last(x_train)
             else:
@@ -173,7 +169,8 @@ def compute_warp_y(self, x_train, y, strategie='standard', force_model=None, gpm
             model = self.gpmodels[ld][m]
             wp_sys_ = self.wp_sys[ld][m]
             if len(model.indexes) != 0:
-                print("Warp respect model: ", m + 1)
+                if self.verbose:
+                    print("Warp respect model: ", m + 1)
                 mean, cov = model.observe_last(x_train)
                 noise = torch.diag(cov)
                 noise = trans_noise(noise)
@@ -197,7 +194,8 @@ def compute_warp_y(self, x_train, y, strategie='standard', force_model=None, gpm
             model = self.gpmodels[ld][m]
             wp_sys_ = self.wp_sys[ld][m]
             if len(model.indexes) != 0:
-                print("Warp respect model: ", m + 1)
+                if self.verbose:
+                    print("Warp respect model: ", m + 1)
                 mean, cov = model.observe_last(x_train)
                 noise = torch.diag(cov)
                 noise = trans_noise(noise)
@@ -214,8 +212,8 @@ def compute_warp_y(self, x_train, y, strategie='standard', force_model=None, gpm
                                                                               self.cond_to_torch(x_))).item()
             else:
                 liks[m] = liks[m] + torch.max(liks[order_C[:i+1]])
-                print("Warp respect zero-knowledge model:", m + 1)
-                print("----Warping computed----")
+                if self.verbose:
+                    print("Warp respect zero-knowledge model:", m + 1)
             if i >= 3:
                 break
         liks[-1] = liks[-1] + torch.max(liks[:-1])
@@ -226,7 +224,8 @@ def compute_warp_y(self, x_train, y, strategie='standard', force_model=None, gpm
             model = self.gpmodels[ld][m]
             wp_sys_ = self.wp_sys[ld][m]
             if len(model.indexes) != 0:
-                print("Warp respect model: ", m + 1)
+                if self.verbose:
+                    print("Warp respect model: ", m + 1)
                 mean, cov = model.observe_last(x_train)
                 noise = torch.diag(cov)
                 noise = trans_noise(noise)
@@ -259,8 +258,8 @@ def compute_warp_y(self, x_train, y, strategie='standard', force_model=None, gpm
                     break
             else:
                 liks[m] = liks[m] + torch.max(liks[:-1])
-                print("Warp respect zero-knowledge model:", m + 1)
-                print("----Warping computed----")
+                if self.verbose:
+                    print("Warp respect zero-knowledge model:", m + 1)
 
     else:
         print('Only two strategies implemented: standard and greedy')
@@ -472,8 +471,8 @@ def select_assigned_warp(self, y_trains_w, resp):
     idx = z[:, None, None, None].expand(-1, y_trains_w.shape[1], y_trains_w.shape[2], 1)
     return torch.gather(y_trains_w, 3, idx).squeeze(3)  # (N,T,D)
 
-def prepare_online_standard(self, x_train, y, t, M, y_mod, liks, with_warp, force_model=None):
-    if with_warp:
+def prepare_online_standard(self, x_train, y, t, M, y_mod, liks, warp, force_model=None):
+    if warp:
         if t > 0:
             for ld in range(self.n_outputs):
                 y_w, x_w, liks = self.compute_warp_y(x_train, y[:, [ld]], self.method_compute_warp,
@@ -496,13 +495,13 @@ def prepare_online_standard(self, x_train, y, t, M, y_mod, liks, with_warp, forc
     return y_mod, liks
 
 
-def update_selected(self, ld, model, x_train, with_warp):
-    if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and with_warp:
+def update_selected(self, ld, model, x_train, warp):
+    if len(self.gpmodels[ld][model].indexes) > 1 and self.warp_updating[model] and warp:
         self.wp_sys[ld][model].update_warp(x_train, self.x_w[-1][model])
 
 
-def prepare_online_fast(self, x_train, y, t, M, y_mod, liks, with_warp, force_model=None):
-    if with_warp:
+def prepare_online_fast(self, x_train, y, t, M, y_mod, liks, warp, force_model=None):
+    if warp:
         if t > 0:
             for ld in range(self.n_outputs):
                 y_w, x_w, liks = self.compute_warp_y(

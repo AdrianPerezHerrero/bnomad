@@ -24,8 +24,8 @@ class Prediction:
 
     mean: (points, outputs); covariance: (outputs, points, points). There is no
     cross-output covariance or added LDS forecast step. In particular, at the
-    native grid the existing code returns observation Sigma, not an independently
-    reconstructed total predictive covariance. See docs/public_api.md.
+    native grid the legacy GP path returns observation Sigma; a fixed affine
+    observation model returns C Var[f] C.T + Sigma. See docs/public_api.md.
     """
     cluster: int
     grid: ndarray
@@ -47,6 +47,27 @@ class LatentState:
     filtered_covariance: ndarray
     smoothed_mean: ndarray
     smoothed_covariance: ndarray
+
+
+@dataclass(frozen=True, eq=False)
+class WarpPosterior:
+    """Candidate-conditioned posterior for one uncommitted observation.
+
+    grid_samples has shape (draws, points, 1).  The displacement arrays have
+    shape (points, 1).  score_by_output contains each channel's expected log
+    likelihood with one shared warp KL divided evenly across channels.
+    Arrays are independent, read-only snapshots of the model calculation.
+    """
+    cluster: int
+    grid_samples: ndarray
+    mean_displacement: ndarray
+    std_displacement: ndarray
+    mean_whitened: ndarray
+    chol_whitened: ndarray
+    score_by_output: ndarray
+    expected_log_likelihood: float
+    kl: float
+    elbo: float
 
 
 @dataclass(frozen=True, eq=False)

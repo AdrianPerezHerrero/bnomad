@@ -20,6 +20,21 @@ from ..numerics._normalization import max_shift_log_scores
 from ..hdp._entropy import state_entropy_terms, pair_entropy_terms
 
 
+def _convert_observation_owners(self, target):
+    for output, owner in enumerate(getattr(self, 'observation_policies', ())):
+        owner.convert(target)
+        for emission in self.gpmodels[output]:
+            emission.C_def = owner.prior.get_mean()
+            emission.Sigma_def = owner.prior.get_scale()
+            emission.observation_params = owner.posterior
+    for output, owner in enumerate(getattr(self, 'transition_policies', ())):
+        owner.convert(target)
+        for emission in self.gpmodels[output]:
+            emission.A_def = owner.prior.get_mean()
+            emission.Gamma_def = owner.prior.get_scale()
+            emission.internal_params = owner.posterior
+
+
 def cond_to_torch(self, x):
     if type(x) is list and type(x[0]) is np.ndarray:
         x = torch.from_numpy(np.array(x))
@@ -96,6 +111,7 @@ def full_model_to_numpy(self):
             gp.model_to_numpy()
         for w_gp in self.wp_sys[ld]:
             w_gp.warp_gp.model_to_numpy()
+    _convert_observation_owners(self, 'numpy')
 
 
 def full_model_to_torch(self):
@@ -126,6 +142,7 @@ def full_model_to_torch(self):
             gp.model_to_torch()
         for w_gp in self.wp_sys[ld]:
             w_gp.warp_gp.model_to_torch()
+    _convert_observation_owners(self, 'torch')
 
 
 def full_model_to_cuda(self):
@@ -158,6 +175,7 @@ def full_model_to_cuda(self):
             gp.model_to_cuda()
         for w_gp in self.wp_sys[ld]:
             w_gp.warp_gp.model_to_cuda()
+    _convert_observation_owners(self, 'cuda')
 
 
 def full_model_to_cpu(self):
@@ -194,6 +212,7 @@ def full_model_to_cpu(self):
                 gp.model_to_cpu()
             for w_gp in self.wp_sys[ld]:
                 w_gp.warp_gp.model_to_cpu()
+        _convert_observation_owners(self, 'cpu')
 
 
 def save_swgp(self, st):

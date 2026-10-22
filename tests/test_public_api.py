@@ -50,7 +50,7 @@ class PublicUsageTests(unittest.TestCase):
 
     def test_static_streaming_birth_reuse_and_optional_results(self):
         cfg = config('static')
-        cfg = replace(cfg, inference=InferenceConfig(schedule='online', with_warp=False, n_explore_steps=2))
+        cfg = replace(cfg, inference=InferenceConfig(schedule='online', warp=False, n_explore_steps=2))
         model = HDPGPC(cfg)
         results = [model.update(sample, include_prediction=True, include_posterior=True) for sample in waves()[:4]]
         self.assertEqual([r.assigned_cluster for r in results], [0, 0, 1, 1])
@@ -180,7 +180,7 @@ class PublicUsageTests(unittest.TestCase):
 
     def test_existing_online_multi_output_failure_is_not_hidden(self):
         cfg = config('multi_output')
-        cfg = replace(cfg, inference=InferenceConfig(schedule='online', with_warp=False, n_explore_steps=2))
+        cfg = replace(cfg, inference=InferenceConfig(schedule='online', warp=False, n_explore_steps=2))
         model = HDPGPC(cfg)
         with self.assertRaises(IndexError):
             for sample in waves(2)[:2]:

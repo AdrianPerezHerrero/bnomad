@@ -35,7 +35,7 @@ def run_public(name):
     online = 'online' in name
     cfg = replace(cfg, inference=replace(cfg.inference,
         schedule=('online_fast' if name == 'online_fast' else 'online') if online else 'offline',
-        with_warp=name == 'known_failure_online_warp', warp=name == 'offline_warp',
+        warp=(name == 'known_failure_online_warp' if online else name == 'offline_warp'),
         it_limit=None if online else (1 if name in ('offline_single', 'offline_limit') else 3)))
     data = waveform_data(outputs)
     with redirect_stdout(io.StringIO()), trace_calls(expected['events']):

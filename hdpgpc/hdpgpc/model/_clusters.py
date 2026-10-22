@@ -4,6 +4,8 @@ Functions operate on the explicitly supplied mutable inference state.
 Numerical expressions and mutation order are preserved from the executable specification.
 """
 
+from copy import deepcopy
+
 import numpy as np
 import torch
 import pandas as pd
@@ -59,25 +61,31 @@ def get_default_options(self):
         self.estimation_limit_def, self.free_deg_MNIV
 
 
-def create_gp_default(self, i=None):
+def create_gp_default(self, i=None, fitted_kernel=None):
     """ Create a GP default when a birth happens.
     """
     if i is None or len(self.wp_sys[0]) <= i:
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp,\
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
+        kernel = fitted_kernel if fitted_kernel is not None else kernel
         kernel = kernel.clone_with_theta(kernel.theta)
         gp_ = gp.GaussianProcessEmission(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params,
                            cuda=self.cuda,
+                           fit_gp=self.fit_gp,
                            inducing_points=inducing_points, estimation_limit=estimation_limit,
-                           free_deg_MNIV=free_deg_MNIV, verbose=self.verbose)
+                           free_deg_MNIV=free_deg_MNIV, verbose=self.verbose,
+                           lds_update=getattr(self, 'lds_update', 'conjugate_sequential'),
+                           lds_scoring=getattr(self, 'lds_scoring', 'final'),
+                           lds_step_size=getattr(self, 'lds_step_size', 0.2))
         if model_type == 'static':
             cond = gp_.GPR_static(ini_sigma)
         elif model_type == 'dynamic':
             cond = gp_.GPR_dynamic(ini_gamma, ini_sigma)
         else:
             print("Chosen model should be dynamic or static.")
-        gp_.initial_conditions(ini_mean=None, ini_cov=None,
-                               ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
+        self.initialize_lds_emission(gp_, cond)
+        if fitted_kernel is not None:
+            gp_.fitted = True
         # self.wp_sys.append(_alignment.configured(self).create_warper(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
         #                                       recursive=recursive_warp, cuda=self.cuda, mode=self.mode_warp))
         if self.cuda and torch.cuda.is_available():
@@ -98,22 +106,32 @@ def create_gp_default(self, i=None):
         self.estimation_limit.append(estimation_limit)
         for t, y_ in enumerate(self.y[:-1]):
             gp_.condition_observation(t, y_, 0, posterior=False)
+        if self.observation_scope != 'cluster':
+            self.observation_policies[0].attach(gp_)
+        if self.transition_policies:
+            self.transition_policies[0].attach(gp_)
         return gp_
     else:
         kernel, ini_sigma, ini_gamma, ini_outputscale, bound_sigma, bound_gamma, bound_noise_warp, annealing, method_compute_warp,\
             model_type, recursive_warp, warp_updating, inducing_points, estimation_limit, free_deg_MNIV = self.get_default_options()
+        kernel = fitted_kernel if fitted_kernel is not None else kernel
         kernel = kernel.clone_with_theta(kernel.theta)
         gp_ = gp.GaussianProcessEmission(kernel, self.x_basis_ini, annealing=annealing, bayesian=self.bayesian_params,
-                           cuda=self.cuda, inducing_points=inducing_points, estimation_limit=estimation_limit,
-                           free_deg_MNIV=free_deg_MNIV, verbose=self.verbose)
+                           cuda=self.cuda, fit_gp=self.fit_gp,
+                           inducing_points=inducing_points, estimation_limit=estimation_limit,
+                           free_deg_MNIV=free_deg_MNIV, verbose=self.verbose,
+                           lds_update=getattr(self, 'lds_update', 'conjugate_sequential'),
+                           lds_scoring=getattr(self, 'lds_scoring', 'final'),
+                           lds_step_size=getattr(self, 'lds_step_size', 0.2))
         if model_type == 'static':
             cond = gp_.GPR_static(ini_sigma)
         elif model_type == 'dynamic':
             cond = gp_.GPR_dynamic(ini_gamma, ini_sigma)
         else:
             print("Chosen model should be dynamic or static.")
-        gp_.initial_conditions(ini_mean=None, ini_cov=None,
-                               ini_A=cond[0], ini_Gamma=cond[1], ini_C=cond[2], ini_Sigma=cond[3])
+        self.initialize_lds_emission(gp_, cond)
+        if fitted_kernel is not None:
+            gp_.fitted = True
         for ld in range(self.n_outputs):
             self.wp_sys[ld][i] = _alignment.configured(self).create_warper(self.x_basis_warp[0], self.noise_warp, bound_noise_warp,
                                                 recursive=recursive_warp, cuda=self.cuda, mode=self.mode_warp)
@@ -134,6 +152,10 @@ def create_gp_default(self, i=None):
         self.estimation_limit[i] = estimation_limit
         for t, y_ in enumerate(self.y[:-1]):
             gp_.condition_observation(t, y_, 0, posterior=False)
+        if self.observation_scope != 'cluster':
+            self.observation_policies[0].attach(gp_)
+        if self.transition_policies:
+            self.transition_policies[0].attach(gp_)
         return gp_
 
 
@@ -147,14 +169,16 @@ def create_wp_sys_default(self):
 def refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr):
     """ Redistribute the responsibility for not letting empty clusters and generate a new model if needed.
     """
-    resp_per_group = torch.sum(resp[np.where(resp == 1.0)[0]], axis=0)
-    if self.verbose:
-        print("Group responsibility estimated: " + str(resp_per_group.detach().cpu().numpy().astype(np.int64)),
-              flush=True)
-    if torch.any(resp_per_group[:-1] < 1.0):
+    resp_per_group = torch.sum(resp, axis=0)
+    if self.hard_assignments:
+        occupied = resp_per_group >= 1.0
+    else:
+        occupied = torch.bincount(torch.argmax(resp, dim=1), minlength=resp.shape[1]) > 0
+    if torch.any(~occupied[:-1]):
         # Case where last is filled and exists an empty group
-        if resp_per_group[-1] >= 1.0:
-            resp, respPair = self.refill_resp(resp, respPair)
+        if occupied[-1]:
+            resp, respPair = self.refill_resp(resp, respPair,
+                                             occupied=None if self.hard_assignments else occupied)
         else:
             if self.verbose:
                 print("Empty group detected, new iteration.\n")
@@ -165,7 +189,7 @@ def refill(self, resp, respPair, startStateCount, transStateCount, q, q_lat, snr
 def reorder(self, resp, respPair, q, q_lat):
     """ Reorder the responsibility to have a sorted assignation.
     """
-    resp_per_group = torch.sum(resp[np.where(resp == 1)[0]], axis=0)
+    resp_per_group = torch.sum(resp, axis=0)
     reorder = torch.argsort(resp_per_group, descending=True)
     resp = resp[:, reorder]
     respPair = respPair[:, reorder, :]
@@ -293,7 +317,14 @@ def selected_gpmodels(self):
 
 def gpmodel_deepcopy(self, gpmodel):
     gp_ = gp.GaussianProcessEmission(gpmodel.gp.kernel.clone_with_theta(gpmodel.gp.kernel.theta), gpmodel.x_basis.clone(),
-                       verbose=self.verbose)
+                       annealing=gpmodel.annealing, bayesian=gpmodel.bayesian,
+                       cuda=gpmodel.cuda, fit_gp=gpmodel.fit_gp,
+                       inducing_points=gpmodel.inducing_points,
+                       estimation_limit=gpmodel.estimation_limit,
+                       free_deg_MNIV=gpmodel.free_deg_MNIV, verbose=self.verbose,
+                       lds_update=getattr(gpmodel, 'lds_update', 'conjugate_sequential'),
+                       lds_scoring=getattr(gpmodel, 'lds_scoring', 'final'),
+                       lds_step_size=getattr(gpmodel, 'lds_step_size', 0.2))
     gp_.y_train = gpmodel.y_train.copy()
     gp_.x_train = gpmodel.x_train.copy()
     gp_.f_star = gpmodel.f_star.copy()
@@ -314,9 +345,34 @@ def gpmodel_deepcopy(self, gpmodel):
     gp_.ini_cov_def = gpmodel.ini_cov_def
     gp_.A_def, gp_.Gamma_def = gpmodel.A_def, gpmodel.Gamma_def
     gp_.C_def, gp_.Sigma_def = gpmodel.C_def, gpmodel.Sigma_def
-    gp_.internal_params = gpmodel.internal_params
-    gp_.observation_params = gpmodel.observation_params
+    gp_.internal_params = deepcopy(gpmodel.internal_params)
+    gp_.observation_params = deepcopy(gpmodel.observation_params)
+    gp_.lds_pair_policies = getattr(gpmodel, 'lds_pair_policies', None)
+    if getattr(gpmodel, 'direct_observation_offset', None) is not None:
+        gp_.direct_observation_grid = gpmodel.direct_observation_grid
+        gp_.direct_observation_offset = gpmodel.direct_observation_offset
+        gp_.gp.direct_observation_grid = gpmodel.gp.direct_observation_grid
+        gp_.gp.direct_observation_offset = gpmodel.gp.direct_observation_offset
+        gp_.gp.direct_initial_covariance = gpmodel.gp.direct_initial_covariance
+        # The decoder is immutable and shared across fixed-affine clusters.
+        # Keep its attachment on both layers: filtering and emission scoring
+        # consult different layers, and diagnostics inspect the emission.
+        fixed_model = getattr(gpmodel, 'fixed_observation_model', None)
+        if fixed_model is None:
+            fixed_model = getattr(gpmodel.gp, 'fixed_observation_model', None)
+        if fixed_model is None:
+            fixed_model = getattr(self, 'fixed_observation_model', None)
+        if fixed_model is not None:
+            gp_.fixed_observation_model = fixed_model
+            gp_.gp.fixed_observation_model = fixed_model
+    if gpmodel.lds_scoring == 'historical':
+        gp_.lds_internal_score_history = gpmodel.lds_internal_score_history.copy()
+        gp_.lds_observation_score_history = gpmodel.lds_observation_score_history.copy()
     gp_.ini_kernel_theta = gpmodel.ini_kernel_theta
     gp_.free_deg_MNIV = gpmodel.free_deg_MNIV
+    if self.observation_scope != 'cluster':
+        gpmodel.observation_policy.attach(gp_)
+    if self.transition_policies:
+        self.transition_policies[0].attach(gp_)
     return gp_
 

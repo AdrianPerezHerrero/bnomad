@@ -48,6 +48,7 @@ documentation = "https://github.com/AdrianPerezHerrero/HDP-GPC/tree/main/docs"
 issues = "https://github.com/AdrianPerezHerrero/HDP-GPC/issues"
 
 [project.optional-dependencies]
+images = ["Pillow>=10,<13"]
 datasets = ["wfdb>=4.1.2,<4.2", "soundfile>=0.12.1,<0.14"]
 examples = ["jupyterlab>=4,<5", "PyYAML>=6,<7"]
 tutorials = ["nbformat>=5.10,<6", "nbclient>=0.10,<1", "ipykernel>=6.29,<7"]

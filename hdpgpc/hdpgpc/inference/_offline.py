@@ -2,14 +2,202 @@
 Keep the global/local alternation and mutation order unchanged."""
 
 import numpy as np
+import math
 import torch
 from ..alignment import _components as _alignment
+from ._birth_diagnostics import capture_seed, capture_refit
+from ._messages import assignment_messages
+
+
+def _reallocation_improves(baseline, proposal, *, atol=1e-6, rtol=1e-8):
+    """Require an ELBO gain larger than absolute and scale-relative roundoff.
+
+    Use the complete proposal objective, including LDS/linear terms. Equality,
+    nonfinite objectives and improvements within tolerance are rejected.
+    """
+    baseline, proposal = float(baseline), float(proposal)
+    if not (math.isfinite(baseline) and math.isfinite(proposal)):
+        return False
+    tolerance = atol + rtol * max(abs(baseline), abs(proposal))
+    return proposal - baseline > tolerance
+
+
+def _offline_converged(previous_resp, resp, previous_pair, resp_pair,
+                       previous_elbo, elbo, *, reallocation_accepted,
+                       birth_accepted):
+    """Converge on stable quantities only when no reallocation/birth was committed."""
+    if (reallocation_accepted or birth_accepted or previous_elbo is None
+            or previous_resp is None or previous_pair is None
+            or previous_resp.shape != resp.shape or previous_pair.shape != resp_pair.shape):
+        return False
+    if not (math.isfinite(float(previous_elbo)) and math.isfinite(float(elbo))):
+        return False
+    # Absolute responsibility tolerance also checks near-zero soft memberships.
+    return (bool(torch.allclose(previous_resp, resp, atol=1e-6, rtol=0))
+            and bool(torch.allclose(previous_pair, resp_pair, atol=1e-6, rtol=0))
+            and abs(float(elbo) - float(previous_elbo))
+            <= 1e-6 + 1e-5 * max(abs(float(previous_elbo)), abs(float(elbo))))
 
 
 def _log(self, *args, **kwargs):
     """Print offline diagnostics only when the model's verbose mode is enabled."""
     if self.verbose:
         print(*args, **kwargs)
+
+
+def _owned_indices(resp, cluster):
+    """MAP ownership for discrete birth and representer bookkeeping."""
+    indices = torch.where(torch.argmax(resp, dim=1) == cluster)[0]
+    if (indices.numel() == 0 and torch.any((resp > 0) & (resp < 1))
+            and torch.any(resp[:, cluster] > 0)):
+        return torch.argmax(resp[:, cluster]).reshape(1)
+    return indices
+
+
+def _owned_scores(scores, resp):
+    rows = torch.arange(resp.shape[0], device=resp.device)
+    return scores[rows, torch.argmax(resp, dim=1)]
+
+
+def _fixed_representers(resp, scores, previous, source_order, *, birth_source=None):
+    """Keep cluster seeds through a reorder, resolving duplicate seeds by score.
+
+    ``source_order`` maps each destination cluster to its source slot. An
+    accepted newborn gets first claim on the beat that seeded its split.
+    Existing seeds are deliberately retained even if responsibilities shift;
+    this is the experimental fixed-representer policy.
+    """
+    result = previous.new_full((len(source_order),), -1)
+    used = set()
+    priority = list(range(len(source_order)))
+    if birth_source is not None:
+        newborn = torch.where(source_order == birth_source)[0]
+        if newborn.numel() != 1:
+            raise RuntimeError('Birth representative has no unique cluster slot')
+        position = int(newborn.item())
+        priority.remove(position)
+        priority.insert(0, position)
+    for cluster in priority:
+        source = int(source_order[cluster].item())
+        preferred = int(previous[source].item())
+        if 0 <= preferred < len(resp) and preferred not in used:
+            chosen = preferred
+        else:
+            included = _owned_indices(resp, cluster)
+            if included.numel() == 0:
+                raise RuntimeError('Cannot select a representative for an empty cluster')
+            ranking = included[torch.argsort(scores[included, cluster], descending=True)]
+            chosen = next((int(index.item()) for index in ranking
+                           if int(index.item()) not in used), None)
+            if chosen is None:
+                # Soft responsibilities can give several clusters the same
+                # fallback owner. Use their next best supported beat.
+                supported = torch.where(resp[:, cluster] > 0)[0]
+                ranking = supported[torch.argsort(scores[supported, cluster], descending=True)]
+                chosen = next((int(index.item()) for index in ranking
+                               if int(index.item()) not in used), None)
+            if chosen is None:
+                raise RuntimeError('No distinct representative remains for this cluster')
+        result[cluster] = chosen
+        used.add(chosen)
+    return result
+
+
+def _cluster_occupied(self, resp):
+    """Use concrete MAP ownership only for cluster lifecycle decisions."""
+    if self.hard_assignments:
+        return torch.sum(resp, dim=0) >= 1.0
+    return torch.bincount(torch.argmax(resp, dim=1), minlength=resp.shape[1]) > 0
+
+
+def _synchronize_cluster_slots(self, source_order, models):
+    """Align warpers and per-cluster settings with already reordered GP models."""
+    old_warpers = self.wp_sys
+    self.wp_sys = [[(old_warpers[ld][int(index)]
+                     if int(index) < len(old_warpers[ld]) else self.create_wp_sys_default())
+                    for index in source_order] for ld in range(self.n_outputs)]
+    for name in ('x_basis_warp', 'inducing_points', 'estimation_limit',
+                 'bound_sigma', 'bound_gamma', 'bound_sigma_warp', 'annealing',
+                 'recursive_warp', 'warp_updating', 'model_type',
+                 'ini_lengthscale', 'bound_lengthscale'):
+        values = getattr(self, name, None)
+        if isinstance(values, list) and values:
+            setattr(self, name, [values[int(index)] if int(index) < len(values)
+                                 else values[0] for index in source_order])
+    self.x_basis = [model.x_basis for model in models[0]]
+
+
+def _commit_emergency_deletion(self, resp, resp_pair, q, q_lat, snr, models,
+                               warped, offsets, warp_scores, reorder, representers):
+    """Remove an empty reordered candidate and align every retained cluster slot."""
+    old_count = resp.shape[1]
+    if (reorder.numel() != old_count or len(models) != self.n_outputs
+            or any(len(output) != old_count for output in models)
+            or warped.shape[-1] != old_count or offsets.shape[-1] != old_count
+            or warp_scores.shape[1] != old_count
+            or representers.numel() != old_count):
+        raise RuntimeError('Emergency deletion received inconsistent cluster dimensions')
+    if torch.count_nonzero(resp[:, -1]):
+        raise RuntimeError('Emergency deletion requires a zero-responsibility last candidate')
+    kept = reorder[:-1].long()
+    resp, resp_pair, q, q_lat, snr = self.remove_last_group(
+        resp, resp_pair, q, q_lat, snr)
+    if not torch.allclose(resp.sum(dim=1), torch.ones_like(resp[:, 0]), atol=1e-6):
+        raise RuntimeError('Emergency deletion would leave unnormalized responsibilities')
+
+    self.gpmodels = [output[:-1] for output in models]
+    self.f_ind_old = representers[kept]
+    self.x_w = offsets[:, :, :, kept]
+    self.liks = warp_scores[:, kept, :]
+    warped = warped[:, :, :, kept]
+    self.y_w = warped
+    self.y_train = self.select_assigned_warp(warped, resp)
+    self.snr_norm = self.normalize_snr(snr)
+    _synchronize_cluster_slots(self, kept, self.gpmodels)
+    self.M = old_count - 1
+    if hasattr(self, '_iteration_reallocation_accepted'):
+        self._iteration_reallocation_accepted = True
+    return resp, resp_pair, q, q_lat, snr, warped, self.gpmodels
+
+
+def _flow_inputs(self, original, offsets, output, candidate):
+    if getattr(self.alignment, 'uses_candidate_input_warp', False) and self.warp:
+        return self.alignment.emission_grid_batch(
+            self, original, offsets, output, int(candidate))
+    return original
+
+
+def _flow_score(self, gp, fallback, observations, output, candidate):
+    if getattr(self.alignment, 'uses_candidate_input_warp', False) and self.warp:
+        return self.alignment.score_offline(
+            self, gp, fallback, observations, output, int(candidate))
+    return fallback
+
+
+def _fit_emission(self, gp, x_trains, y_trains, resp, offsets,
+                  output, candidate, **kwargs):
+    if getattr(self.alignment, 'uses_candidate_input_warp', False) and self.warp:
+        result_map = self._flow_offline_posteriors
+        count = offsets.shape[-1]
+        candidate = int(candidate) % count
+        samples = [result_map[i, candidate].grid_samples
+                   for i in range(len(y_trains))]
+        return gp.full_pass_weighted_flow(x_trains, y_trains, resp, samples,
+                                          deterministic_warp=getattr(
+                                              self.alignment, 'supports_batch_lds_input_warp', False),
+                                          **kwargs)
+    return gp.full_pass_weighted(x_trains, y_trains, resp, **kwargs)
+
+
+def _point_warp_classification_scores(self, x_trains, y_trains):
+    """Score each beat against current clusters without committing its point warp."""
+    scores = y_trains.new_empty((len(y_trains), self.M, self.n_outputs))
+    for index in range(len(y_trains)):
+        _, candidate_scores = self.alignment.posterior_next(
+            self, x_trains[index], y_trains[index])
+        for candidate, parts in candidate_scores.items():
+            scores[index, candidate] = parts.to(scores.device)
+    return scores
 
 
 def fit(self, x_trains, y_trains, it_limit=None, warp=False):
@@ -49,13 +237,17 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
     x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
     self.x_train = self.cond_cuda(self.cond_to_torch(x_trains))
+    if self.warp and getattr(self.alignment, 'supports_batch_lds_input_warp', False):
+        # Input-grid alignment retains the raw waveform for later batch
+        # classification with learning; each candidate owns its warped grid.
+        self.y_train = y_trains
     iteration = 0
     reparam = True
     # Start loop of EM
     elbo = -np.inf
     resp = self.cond_cuda(torch.zeros((n_samples, M)))
     respPair = self.cond_cuda(torch.zeros((n_samples, M, M)))
-    respPair[:, 0, 0] = respPair[:, 0, 0] + 1.0
+    respPair[1:, 0, 0] = respPair[1:, 0, 0] + 1.0
     q = self.cond_cuda(torch.zeros((n_samples, M, n_outputs)))
     q_lat = self.cond_cuda(torch.zeros((n_samples, M, n_outputs)))
     snr = self.snr_norm
@@ -63,6 +255,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     y_trains_w = torch.clone(y_trains)
     warp_computed = False
     previous_elbo = None
+    previous_resp = previous_pair = None
     # Initial estimation of full group and conditioning the covariance matrices.
     if self.reestimate_initial_params:
         self.redefine_default(x_trains, y_trains, resp)
@@ -75,16 +268,23 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         M = self.M
         if resp.shape[1] == 1:
             startStateCount = self.cond_cuda(resp[0])
-            transStateCount = self.cond_cuda(torch.sum(respPair, axis=0))
-            self.reinit_global_params(M, transStateCount, startStateCount)
-            nIters = 2
-            for giter in range(nIters):
-                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                       self.cond_cuda(startStateCount), M + 1)
-                self.rho, self.omega = self.find_optimum_rhoOmega()
+            transStateCount = self.cond_cuda(self.hdp.transition_counts(respPair))
+            if self.hmm_switch:
+                self.reinit_global_params(M, transStateCount, startStateCount)
+                nIters = 2
+                for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M + 1)
+                    self.rho, self.omega = self.find_optimum_rhoOmega()
+            else:
+                self.hdp.update_iid_weights(resp)
         if end:
             break
         self._iteration_birth_candidates = []
+        self._iteration_birth_search_complete = False
+        self._iteration_reallocation_accepted = False
+        self._birth_iteration = iteration + 1
+        _log(self, f'\n=== Offline iteration {iteration + 1} ===', flush=True)
         resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains,
                                                                                                    y_trains,
                                                                                                    y_trains_w,
@@ -93,7 +293,30 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                                                                                                    resp, respPair,
                                                                                                    q, q_lat, snr,
                                                                                                    reallocate)
-        if resp.shape[1] > M:
+        if self.observation_scope == 'shared' or self.transition_policies:
+            self.update_shared_observation(resp)
+            point_warp = (self.warp and getattr(
+                self.alignment, 'supports_batch_lds_input_warp', False))
+            if point_warp:
+                y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+                    x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+                    f_ind_old=self.f_ind_old)
+                self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
+            for output, models in enumerate(self.gpmodels):
+                for cluster, emission in enumerate(models[:resp.shape[1]]):
+                    if emission.indexes:
+                        observations = (y_trains_w[:, :, [output], cluster]
+                                        if y_trains_w.ndim == 4 else y_trains_w[:, :, [output]])
+                        grids = (_flow_inputs(self, x_trains, self.x_w, output, cluster)
+                                 if point_warp else x_trains)
+                        score = emission.compute_sq_err_all(grids, observations)
+                        q[:, cluster, output] = (_flow_score(
+                            self, emission, score, y_trains, output, cluster)
+                            if point_warp else score)
+                        if self.transition_policies:
+                            q_lat[:, cluster, output] = emission.compute_q_lat_all(grids)
+        birth_accepted = resp.shape[1] > M
+        if birth_accepted:
             self.M = M + 1
             M = self.M
         resp__ = torch.clone(resp)
@@ -101,65 +324,85 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         # Update HDP variational params.
         if self.hmm_switch:
             startStateCount = self.cond_cuda(resp__[0])
-            transStateCount = self.cond_cuda(torch.sum(respPair__, axis=0))
+            transStateCount = self.cond_cuda(self.hdp.transition_counts(respPair__))
+            self.reinit_global_params(M, transStateCount, startStateCount)
+            nIters = 2
+            for giter in range(nIters):
+                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                       self.cond_cuda(startStateCount), M + 1)
+                self.rho, self.omega = self.find_optimum_rhoOmega()
+            transPi = self.hdp.stored_log_transitions(M, self.transTheta)
         else:
-            transStateCount = self.cond_cuda(torch.ones((M + 1, M + 1)))  # Cause we are in independent observations
-            startStateCount = self.cond_cuda(torch.ones(M + 1))
+            startStateCount = resp__.sum(dim=0)
+            transStateCount = torch.zeros((M + 1, M + 1), device=resp.device,
+                                          dtype=resp.dtype)
+            self.hdp.update_iid_weights(resp__)
+            transPi = self.hdp.iid_log_transitions(M)
 
-        self.reinit_global_params(M, transStateCount, startStateCount)
-        nIters = 2
-        for giter in range(nIters):
-            self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                   self.cond_cuda(startStateCount), M + 1)
-            self.rho, self.omega = self.find_optimum_rhoOmega()
-
-        # Update transition matrix
-        transPi = self.hdp.stored_log_transitions(M, self.transTheta)
+        # Update transition matrix (identical rows in independent-mixture mode).
         self.trans_A = transPi
         resp_group = torch.sum(resp, dim=0).detach().cpu().tolist()
-        if not self.verbose:
-            print(f"Iteration {iteration + 1}: responsibility sums={resp_group}", flush=True)
+        if self.progress and not self.verbose:
+            print(f"Iteration {iteration + 1}: responsibilities="
+                  f"{[round(float(value), 2) for value in resp_group]}", flush=True)
+            if birth_accepted:
+                print(f"Iteration {iteration + 1}: created cluster {self.M}", flush=True)
         # Compute ELBO and start steps of EM
         # TODO: adapt this option to full cuda implementation.
         if self.T > 1:
             elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                  respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
-            _log(self, '\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
-            if iteration == 14:
-                _log(self, "STOP")
             q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
-                                                  self.gpmodels, self.M, snr='saved', post=False)
+                                                  self.gpmodels, self.M, snr='saved', post=False,
+                                                  birth_score=False)
             elbo_ = elbo_ + elbo_lin + q_obs
+            birth_search_complete = self._iteration_birth_search_complete
+            reallocation_accepted = self._iteration_reallocation_accepted
+            converged = _offline_converged(
+                previous_resp, resp, previous_pair, respPair, previous_elbo, elbo_,
+                reallocation_accepted=reallocation_accepted, birth_accepted=birth_accepted)
             if self.verbose:
                 delta = "n/a" if previous_elbo is None else f"{(elbo_ - previous_elbo).item():+.6g}"
                 proposed = getattr(self, '_iteration_birth_candidates', [])
                 print(f"Iteration {iteration + 1}: clusters={self.M}, "
                       f"responsibility sums={resp_group}, "
                       f"proposed birth samples (1-based)={[i + 1 for i in proposed]}, "
+                      f"birth_accepted={birth_accepted}, "
+                      f"reallocation_accepted={reallocation_accepted}, "
+                      f"birth_search_complete={birth_search_complete}, "
+                      f"converged={converged}, "
                       f"ELBO={elbo_.item():.6g}, delta_ELBO={delta}", flush=True)
-            previous_elbo = elbo_
+            previous_elbo = elbo_.detach().clone()
+            previous_resp = resp.detach().clone()
+            previous_pair = respPair.detach().clone()
             del self._iteration_birth_candidates
+            del self._iteration_birth_search_complete
+            del self._iteration_reallocation_accepted
             iteration = iteration + 1
+            # Keep classification/continuation state even when a configured
+            # iteration or cluster limit ends this fit immediately.
+            self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
+            self.startStateCount_last, self.transStateCount_last = startStateCount, transStateCount
+            self.resp_last, self.respPair_last = resp, respPair
+            self.elbo_last = elbo_
             if it_limit is not None and iteration >= it_limit:
+                _log(self, 'Stopping offline inference: configured iteration limit reached.')
                 self.train_elbo.append(elbo_)
-                self.resp_assigned.append(torch.where(resp == 1.0)[1])
+                self.resp_assigned.append(torch.argmax(resp, dim=1))
                 break
             if self.M == self.max_models:
+                _log(self, 'Stopping offline inference: configured cluster limit reached.')
                 self.train_elbo.append(elbo_)
-                self.resp_assigned.append(torch.where(resp == 1.0)[1])
+                self.resp_assigned.append(torch.argmax(resp, dim=1))
                 break
             resp_group = torch.sum(resp, dim=0)
             self.train_elbo.append(elbo_)
             self.resp_assigned.append(torch.argmax(resp, axis=1))
             self.q.append(q)
-            self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
-            self.startStateCount_last, self.transStateCount_last = startStateCount, transStateCount
-            self.resp_last, self.respPair_last = resp, respPair
-            self.elbo_last = elbo_
-            if (torch.where(resp_group == 0.0)[0].shape[0] > 1.0 or
-                    (len(self.resp_assigned) > 1 and (
-                            self.resp_assigned[-2].shape[0] == self.resp_assigned[-1].shape[0])
-                     and torch.all(self.resp_assigned[-2] == self.resp_assigned[-1]))):
+            if torch.where(resp_group == 0.0)[0].shape[0] > 1.0 or converged:
+                _log(self, 'Stopping offline inference: responsibilities and ELBO converged '
+                     'without an accepted reallocation or birth.' if converged else
+                     'Stopping offline inference: multiple empty cluster slots.')
                 break
             else:
                 elbo = elbo_
@@ -185,17 +428,21 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
         transTheta = self.transTheta
     if startTheta is None:
         startTheta = self.startTheta
-    transPi = self.hdp.batch_log_transitions(M, transTheta)
+    transPi = (self.hdp.batch_log_transitions(M, transTheta) if self.hmm_switch
+               else self.hdp.iid_log_transitions(M + 1))
     self.trans_A = transPi
     # Calculate LOG of start state prob vector
-    startPi = self.hdp.batch_log_start(M, startTheta)
+    startPi = (self.hdp.batch_log_start(M, startTheta) if self.hmm_switch
+               else self.hdp.expected_log_iid_weights(M + 1))
     i = 0
     reparam = True
     resp_per_group = torch.sum(resp, dim=0)
-    if resp_per_group.shape[0] == 1.0 or resp_per_group[-2] >= 1.0 or not self.gpmodels[0][0].fitted:
+    if resp_per_group.shape[0] == 1.0 or _cluster_occupied(self, resp)[-2] or not self.gpmodels[0][0].fitted:
         resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.estimate_q_first(M, x_trains=x_trains, y_trains=y_trains,
                                      y_trains_w_=y_trains_w, resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr,
                                      startPi=startPi, transPi=transPi, reallocate_=reallocate, reparam=reparam)
+        if reallocate and resp.shape[1] != M:
+            return resp, respPair, q, q_lat, snr, y_trains_w, reallocate
         if resp.shape[1] > self.M:
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
                                                   self.gpmodels, self.M, snr='saved', post=True)
@@ -215,7 +462,14 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
             resp, respPair, q, q_lat, snr, y_trains_w, gpmodels = self.estimate_q_all( M, x_trains=x_trains, y_trains=y_trains, y_trains_w_=y_trains_w,
                                            resp=resp, respPair=respPair, q_=q, q_lat_=q_lat, snr_=snr, startPi=startPi, transPi=transPi, q_def=q_def__, elbo_def=elbo_def__,
                                            reparam=reparam)
+            # Only refinement committed to the live existing-cluster state
+            # counts here; temporary birth-proposal refinements do not.
+            if (gpmodels is not self.gpmodels and resp.shape[1] == self.M
+                    and hasattr(self, '_iteration_reallocation_accepted')):
+                self._iteration_reallocation_accepted = True
             self.gpmodels = gpmodels
+            if resp.shape[1] != M:
+                return resp, respPair, q, q_lat, snr, y_trains_w, True
             if resp.shape[1] > self.M:
                 q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
                                                         self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
@@ -224,7 +478,8 @@ def variational_local_terms_batch(self, M, x_trains, y_trains, y_trains_w, trans
                 q_post, elbo_post = self.compute_q_elbo(resp, respPair, self.weight_mean(q),
                                                         self.weight_mean(q_lat), self.gpmodels, self.M, snr='saved',
                                                         post=False)
-            _log(self, "ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
+            score_name = "birth_score_change" if self.birth_lds_kl_per_dimension else "ELBO_reduction"
+            _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas + elbo_bas)).item()))
             if (torch.isclose(q_bas + elbo_bas, q_post + elbo_post, rtol=1e-5) and i > 0) or i == 10:  # or reparam:
                 if not reparam:
                     reparam = True
@@ -260,10 +515,11 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 else:
                     gp = self.gpmodel_deepcopy(self.gpmodels[ld - 1][0])
                     if gp.fitted:
-                        gp.reinit_LDS(save_last=False)
+                        gp.reinit_LDS(save_last=False, warm_start=False)
                         gp.reinit_GP(save_last=False)
-            q_[:, 0, ld], q_lat_[:, 0, ld]= gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], 0], resp[:, 0],
-                                                 snr=self.snr_norm[:, ld])
+            q_[:, 0, ld], q_lat_[:, 0, ld]= _fit_emission(self, gp, x_trains, y_trains_w[:, :, [ld], 0], resp[:, 0],
+                                                          x_w, ld, 0, snr=self.snr_norm[:, ld])
+            q_[:, 0, ld] = _flow_score(self, gp, q_[:, 0, ld], y_trains, ld, 0)
             q_[:, 0, ld] = q_[:, 0, ld] + liks[:, 0, ld]
             snr_[:, 0, ld] = self.compute_snr(y_trains_w[:, :, ld, 0], gp)
             self.gpmodels[ld][0] = gp
@@ -273,16 +529,15 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
 
     indexes_ = []
     for m in range(M):
-        indexes_.append(torch.tensor(self.gpmodels[0][m].indexes).long())
+        indexes_.append(torch.tensor(self.gpmodels[0][m].indexes).long()
+                        if self.hard_assignments else _owned_indices(resp, m).long())
         if indexes_[m].shape[0] == 0:
-            indexes_[m] = torch.where(resp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].long()
+            indexes_[m] = _owned_indices(resp, m).long()
     f_ind_old = torch.clone(self.f_ind_old)
 
     # Compute q with best index of the old model.
     snr_temp = torch.zeros(y_trains.shape[0], M, self.n_outputs)
     for ld in range(self.n_outputs):
-        if self.verbose:
-            _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
         for m in range(M):
             gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
             if gp.fitted:
@@ -290,7 +545,8 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 gp.reinit_GP(save_last=False)
             if len(indexes_[m]) > 0:
                 gp.include_weighted_sample(0, x_trains[f_ind_old[m]], x_trains[f_ind_old[m]], y_trains[f_ind_old[m],:,[ld]], h=1.0)
-            q_simple[:, m, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:,:, [ld],m])
+            q_simple[:, m, ld] = gp.compute_sq_err_all(_flow_inputs(self, x_trains, x_w, ld, m), y_trains_w[:,:, [ld],m])
+            q_simple[:, m, ld] = _flow_score(self, gp, q_simple[:, m, ld], y_trains, ld, m)
             q_simple[:, m, ld] = q_simple[:, m, ld] + liks[:, m, ld]
             snr_temp[:, m, ld] = self.compute_snr(y_trains[:,:,ld], gp)
 
@@ -302,8 +558,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             snr_aux[:, -1, :] = torch.zeros(snr_aux[:, -1, :].shape) + torch.min(snr_aux) * 2.0
 
         q_norm, _ = self.LogLik(self.weight_mean(q_aux, snr_aux))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
+        alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp_temp = self._safe_exp(resplog_temp)
@@ -313,26 +568,25 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         resp_per_group_temp = torch.sum(resp_temp, axis=0)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
         resp_temp = resp_temp[:, reorder]
+        respPair_temp = respPair_temp[:, reorder, :][:, :, reorder]
 
         # First, try to reallocate beats, if this not works then generate new group.
         q = torch.clone(q_)
         q_lat = torch.clone(q_lat_)
         gpmodels_temp = [[] for _ in range(self.n_outputs)]
         for ld in range(self.n_outputs):
-            if self.verbose:
-                _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
             for m in range(M):
-                if self.verbose:
-                    _log(self, "\n   -----------Model " + str(m + 1) + "-----------")
-                if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
+                if not torch.allclose(resp[:, reorder[m]], resp_temp[:, m]):
                     gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                     if gp.fitted:
                         gp.reinit_LDS(save_last=False)
                         gp.reinit_GP(save_last=False)
-                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:,:,[ld],reorder[m]],
-                                                        resp_temp[:, m], q=q[:,reorder[m], ld],
-                                                        q_lat=q_lat[:, reorder[m], ld],
-                                                        snr=self.snr_norm[:,ld])
+                    q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains, y_trains_w[:,:,[ld],reorder[m]],
+                                                                  resp_temp[:, m], x_w, ld, reorder[m],
+                                                                  q=q[:,reorder[m], ld],
+                                                                  q_lat=q_lat[:, reorder[m], ld],
+                                                                  snr=self.snr_norm[:,ld])
+                    q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                     q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                 else:
@@ -365,10 +619,13 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                                                                                                          gpmodels=gpmodels_temp,
                                                                                                          reparam=reparam,
                                                                                                          post=False)
+            if resp_temp.shape[1] != M:
+                return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, True
             q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                     self.weight_mean(q_lat, snr_aux), gpmodels_temp, M, snr=snr_aux,
                                                     post=False)
-            _log(self, "ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
+            score_name = "birth_score_change" if self.birth_lds_kl_per_dimension else "ELBO_reduction"
+            _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
             if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                               rtol=1e-5) and i__ > 0) or i__ == 20:  # or reparam:
                 break
@@ -376,7 +633,6 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             elbo_bas_ = elbo_post
             i__ = i__ + 1
 
-        new_indexes = torch.where(torch.sum(np.abs(resp - resp_temp), dim=1) > 1.0)[0]
         _log(self, ">>> Prev -------")
         q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                               self.weight_mean(q_lat_, snr_),
@@ -386,45 +642,53 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                                                     self.weight_mean(q_lat, snr_aux),
                                                     gpmodels_temp, M, snr=snr_aux, post=False)
         update_snr = True
-        if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] == 0):
+        if torch.all(_cluster_occupied(self, resp_temp)):
             if q_bas < q_bas_post:
-                if not q_bas + elbo_bas < q_bas_post + elbo_post:
+                if not _reallocation_improves(q_bas + elbo_bas, q_bas_post + elbo_post):
                     _log(self, "Possibly better q_obs but worse elbo.")
-            if q_bas + elbo_bas < q_bas_post + elbo_post and q_bas != q_bas_post:
+            if _reallocation_improves(q_bas + elbo_bas, q_bas_post + elbo_post):
                 _log(self, "Reallocating beats into existing groups.")
+                if hasattr(self, '_iteration_reallocation_accepted'):
+                    self._iteration_reallocation_accepted = True
                 reallocate = True
                 self.gpmodels = gpmodels_temp
+                _synchronize_cluster_slots(self, reorder, gpmodels_temp)
                 self.x_w = x_w[:, :, :, reorder]
                 self.liks = liks[:, reorder, :]
                 y_trains_w = y_trains_w[:, :, :, reorder]
                 self.y_w = y_trains_w
                 self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
-                f_ind_old_new = torch.full_like(f_ind_old, -1)
-                used_representers = set()
+                if self.offline_representer_selection == 'fixed':
+                    self.f_ind_old = _fixed_representers(
+                        resp_temp, self.weight_mean(q_simple, snr_aux),
+                        f_ind_old, reorder)
+                else:
+                    f_ind_old_new = torch.full_like(f_ind_old, -1)
+                    used_representers = set()
 
-                for k in range(M):
-                    # Samples assigned to cluster k
-                    indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
+                    for k in range(M):
+                        # Samples assigned to cluster k
+                        indexes_k = _owned_indices(resp_temp, k)
 
-                    # Rank candidates by weight, best first
-                    order = torch.argsort(self.weight_mean(q_simple, snr_aux)[indexes_k, k],
-                                          descending=True)
-                    sorted_candidates = indexes_k[order]
+                        # Rank candidates by weight, best first
+                        order = torch.argsort(self.weight_mean(q_simple, snr_aux)[indexes_k, k],
+                                              descending=True)
+                        sorted_candidates = indexes_k[order]
 
-                    candidate = None
-                    for idx in sorted_candidates:
-                        idx_val = int(idx.item())
-                        if idx_val not in used_representers:
-                            candidate = idx_val
-                            break
+                        candidate = None
+                        for idx in sorted_candidates:
+                            idx_val = int(idx.item())
+                            if idx_val not in used_representers:
+                                candidate = idx_val
+                                break
 
-                    # Fallback if all candidates were already used
-                    if candidate is None:
-                        candidate = int(sorted_candidates[0].item())
+                        # Fallback if all candidates were already used
+                        if candidate is None:
+                            candidate = int(sorted_candidates[0].item())
 
-                    f_ind_old_new[k] = candidate
-                    used_representers.add(candidate)
-                self.f_ind_old = torch.clone(f_ind_old_new)
+                        f_ind_old_new[k] = candidate
+                        used_representers.add(candidate)
+                    self.f_ind_old = torch.clone(f_ind_old_new)
 
                 if update_snr:
                     self.snr_norm = self.normalize_snr(snr_aux)
@@ -438,30 +702,24 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
             q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                   self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                   snr=snr_, post=False)
-            if q_bas + elbo_bas < q_bas_ + elbo_bas_:
+            if (_reallocation_improves(q_bas + elbo_bas, q_bas_ + elbo_bas_)
+                    and not torch.count_nonzero(resp_temp[:, -1])):
                 _log(self, "Emergency reallocation and removing last group.")
                 reallocate = True
-                for ld in range(self.n_outputs):
-                    gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
-                self.gpmodels = gpmodels_temp
-                if update_snr:
-                    self.snr_norm = self.normalize_snr(snr_aux)
-                resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
-                                                                                     respPair_temp, q,
-                                                                                     q_lat, snr_aux)
-                resp_per_group_temp = torch.sum(resp_temp[torch.where(resp_temp == 1.0)[0]], axis=0)
-                reorder = torch.argsort(resp_per_group_temp, descending=True)
-                self.f_ind_old = self.f_ind_old[reorder]
+                resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, _ = (
+                    _commit_emergency_deletion(
+                        self, resp_temp, respPair_temp, q, q_lat, snr_aux,
+                        gpmodels_temp, y_trains_w, x_w, liks, reorder, f_ind_old))
                 return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
             else:
                 _log(self, "Bad estimation")
                 empty_estimation = False
     # f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
-    q_sim_s = self.weight_mean(q_simple)[torch.where(resp == 1.0)]
+    q_sim_s = _owned_scores(self.weight_mean(q_simple), resp)
     q_sim_s = (q_sim_s - torch.max(q_sim_s)) / (torch.max(q_sim_s) - torch.min(q_sim_s))
-    q_s = self.weight_mean(q_)[torch.where(resp == 1.0)]
+    q_s = _owned_scores(self.weight_mean(q_), resp)
     q_s = (q_s - torch.max(q_s)) / (torch.max(q_s) - torch.min(q_s))
-    q_lat_s = self.weight_mean(q_lat_)[torch.where(resp == 1.0)]
+    q_lat_s = _owned_scores(self.weight_mean(q_lat_), resp)
     q_lat_s = (q_lat_s - torch.max(q_lat_s)) / (torch.max(q_lat_s) - torch.min(q_lat_s))
     f_ind_new_potential = torch.argsort(q_sim_s)
     q_rank = q_sim_s
@@ -472,53 +730,54 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0]
         potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0].shape[0]
         potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
-    n_steps = self.n_explore_steps
-    f_ind_new_potential_def = torch.zeros(n_steps).long()
-    last_indexes = torch.tensor([-1])
-    j_ = 0
-    for j, f_ind_new in enumerate(f_ind_new_potential):
-        if j_ == np.max([n_steps // 2.0, 1]):
-            # if j_ == n_steps:
-            break
+    n_steps = min(self.n_explore_steps, len(f_ind_new_potential))
+    selected_candidates = []
+    selected_beats = set()
+
+    def eligible_birth_seed(beat):
+        if beat in selected_beats:
+            return False
         m_chosen = -1
         for m in range(M - 1):
-            if f_ind_new in indexes_[m]:
+            if beat in indexes_[m]:
                 m_chosen = m
                 break
         if m_chosen == -1:
-            m_chosen = torch.argmax(resp[f_ind_new])
-        f_ind_old_chosen = f_ind_old[m_chosen]
-        if f_ind_new != f_ind_old_chosen:
-            for l_ in last_indexes:
-                if not l_ in potential_ind[f_ind_new.item()]:
-                    last_indexes = potential_ind[f_ind_new.item()]
-                    f_ind_new_potential_def[j_] = f_ind_new
-                    j_ = j_ + 1
-                    break
+            m_chosen = int(torch.argmax(resp[beat]).item())
+        return beat != int(f_ind_old[m_chosen].item())
 
-    # Potential compared with accumulated q -------------------------
+    def add_ranked_candidates(ranking, target, *, distinct_score_groups=True):
+        last_indexes = torch.tensor([-1], device=resp.device)
+        for candidate in ranking:
+            if len(selected_candidates) >= target:
+                break
+            beat = int(candidate.item())
+            if not eligible_birth_seed(beat):
+                continue
+            group = potential_ind[beat]
+            if distinct_score_groups and not any(old not in group for old in last_indexes):
+                continue
+            selected_candidates.append(beat)
+            selected_beats.add(beat)
+            last_indexes = group
+
+    # Give each criterion its historical half of the pool, then fill unused
+    # positions from the other ranking. A beat selected earlier cannot recur.
+    first_quota = min(n_steps, max(n_steps // 2, 1))
+    add_ranked_candidates(f_ind_new_potential, first_quota)
     q_aux = torch.clone(q_simple)
     f_ind_new_q = torch.argsort(q_s + q_lat_s)
-    last_indexes = torch.tensor([-1])
-    j_ = int(np.max([n_steps // 2.0, 1]))
-    for j, f_ind_new in enumerate(f_ind_new_q):
-        if j_ == n_steps:
-            break
-        m_chosen = -1
-        for m in range(M - 1):
-            if f_ind_new in indexes_[m]:
-                m_chosen = m
-                break
-        if m_chosen == -1:
-            m_chosen = torch.argmax(resp[f_ind_new])
-        f_ind_old_chosen = f_ind_old[m_chosen]
-        if f_ind_new != f_ind_old_chosen:
-            for l_ in last_indexes:
-                if not l_ in potential_ind[f_ind_new.item()]:
-                    last_indexes = potential_ind[f_ind_new.item()]
-                    f_ind_new_potential_def[j_] = f_ind_new
-                    j_ = j_ + 1
-                    break
+    add_ranked_candidates(f_ind_new_q, n_steps)
+    if len(selected_candidates) < n_steps:
+        # Near-equal-score groups may exhaust both diverse lists. Fill the
+        # remaining slots with distinct eligible beats, never zero padding.
+        add_ranked_candidates(f_ind_new_potential, n_steps, distinct_score_groups=False)
+        add_ranked_candidates(f_ind_new_q, n_steps, distinct_score_groups=False)
+    f_ind_new_potential_def = torch.tensor(
+        selected_candidates, dtype=torch.long, device=resp.device)
+    baseline_warp_results = (dict(getattr(self, '_flow_offline_posteriors', {}))
+                             if getattr(self, '_birth_diagnostic_limit', 0) else {})
+    n_steps = len(selected_candidates)
     # -----------------------------------------
     # ord_ = torch.argsort(potential_q[f_ind_new_potential_def[:n_steps]])#, descending=True)
     # f_ind_new_potential_def[:n_steps] = f_ind_new_potential_def[ord_]
@@ -526,7 +785,6 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
     # f_ind_new_potential_def = torch.concatenate([f_ind_new_potential_def,f_ind_new_q_def])
     # n_steps = n_steps + 5
     step = 0
-    last_indexes = torch.tensor([-1])
     q = torch.clone(q_aux)
     q_lat = torch.clone(q_lat_)
     snr_aux = torch.clone(snr_)
@@ -537,6 +795,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
     M = M + 1
     f_ind_old = torch.zeros(M, device=resp.device).long()
     f_ind_old[:self.f_ind_old.shape[0]] = torch.clone(self.f_ind_old)
+    attempted_beats = set()
     for j, f_ind_new in enumerate(f_ind_new_potential_def):
         if step == n_steps:
             break
@@ -550,49 +809,55 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         f_ind_old_chosen = f_ind_old[m_chosen]
         ld_belong = torch.argmax(self.snr_norm[f_ind_new])
         if f_ind_new != f_ind_old_chosen:
-            some_new_index = False
-            for l_ in last_indexes:
-                if not l_ in potential_ind[f_ind_new.item()]:
-                    some_new_index = True
-                    break
+            beat = int(f_ind_new.item())
+            some_new_index = beat not in attempted_beats
             if some_new_index:
+                attempted_beats.add(beat)
                 if hasattr(self, '_iteration_birth_candidates'):
-                    self._iteration_birth_candidates.append(int(f_ind_new.item()))
+                    self._iteration_birth_candidates.append(beat)
+                f_ind_old_temp = f_ind_old.clone()
+                f_ind_old_temp[-1] = f_ind_new
+                q_simple_ = torch.clone(q_def)
+                birth_record = None
                 if not empty_estimation:
-                    f_ind_old_temp = f_ind_old.clone()
-                    f_ind_old_temp[-1] = f_ind_new
                     y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
                         x_trains=x_trains,
                         y_trains=y_trains,
                         resp_temp=resp_,
                         f_ind_old=f_ind_old_temp)
-                    q_simple_ = torch.clone(q_def)
                     q, q_lat, snr_aux = torch.clone(q_def), torch.clone(q_lat_def), torch.clone(snr_aux_def)
                     q__, q_lat__, snr__ = torch.clone(q__def), torch.clone(q_lat__def), torch.clone(snr__def)
-                    last_indexes = potential_ind[f_ind_new.item()]
-                    _log(self, "Step " + str(step + 1) + "/" + str(n_steps) + "- Trying to divide: " + str(
-                        m_chosen) + " with beat " + str(f_ind_new.item()))
+                    _log(self, f'Exploring step {step + 1}/{n_steps}: '
+                         f'trying to divide cluster {int(m_chosen)} with beat {int(f_ind_new)}',
+                         flush=True)
                     step = step + 1
                     for ld in range(self.n_outputs):
                         gp = self.gpmodel_deepcopy(self.gpmodels[ld][m_chosen])
                         if gp.fitted:
-                            gp.reinit_LDS(save_last=False)
+                            gp.reinit_LDS(save_last=False, warm_start=False)
                             gp.reinit_GP(save_last=False)
                         gp.include_weighted_sample(0, x_trains[f_ind_new], x_trains[f_ind_new],
                                                    y_trains[f_ind_new, :, [ld]], h=1.0)
-                        q_simple_[:, -1, ld] = gp.compute_sq_err_all(x_trains, y_trains_w[:, :, [ld], -1])
+                        q_simple_[:, -1, ld] = gp.compute_sq_err_all(_flow_inputs(self, x_trains, x_w, ld, -1), y_trains_w[:, :, [ld], -1])
+                        q_simple_[:, -1, ld] = _flow_score(self, gp, q_simple_[:, -1, ld], y_trains, ld, -1)
                         q_simple_[:, -1, ld] = q_simple_[:, -1, ld] + liks[:, -1, ld]
                         snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld, -1], gp)
+                        if ld == 0:
+                            provisional_birth_gp = gp
                     # Compute resp
                     q_mean = self.weight_mean(q_simple_, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
-                    alpha, margprob = self.forward(startPi, transPi, q_norm)
-                    beta = self.backward(transPi, q_norm, margprob)
+                    alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
                     resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
                     respPairlog_temp, _ = self.LogLik(
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
                     resp_temp = self._safe_exp(resplog_temp)
                     respPair_temp = self._safe_exp(respPairlog_temp)
+                    if getattr(self, '_birth_diagnostic_limit', 0):
+                        birth_record = capture_seed(
+                            self, x_trains, y_trains, beat, int(m_chosen),
+                            provisional_birth_gp, q_simple_, resp_temp, M - 1,
+                            baseline_warp_results)
                     # resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
                 else:
                     q, q_lat, snr_aux = torch.clone(q__def), torch.clone(q_lat__def), torch.clone(snr__def)
@@ -603,8 +868,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     q__[f_ind_new, -1, :] = 0.0
                     q_mean = self.weight_mean(q__, snr_aux)
                     q_norm, _ = self.LogLik(q_mean)
-                    alpha, margprob = self.forward(startPi, transPi, q_norm)
-                    beta = self.backward(transPi, q_norm, margprob)
+                    alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
                     resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
                     respPairlog_temp, _ = self.LogLik(
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
@@ -616,6 +880,11 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 reorder = torch.argsort(resp_per_group_temp, descending=True)
                 # reorder = torch.arange(resp_per_group_temp.shape[0])
                 resp_temp = resp_temp[:, reorder]
+                respPair_temp = respPair_temp[:, reorder, :][:, :, reorder]
+                if not self.hard_assignments:
+                    birth_position = int(torch.where(reorder == M - 1)[0][0].item())
+                    if not torch.any(torch.argmax(resp_temp, dim=1) == birth_position):
+                        continue
 
                 # Compute chosen model conditioned on new resp
                 # Update all models conditioned on new resp if it has changed
@@ -629,29 +898,31 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                                 # If not share_gp then new GP is used for a new model, more expensive but official model.
                                 gp = self.create_gp_default()
                             if gp.fitted:
-                                gp.reinit_LDS(save_last=False)
+                                gp.reinit_LDS(save_last=False, warm_start=False)
                                 gp.reinit_GP(save_last=False)
-                            q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains,
+                            q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains,
                                                                                  y_trains_w[:, :, [ld], reorder[m]],
-                                                                                 resp_temp[:, m],
+                                                                                 resp_temp[:, m], x_w, ld, reorder[m],
                                                                                  q=q__[:, reorder[m], ld],
                                                                                  q_lat=q_lat__[:, reorder[m], ld],
                                                                                  snr=self.snr_norm[:, ld])
+                            q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                             q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                             snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                         else:
-                            if not torch.equal(resp[:, reorder[m]].long(), resp_temp[:, m].long()):
+                            if not torch.allclose(resp[:, reorder[m]], resp_temp[:, m]):
                                 gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                                 if gp.fitted:
                                     gp.reinit_LDS(save_last=False)
                                     gp.reinit_GP(save_last=False)
-                                q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains,
+                                q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains,
                                                                                      y_trains_w[:, :, [ld], reorder[m]],
-                                                                                     resp_temp[:, m],
+                                                                                     resp_temp[:, m], x_w, ld, reorder[m],
                                                                                      q=q__[:, reorder[m], ld],
                                                                                      q_lat=q_lat__[:, reorder[m],
                                                                                            ld],
                                                                                      snr=self.snr_norm[:, ld])
+                                q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                                 q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                                 snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                             else:
@@ -666,31 +937,29 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 q_bas_, elbo_bas_ = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                         self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                         snr=snr_aux, post=True)
+                if birth_record is not None:
+                    capture_refit(
+                        self, birth_record, x_trains, y_trains, beat,
+                        int(m_chosen), M - 1, reorder, resp, resp_temp,
+                        q_, q, gpmodels_temp, baseline_warp_results)
                 if torch.argmax(
                         torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
                     _log(self, "Bad estimation")
                     continue
-                if (torch.where(torch.sum(resp_temp, dim=0) < 1.0)[0].shape[0] > 0):
+                if not torch.all(_cluster_occupied(self, resp_temp)):
                     _log(self, ">>> Possible emergency reallocation. Prev ----")
                     q_bas, elbo_bas = self.compute_q_elbo(resp, respPair, self.weight_mean(q_, snr_),
                                                           self.weight_mean(q_lat_, snr_), self.gpmodels, self.M,
                                                           snr=snr_, post=False)
-                    if q_bas + elbo_bas < q_bas_ + elbo_bas_:
+                    if (_reallocation_improves(q_bas + elbo_bas, q_bas_ + elbo_bas_)
+                            and not torch.count_nonzero(resp_temp[:, -1])):
                         _log(self, "Emergency reallocation and removing last group.")
                         reallocate = True
-                        for ld in range(self.n_outputs):
-                            gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
-                            self.wp_sys[ld] = self.wp_sys[ld][:-1]
-                        resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
-                                                                                             respPair_temp, q,
-                                                                                             q_lat, snr_aux)
-                        self.gpmodels = gpmodels_temp
-                        self.f_ind_old = f_ind_old[reorder]
-                        y_trains_w = y_trains_w[:,:,:,reorder]
-                        self.y_w = y_trains_w
-                        self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
-                        if update_snr:
-                            self.snr_norm = self.normalize_snr(snr_aux)
+                        resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, _ = (
+                            _commit_emergency_deletion(
+                                self, resp_temp, respPair_temp, q, q_lat, snr_aux,
+                                gpmodels_temp, y_trains_w, x_w, liks, reorder,
+                                f_ind_old_temp))
                         return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                     else:
                         _log(self, "Bad estimation")
@@ -717,10 +986,15 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                                                                                                              gpmodels=gpmodels_temp,
                                                                                                              reparam=reparam,
                                                                                                              f_ind_old=f_ind_old_temp)
+                    if resp_temp.shape[1] != M:
+                        # Emergency deletion ended this birth proposal. The
+                        # old start/transition matrices still have M columns.
+                        return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, True
                     q_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=post_)
-                    _log(self, "ELBO_reduction: " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
+                    score_name = "birth_score_change" if self.birth_lds_kl_per_dimension else "ELBO_reduction"
+                    _log(self, score_name + ": " + str(((q_post + elbo_post) - (q_bas_ + elbo_bas_)).item()))
                     if (torch.isclose(q_bas_ + elbo_bas_, q_post + elbo_post,
                                       rtol=1e-5) and i__ > 0) or i__ == 10:  # or reparam:
                         break
@@ -739,50 +1013,59 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 q_bas_post, elbo_post = self.compute_q_elbo(resp_temp, respPair_temp, self.weight_mean(q, snr_aux),
                                                             self.weight_mean(q_lat, snr_aux), gpmodels_temp, M,
                                                             snr=snr_aux, post=post_)
+                if birth_record is not None:
+                    birth_record['decision_baseline_score'] = float((q_bas + elbo_bas).item())
+                    birth_record['decision_proposal_score'] = float((q_bas_post + elbo_post).item())
 
                 update_snr = True
 
-                if torch.all(torch.sum(resp_temp, dim=0) >= 1.0) and not torch.argmax(
+                if torch.all(_cluster_occupied(self, resp_temp)) and not torch.argmax(
                         torch.sum(resp_temp, dim=0)).item() == resp_temp.shape[1] - 1:
                     if q_bas < q_bas_post:
                         if not q_bas + elbo_bas < q_bas_post + elbo_post:
                             _log(self, "Possibly better q_obs but worse elbo.")
                     if q_bas + elbo_bas < q_bas_post + elbo_post:
+                        if birth_record is not None:
+                            birth_record['accepted'] = True
                         _log(self, "Chosen to divide: " + str(m_chosen) + " with beat " + str(f_ind_new.item()))
                         self.gpmodels = gpmodels_temp
-                        for ld in range(self.n_outputs):
-                            self.wp_sys[ld].append(self.create_wp_sys_default())
+                        _synchronize_cluster_slots(self, reorder, gpmodels_temp)
                         self.x_w = x_w[:,:,:,reorder]
                         self.liks = liks[:,reorder,:]
                         y_trains_w = y_trains_w[:,:,:,reorder]
                         self.y_w = y_trains_w
                         self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
-                        f_ind_old_new = torch.full_like(f_ind_old, -1)
-                        used_representers = set()
+                        if self.offline_representer_selection == 'fixed':
+                            self.f_ind_old = _fixed_representers(
+                                resp_temp, self.weight_mean(q_simple_, snr_aux),
+                                f_ind_old_temp, reorder, birth_source=M - 1)
+                        else:
+                            f_ind_old_new = torch.full_like(f_ind_old, -1)
+                            used_representers = set()
 
-                        for k in range(M):
-                            # Samples assigned to cluster k
-                            indexes_k = torch.where(resp_temp[:, k] == 1.0)[0]
+                            for k in range(M):
+                                # Samples assigned to cluster k
+                                indexes_k = _owned_indices(resp_temp, k)
 
-                            # Rank candidates by weight, best first
-                            order = torch.argsort(self.weight_mean(q_simple_, snr_aux)[indexes_k, k],
-                                                  descending=True)
-                            sorted_candidates = indexes_k[order]
+                                # Rank candidates by weight, best first
+                                order = torch.argsort(self.weight_mean(q_simple_, snr_aux)[indexes_k, k],
+                                                      descending=True)
+                                sorted_candidates = indexes_k[order]
 
-                            candidate = None
-                            for idx in sorted_candidates:
-                                idx_val = int(idx.item())
-                                if idx_val not in used_representers:
-                                    candidate = idx_val
-                                    break
+                                candidate = None
+                                for idx in sorted_candidates:
+                                    idx_val = int(idx.item())
+                                    if idx_val not in used_representers:
+                                        candidate = idx_val
+                                        break
 
-                            # Fallback if all candidates were already used
-                            if candidate is None:
-                                candidate = int(sorted_candidates[0].item())
+                                # Fallback if all candidates were already used
+                                if candidate is None:
+                                    candidate = int(sorted_candidates[0].item())
 
-                            f_ind_old_new[k] = candidate
-                            used_representers.add(candidate)
-                        self.f_ind_old = torch.clone(f_ind_old_new)
+                                f_ind_old_new[k] = candidate
+                                used_representers.add(candidate)
+                            self.f_ind_old = torch.clone(f_ind_old_new)
                         if update_snr:
                             self.snr_norm = self.normalize_snr(snr_aux)
                         else:
@@ -790,6 +1073,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                         return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, reallocate
                 else:
                     _log(self, "Bad estimation")
+    self._iteration_birth_search_complete = True
     reallocate = True
     return resp, respPair, q_, q_lat_, snr_, y_trains_w_, reallocate
 
@@ -807,16 +1091,16 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     snr_aux = torch.clone(snr_)
 
     q_norm, _ = self.LogLik(self.weight_mean(q_, snr_aux))
-    alpha, margprob = self.forward(startPi, transPi, q_norm)
-    beta = self.backward(transPi, q_norm, margprob)
+    alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
     logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
     logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
     resp_temp = self._safe_exp(logresp)
     respPair_temp = self._safe_exp(logrespPair)
 
-    resp_per_group_temp = torch.sum(resp_temp[torch.where(resp_temp == 1.0)[0]], axis=0)
+    resp_per_group_temp = torch.sum(resp_temp, axis=0)
     reorder = torch.argsort(resp_per_group_temp, descending=True)
     resp_temp = torch.clone(resp_temp[:, reorder])
+    respPair_temp = respPair_temp[:, reorder, :][:, :, reorder]
 
     # after resp_temp = resp_temp[:, reorder] (or clone thereof)
     y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
@@ -830,12 +1114,8 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     indexes_ = [[] for _ in range(self.n_outputs)]
     gpmodels_temp = [[] for _ in range(self.n_outputs)]
     for ld in range(self.n_outputs):
-        if self.verbose:
-            _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
         for m in range(M):
-            if self.verbose:
-                _log(self, "\n   -----------Model " + str(m + 1) + "-----------")
-            indexes_[ld].append(torch.where(resp_temp[:, m] == self.cond_cuda(torch.tensor(1.0)))[0].int())
+            indexes_[ld].append(_owned_indices(resp_temp, m).int())
             if len(gpmodels[ld]) > reorder[m]:
                 gp = gpmodels[ld][reorder[m]]
                 gp_indexes = torch.tensor(gp.indexes, device=indexes_[ld][m].device).int()
@@ -851,11 +1131,12 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
                     else:
                         # No added indexes so createtemp
                         gp = self.create_gp_default(i=reorder[m])
-                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], reorder[m]],
-                                                                         resp_temp[:, m],
+                    q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains, y_trains_w[:, :, [ld], reorder[m]],
+                                                                         resp_temp[:, m], x_w, ld, reorder[m],
                                                                          q=q_[:, reorder[m], ld],
                                                                          q_lat=q_lat_[:, reorder[m], ld],
                                                                          snr=self.snr_norm[:, ld])
+                    q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                     q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                 else:
@@ -867,11 +1148,12 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
                 # New GP to add
                 gp = self.create_gp_default(i=reorder[m])
                 if len(indexes_[ld][m]) > 0.0:
-                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains_w[:, :, [ld], reorder[m]],
-                                                                         resp_temp[:, m],
+                    q[:, m, ld], q_lat[:, m, ld] = _fit_emission(self, gp, x_trains, y_trains_w[:, :, [ld], reorder[m]],
+                                                                         resp_temp[:, m], x_w, ld, reorder[m],
                                                                          q=q_[:, reorder[m], ld],
                                                                          q_lat=q_lat[:, reorder[m], ld],
                                                                          snr=self.snr_norm[:, ld])
+                    q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, reorder[m])
                     q[:, m, ld] = q[:, m, ld] + liks[:, reorder[m], ld]
                     snr_aux[:, m, ld] = self.compute_snr(y_trains_w[:, :, ld, reorder[m]], gp)
                 else:
@@ -889,14 +1171,18 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     update_snr = True
     if torch.any(torch.sum(resp_temp, dim=1) > 2.0):
         _log(self, "STOP")
-    if torch.all(torch.sum(resp_temp, dim=0) >= 1.0):
-        if q_bas + elbo_bas < q_bas_post + elbo_post:
+    if torch.all(_cluster_occupied(self, resp_temp)):
+        if _reallocation_improves(q_bas + elbo_bas, q_bas_post + elbo_post):
             # self.gpmodels = gpmodels_temp
-            self.x_w = x_w
-            self.liks = liks
+            if len(reorder) == self.M:
+                _synchronize_cluster_slots(self, reorder, gpmodels_temp)
             y_trains_w = y_trains_w[:,:,:,reorder]
             if reorder.shape[0] == self.f_ind_old.shape[0]:
-                self.f_ind_old = self.f_ind_old[reorder]
+                self.x_w = x_w[:, :, :, reorder]
+                self.liks = liks[:, reorder, :]
+                self.f_ind_old = f_ind_old[reorder]
+                self.y_w = y_trains_w
+                self.y_train = self.select_assigned_warp(y_trains_w, resp_temp)
             if update_snr:
                 self.snr_norm = self.normalize_snr(snr_aux)
             else:
@@ -906,20 +1192,14 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
             return resp, respPair, q_, q_lat_, snr_, y_trains_w_, gpmodels
     else:
         _log(self, f">>> Possible emergency reallocation. Prev ----:\n Q_em: {q_def}, Elbo: {elbo_def}")
-        if (q_def + elbo_def < q_bas_post + elbo_post) and (q_bas + elbo_bas < q_bas_post + elbo_post):
+        if (_reallocation_improves(q_def + elbo_def, q_bas_post + elbo_post)
+                and _reallocation_improves(q_bas + elbo_bas, q_bas_post + elbo_post)
+                and not torch.count_nonzero(resp_temp[:, -1])):
             _log(self, "Emergency reallocation and removing last group.")
-            reallocate = True
-            for ld in range(self.n_outputs):
-                gpmodels_temp[ld] = gpmodels_temp[ld][:-1]
-            self.gpmodels = gpmodels_temp
-            if update_snr:
-                self.snr_norm = self.normalize_snr(snr_aux)
-            resp_temp, respPair_temp, q, q_lat, snr_aux = self.remove_last_group(resp_temp,
-                                                                                 respPair_temp, q,
-                                                                                 q_lat, snr_aux)
-            resp_per_group_temp = torch.sum(resp_temp[torch.where(resp_temp == 1.0)[0]], axis=0)
-            reorder = torch.argsort(resp_per_group_temp, descending=True)
-            self.f_ind_old = self.f_ind_old[reorder]
+            resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp = (
+                _commit_emergency_deletion(
+                    self, resp_temp, respPair_temp, q, q_lat, snr_aux,
+                    gpmodels_temp, y_trains_w, x_w, liks, reorder, f_ind_old))
             return resp_temp, respPair_temp, q, q_lat, snr_aux, y_trains_w, gpmodels_temp
         else:
             _log(self, "Bad estimation")
@@ -928,50 +1208,59 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
 
 def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp=False):
     warp = _alignment.configured(self).enabled(warp)
+    point_warp = warp and getattr(self.alignment, 'supports_batch_lds_input_warp', False)
+    if warp and getattr(self.alignment, 'uses_candidate_input_warp', False) and not point_warp:
+        raise NotImplementedError('GP-flow input warps are supported by offline.fit, not classify_batch')
     if not learning:
         x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
         y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
-        q = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
+        q = (_point_warp_classification_scores(self, x_trains, y_trains)
+             if point_warp else torch.zeros(y_trains.shape[0], self.M, self.n_outputs))
         snr = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
         for ld in range(self.n_outputs):
             for m in range(self.M):
                 gp = self.gpmodels[ld][m]
-                for i in range(y_trains.shape[0]):
-                    q[i, m, ld] = gp.log_sq_error(x_trains[i], y_trains[i, :, [ld]], i=-1)
+                if not point_warp:
+                    for i in range(y_trains.shape[0]):
+                        q[i, m, ld] = gp.log_sq_error(x_trains[i], y_trains[i, :, [ld]], i=-1)
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
         transTheta = self.transTheta
         startTheta = self.startTheta
-        transPi = self.hdp.classification_log_transitions(self.M, transTheta)
+        transPi = (self.hdp.classification_log_transitions(self.M, transTheta)
+                   if self.hmm_switch else self.hdp.iid_log_transitions(self.M))
         # Calculate LOG of start state prob vector
-        startPi = self.hdp.classification_log_start(self.M, startTheta)
+        startPi = (self.hdp.classification_log_start(self.M, startTheta)
+                   if self.hmm_switch else self.hdp.expected_log_iid_weights(self.M))
 
         q_norm, _ = self.LogLik(self.weight_mean(q, snr))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
+        alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp = self._safe_exp(resplog_temp)
-        return torch.where(resp == 1.0)[1]
+        return torch.argmax(resp, dim=1)
     if learning:
         x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
         y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
-        q_new = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
+        q_new = (_point_warp_classification_scores(self, x_trains, y_trains)
+                 if point_warp else torch.zeros(y_trains.shape[0], self.M, self.n_outputs))
         snr_new = torch.zeros(y_trains.shape[0], self.M, self.n_outputs)
         for ld in range(self.n_outputs):
             for m in range(self.M):
                 gp = self.gpmodels[ld][m]
-                for i in range(y_trains.shape[0]):
-                    q_new[i, m, ld] = gp.log_sq_error(x_trains[i], y_trains[i, :, [ld]], i=-1)
+                if not point_warp:
+                    for i in range(y_trains.shape[0]):
+                        q_new[i, m, ld] = gp.log_sq_error(x_trains[i], y_trains[i, :, [ld]], i=-1)
                 snr_new[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
         transTheta = self.transTheta
         startTheta = self.startTheta
-        transPi = self.hdp.batch_log_transitions(self.M, transTheta)
+        transPi = (self.hdp.batch_log_transitions(self.M, transTheta) if self.hmm_switch
+                   else self.hdp.iid_log_transitions(self.M))
         # Calculate LOG of start state prob vector
-        startPi = self.hdp.batch_log_start(self.M, startTheta)
+        startPi = (self.hdp.batch_log_start(self.M, startTheta) if self.hmm_switch
+                   else self.hdp.expected_log_iid_weights(self.M))
 
         q_norm, _ = self.LogLik(self.weight_mean(q_new, snr_new))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
+        alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp_new = self._safe_exp(resplog_temp)
@@ -983,6 +1272,12 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
         resp, respPair = torch.concatenate([self.resp_last, resp_new]), torch.concatenate(
             [self.respPair_last, respPair_new])
         self.snr_norm = torch.concatenate([self.snr_norm, self.normalize_snr(snr_new)])
+        if point_warp:
+            self.warp = True
+            y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+                x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+                f_ind_old=self.f_ind_old)
+            self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
         resp_per_group_temp = torch.sum(resp, dim=0)
         reorder = torch.argsort(resp_per_group_temp, descending=True)
         resp = resp[:, reorder]
@@ -993,30 +1288,48 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
 
         gpmodels_temp = [[] for _ in range(self.n_outputs)]
         for ld in range(self.n_outputs):
-            if self.verbose:
-                _log(self, "\n-----------Lead " + str(ld + 1) + "-----------")
             for m in range(self.M):
-                if self.verbose:
-                    _log(self, "\n   -----------Model " + str(m + 1) + "-----------")
                 gp = self.gpmodel_deepcopy(self.gpmodels[ld][reorder[m]])
                 if gp.fitted:
                     gp.reinit_LDS(save_last=False)
                     gp.reinit_GP(save_last=False)
-                q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]],
-                                                                     resp[:, m])
+                if point_warp:
+                    candidate = int(reorder[m])
+                    q[:, m, ld], q_lat[:, m, ld] = _fit_emission(
+                        self, gp, x_trains, y_trains[:, :, [ld]], resp[:, m],
+                        x_w, ld, candidate)
+                    q[:, m, ld] = _flow_score(self, gp, q[:, m, ld],
+                                               y_trains, ld, candidate)
+                else:
+                    q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(
+                        x_trains, y_trains[:, :, [ld]], resp[:, m])
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
                 gpmodels_temp[ld].append(gp)
         self.gpmodels = gpmodels_temp
+        if point_warp and (self.observation_scope == 'shared' or self.transition_policies):
+            self.update_shared_observation(resp)
+            y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+                x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+                f_ind_old=self.f_ind_old)
+            self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
+            for ld in range(self.n_outputs):
+                for m in range(self.M):
+                    gp = self.gpmodels[ld][m]
+                    grids = _flow_inputs(self, x_trains, x_w, ld, m)
+                    q[:, m, ld] = _flow_score(
+                        self, gp, gp.compute_sq_err_all(
+                            grids, y_trains[:, :, [ld]]), y_trains, ld, m)
+                    if self.transition_policies:
+                        q_lat[:, m, ld] = gp.compute_q_lat_all(grids)
         q_norm, _ = self.LogLik(self.weight_mean(q, snr))
-        alpha, margprob = self.forward(startPi, transPi, q_norm)
-        beta = self.backward(transPi, q_norm, margprob)
+        alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
         resp = self._safe_exp(resplog_temp)
         respPair = self._safe_exp(respPairlog_temp)
 
         startStateCount = self.cond_cuda(resp[0])
-        transStateCount = self.cond_cuda(torch.sum(respPair, axis=0))
+        transStateCount = self.cond_cuda(self.hdp.transition_counts(respPair))
         reallocate = False
         elbo = self.elbo_last
         iteration = 0
@@ -1026,6 +1339,8 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
             M = self.M
             if end:
                 break
+            _log(self, f'\n=== Offline iteration {iteration + 1} (classification learning) ===',
+                 flush=True)
             resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains,
                                                                                                        y_trains,
                                                                                                        y_trains_w,
@@ -1043,40 +1358,43 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
             # Update HDP variational params.
             if self.hmm_switch:
                 startStateCount = self.cond_cuda(resp__[0])
-                transStateCount = self.cond_cuda(torch.sum(respPair__, axis=0))
+                transStateCount = self.cond_cuda(self.hdp.transition_counts(respPair__))
+                self.reinit_global_params(M, transStateCount, startStateCount)
+                nIters = 2
+                for giter in range(nIters):
+                    self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                           self.cond_cuda(startStateCount), M + 1)
+                    self.rho, self.omega = self.find_optimum_rhoOmega()
+                transPi = self.hdp.stored_log_transitions(M, self.transTheta)
             else:
-                transStateCount = self.cond_cuda(
-                    torch.ones((M + 1, M + 1)))  # Cause we are in independent observations
-                startStateCount = self.cond_cuda(torch.ones(M + 1))
+                startStateCount = resp__.sum(dim=0)
+                transStateCount = torch.zeros((M + 1, M + 1), device=resp.device,
+                                              dtype=resp.dtype)
+                self.hdp.update_iid_weights(resp__)
+                transPi = self.hdp.iid_log_transitions(M)
 
-            self.reinit_global_params(M, transStateCount, startStateCount)
-            nIters = 2
-            for giter in range(nIters):
-                self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                                       self.cond_cuda(startStateCount), M + 1)
-                self.rho, self.omega = self.find_optimum_rhoOmega()
-
-            # Update transition matrix
-            transPi = self.hdp.stored_log_transitions(M, self.transTheta)
+            # Update transition matrix (identical rows in independent-mixture mode).
             self.trans_A = transPi
             # Compute ELBO and start steps of EM
             if self.T > 1:
                 elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                                      respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
-                _log(self, '\n-------End Lower Bound Iteration ' + str(iteration) + '-------')
                 q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
-                                                      self.gpmodels, self.M, snr='saved', post=False)
+                                                      self.gpmodels, self.M, snr='saved', post=False,
+                                                      birth_score=False)
                 elbo_ = elbo_ + elbo_lin + q_obs
-                _log(self, "ELBO + Nonlinear: " + str(elbo_))
+                if self.verbose:
+                    _log(self, f'Iteration {iteration + 1}: ELBO={float(elbo_):.6g}, '
+                         f'delta_ELBO={float(elbo_ - elbo):+.6g}, '
+                         f'responsibilities={resp.sum(0).detach().cpu().tolist()}', flush=True)
                 iteration = iteration + 1
-                _log(self, '\n-------Start lower Bound Iteration ' + str(iteration) + '-------')
                 if it_limit is not None and iteration >= it_limit:
                     self.train_elbo.append(elbo_)
-                    self.resp_assigned.append(torch.where(resp == 1.0)[1])
+                    self.resp_assigned.append(torch.argmax(resp, dim=1))
                     break
                 resp_group = torch.sum(resp, dim=0)
                 self.train_elbo.append(elbo_)
-                self.resp_assigned.append(torch.where(resp == 1.0)[1])
+                self.resp_assigned.append(torch.argmax(resp, dim=1))
                 self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
                 self.startStateCount_last, self.transStateCount_last = startStateCount, transStateCount
                 self.resp_last, self.respPair_last = resp, respPair
@@ -1101,6 +1419,10 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
 
 def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
     warp = _alignment.configured(self).enabled(warp)
+    point_warp = warp and getattr(self.alignment, 'supports_batch_lds_input_warp', False)
+    if warp and getattr(self.alignment, 'uses_candidate_input_warp', False) and not point_warp:
+        raise NotImplementedError('GP-flow input warps are supported by offline.fit, not fit_labels')
+    self.warp = warp
     assert y_trains.shape[2] == self.n_outputs
     y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
     x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
@@ -1120,7 +1442,7 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
     resp = torch.zeros(y_trains.shape[0], M)
     resp[torch.arange(y_trains.shape[0]), labels] = 1.0
     respPair = self.cond_cuda(torch.zeros((y_trains.shape[0], M, M)))
-    respPair[np.arange(y_trains.shape[0] - 1), labels[:-1], labels[1:]] = 1.0
+    respPair[np.arange(1, y_trains.shape[0]), labels[:-1], labels[1:]] = 1.0
     q = torch.zeros(y_trains.shape[0], M, self.n_outputs)
     q_lat = torch.zeros(y_trains.shape[0], M, self.n_outputs)
     snr = torch.zeros(y_trains.shape[0], M, self.n_outputs)
@@ -1128,45 +1450,97 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
         for m in range(M):
             gp = self.gpmodel_deepcopy(self.gpmodels[0][0])
             if gp.fitted:
-                gp.reinit_LDS(save_last=False)
+                gp.reinit_LDS(save_last=False, warm_start=False)
                 gp.reinit_GP(save_last=False)
             q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]],
                                                                  resp[:, m])
             snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
             self.gpmodels[ld][m] = gp
-    if warp:
+    if self.observation_scope == 'shared' or self.transition_policies:
+        self.update_shared_observation(resp)
+        for ld in range(self.n_outputs):
+            for m in range(M):
+                q[:, m, ld] = self.gpmodels[ld][m].compute_sq_err_all(
+                    x_trains, y_trains[:, :, [ld]])
+                if self.transition_policies:
+                    q_lat[:, m, ld] = self.gpmodels[ld][m].compute_q_lat_all(x_trains)
+    if point_warp:
+        y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+            x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+            f_ind_old=getattr(self, 'f_ind_old', None))
+        self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
+        for ld in range(self.n_outputs):
+            for m in range(M):
+                gp = self.gpmodel_deepcopy(self.gpmodels[ld][m])
+                if gp.fitted:
+                    gp.reinit_LDS(save_last=False, warm_start=False)
+                    gp.reinit_GP(save_last=False)
+                q[:, m, ld], q_lat[:, m, ld] = _fit_emission(
+                    self, gp, x_trains, y_trains[:, :, [ld]], resp[:, m],
+                    x_w, ld, m)
+                q[:, m, ld] = _flow_score(self, gp, q[:, m, ld], y_trains, ld, m)
+                snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
+                self.gpmodels[ld][m] = gp
+        if self.observation_scope == 'shared' or self.transition_policies:
+            self.update_shared_observation(resp)
+            y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
+                x_trains=x_trains, y_trains=y_trains, resp_temp=resp,
+                f_ind_old=getattr(self, 'f_ind_old', None))
+            self.x_w, self.y_w, self.liks = x_w, y_trains_w, liks
+            for ld in range(self.n_outputs):
+                for m in range(M):
+                    gp = self.gpmodels[ld][m]
+                    grids = _flow_inputs(self, x_trains, x_w, ld, m)
+                    q[:, m, ld] = _flow_score(
+                        self, gp, gp.compute_sq_err_all(
+                            grids, y_trains[:, :, [ld]]), y_trains, ld, m)
+                    if self.transition_policies:
+                        q_lat[:, m, ld] = gp.compute_q_lat_all(grids)
+    elif warp:
         q, q_lat, warp_computed, y_trains = self.compute_warp_actual_state(x_trains, y_trains, q=q,
                                                                            q_lat=q_lat)
         for ld in range(self.n_outputs):
             for m in range(M):
                 gp = self.gpmodel_deepcopy(self.gpmodels[0][0])
                 if gp.fitted:
-                    gp.reinit_LDS(save_last=False)
+                    gp.reinit_LDS(save_last=False, warm_start=False)
                     gp.reinit_GP(save_last=False)
                 q[:, m, ld], q_lat[:, m, ld] = gp.full_pass_weighted(x_trains, y_trains[:, :, [ld]],
                                                                      resp[:, m])
                 snr[:, m, ld] = self.compute_snr(y_trains[:, :, ld], gp)
                 self.gpmodels[ld][m] = gp
+        if self.observation_scope == 'shared' or self.transition_policies:
+            self.update_shared_observation(resp)
+            for ld in range(self.n_outputs):
+                for m in range(M):
+                    q[:, m, ld] = self.gpmodels[ld][m].compute_sq_err_all(
+                        x_trains, y_trains[:, :, [ld]])
+                    if self.transition_policies:
+                        q_lat[:, m, ld] = self.gpmodels[ld][m].compute_q_lat_all(x_trains)
     self.q.append(q)
     resp__ = torch.clone(resp)
     respPair__ = torch.clone(respPair)
     # Update HDP variational params.
     startStateCount = self.cond_cuda(resp__[0])
-    transStateCount = self.cond_cuda(torch.sum(respPair__, axis=0))
+    transStateCount = self.cond_cuda(self.hdp.transition_counts(respPair__))
     resp, respPair, q, q_lat, snr, end = self.refill(resp, respPair, startStateCount, transStateCount, q, q_lat,
                                                      snr)
 
-    self.reinit_global_params(M, transStateCount, startStateCount)
-    nIters = 2
-    for giter in range(nIters):
-        self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
-                                                               self.cond_cuda(startStateCount), M + 1)
-        self.rho, self.omega = self.find_optimum_rhoOmega()
+    if self.hmm_switch:
+        self.reinit_global_params(M, transStateCount, startStateCount)
+        nIters = 2
+        for giter in range(nIters):
+            self.transTheta, self.startTheta = self._calcThetaFull(self.cond_cuda(transStateCount),
+                                                                   self.cond_cuda(startStateCount), M + 1)
+            self.rho, self.omega = self.find_optimum_rhoOmega()
+    else:
+        self.hdp.update_iid_weights(resp)
     transTheta = self.transTheta
     startTheta = self.startTheta
-    transPi = self.hdp.batch_log_transitions(M, transTheta)
+    transPi = (self.hdp.batch_log_transitions(M, transTheta) if self.hmm_switch
+               else self.hdp.iid_log_transitions(M))
     self.trans_A = transPi
-    self.resp_assigned.append(torch.where(resp == 1.0)[1])
+    self.resp_assigned.append(torch.argmax(resp, dim=1))
     self.q_last, self.q_lat_last, self.snr_last = q, q_lat, snr
     self.startStateCount_last, self.transStateCount_last = startStateCount, transStateCount
     self.resp_last, self.respPair_last = resp, respPair
@@ -1178,7 +1552,8 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
     elbo_ = self.calcELBO_NonlinearTerms(resp=self.cond_to_numpy(self.cond_cpu(resp)),
                                          respPair=self.cond_to_numpy(self.cond_cpu(respPair)))
     q_obs, elbo_lin = self.compute_q_elbo(resp, respPair, self.weight_mean(q), self.weight_mean(q_lat),
-                                          self.gpmodels, self.M, snr='saved', post=False)
+                                          self.gpmodels, self.M, snr='saved', post=False,
+                                          birth_score=False)
     elbo_ = elbo_ + elbo_lin + q_obs
     _log(self, '\n-------ELBO:' + str(elbo_) + '-------')
     self.elbo_last = elbo_

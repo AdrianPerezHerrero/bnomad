@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from tqdm.auto import tqdm
 from copy import deepcopy
 from numbers import Integral
 
 from ..config import HDPGPCConfig
-from ._results import Prediction, LatentState, UpdateResult, _snapshot
+from ._results import Prediction, LatentState, UpdateResult, WarpPosterior, _snapshot
 
 
 def _data(value, name):
@@ -55,6 +54,10 @@ class HDPGPC:
 
     def _default_grid(self):
         import numpy as np
+        if self._config.observation.fixed_grid is not None:
+            return self._config.observation.fixed_grid
+        if self._config.observation.pca_grid is not None:
+            return self._config.observation.pca_grid
         basis = self._config.x_basis
         if isinstance(basis, list):
             if not all(np.array_equal(basis[0], other) for other in basis[1:]):
@@ -86,25 +89,30 @@ class HDPGPC:
             raise ValueError(f'grid must have shape {expected} (or a shared (points, 1) grid for fit)')
         return data, coordinates
 
-    def fit(self, X, *, grid=None) -> HDPGPC:
+    def fit(self, X, *, grid=None, birth_diagnostic_limit=0) -> HDPGPC:
         """Fit a fresh model; honor offline or explicitly configured online order."""
+        if (isinstance(birth_diagnostic_limit, bool)
+                or not isinstance(birth_diagnostic_limit, Integral)
+                or birth_diagnostic_limit < 0):
+            raise ValueError('birth_diagnostic_limit must be a nonnegative integer')
         values, coordinates = self._inputs(X, grid, batch=True)
         inference = self._config.inference
+        if birth_diagnostic_limit and inference.schedule not in (None, 'offline'):
+            raise ValueError('Birth diagnostics currently require offline inference')
         if inference.classify:
             raise ValueError('fit/update require classify=False; use OfflineInference for classification')
-        backend = self._config.build_model()
+        self._mode = inference.schedule or 'offline'
+        backend = self._config.build_model(schedule=self._mode)
+        backend._birth_diagnostic_limit = int(birth_diagnostic_limit)
+        backend._birth_diagnostics = []
         self._backend = backend
         self._has_data = False
         self._failed = False
-        self._mode = inference.schedule or 'offline'
         try:
             if self._mode == 'offline':
                 backend.offline.fit(coordinates, values, it_limit=inference.it_limit, warp=inference.warp)
             else:
-                samples = zip(coordinates, values)
-                if not backend.verbose:
-                    samples = tqdm(samples, total=len(values), desc='Online fit', unit='sample')
-                for x, y in samples:
+                for x, y in zip(coordinates, values):
                     self._include(x, y)
         except BaseException:
             # The original implementation may already have mutated its state.
@@ -114,11 +122,29 @@ class HDPGPC:
         self._has_data = True
         return self
 
+    @property
+    def birth_diagnostics_(self):
+        """Independent snapshots of offline birth proposals, when requested."""
+        self._require_fitted()
+        return deepcopy(getattr(self._backend, '_birth_diagnostics', []))
+
+    @property
+    def split_merge_history_(self):
+        """Detached split/merge scores, components and acceptance decisions."""
+        self._require_fitted()
+        return deepcopy(getattr(self._backend, '_split_merge_history', []))
+
+    @property
+    def split_merge_convergence_(self):
+        """Stopping reason, final score change and assignment stability diagnostics."""
+        self._require_fitted()
+        return deepcopy(getattr(self._backend, '_split_merge_convergence', {}))
+
     def _include(self, grid, values):
         inference = self._config.inference
         method = (self._backend.online.update_fast if self._mode == 'online_fast'
                   else self._backend.online.update)
-        return method(grid, values, with_warp=inference.with_warp,
+        return method(grid, values, warp=inference.warp,
                       force_model=inference.force_model, minibatch=inference.minibatch,
                       classify=inference.classify)
 
@@ -136,8 +162,8 @@ class HDPGPC:
             raise ValueError('fit/update require classify=False; use OfflineInference for classification')
         values, coordinates = self._inputs(x, grid, batch=False)
         if self._backend is None:
-            self._backend = self._config.build_model()
             self._mode = inference.schedule or 'online'
+            self._backend = self._config.build_model(schedule=self._mode)
         before = self._backend.M
         try:
             self._include(coordinates, values)
@@ -188,6 +214,19 @@ class HDPGPC:
         """Number of represented clusters, excluding unassigned reserve slots."""
         return len(self.cluster_ids_)
 
+    @property
+    def observation_parameters_(self):
+        """Copy fitted C/Sigma with one representation for the selected scope."""
+        self._require_fitted()
+        backend = self._backend
+        if backend.observation_scope == 'cluster':
+            return {'scope': 'cluster', 'outputs': tuple(
+                tuple({'C': _snapshot(gp.C[-1]), 'Sigma': _snapshot(gp.Sigma[-1])}
+                      for gp in output) for output in backend.gpmodels)}
+        owner = backend.observation_policies[0]
+        return {'scope': owner.scope, 'C': _snapshot(owner.C),
+                'Sigma': _snapshot(owner.Sigma)}
+
     def _cluster(self, cluster):
         self._require_fitted()
         if isinstance(cluster, bool) or not isinstance(cluster, Integral) or cluster < 0:
@@ -202,13 +241,20 @@ class HDPGPC:
     def predictive(self, cluster, *, grid=None) -> Prediction:
         """Read the current observation distribution, not a forecast/label predictor.
 
-        Default coordinates are this cluster's first-output GP basis. Supplied
+        Default coordinates are the waveform grid for a fixed decoder, otherwise this
+        cluster's first-output GP basis. Supplied
         coordinates are model/aligned coordinates; no inverse warp is performed.
         """
         import numpy as np
         cluster = self._cluster(cluster)
         models = [output[cluster] for output in self._backend.gpmodels]
-        coordinates = _data(models[0].x_basis if grid is None else grid, 'grid')
+        fixed_grid = (self._config.observation.fixed_grid if
+                      self._config.observation.fixed_grid is not None else
+                      self._config.observation.pca_grid)
+        default_coordinates = (fixed_grid
+                               if fixed_grid is not None
+                               else models[0].x_basis)
+        coordinates = _data(default_coordinates if grid is None else grid, 'grid')
         if coordinates.ndim == 1:
             coordinates = coordinates[:, None]
         if coordinates.ndim != 2 or coordinates.shape[1] != 1 or not len(coordinates):
@@ -232,3 +278,36 @@ class HDPGPC:
                 smoothed_mean=_snapshot(gp.f_star_sm[-1]).reshape(-1),
                 smoothed_covariance=_snapshot(gp.cov_f_sm[-1])))
         return tuple(result)
+
+    def warp_posterior(self, x, *, grid=None, cluster=None) -> dict[int, WarpPosterior]:
+        """Infer a new beat's warp against the current cluster GP representers.
+
+        This is read-only: it neither assigns the beat nor changes the learned
+        emission state.  The candidate-conditioned posterior is inferred anew
+        for each current cluster.  ``cluster`` selects just one candidate.
+        Requires alignment.policy='gp_flow' and an already fitted model.
+        """
+        self._require_fitted()
+        if not getattr(self._backend.alignment, 'supports_warp_posterior', False):
+            raise ValueError("warp_posterior requires alignment.policy='gp_flow'")
+        values, coordinates = self._inputs(x, grid, batch=False)
+        if cluster is not None:
+            if (isinstance(cluster, bool) or not isinstance(cluster, Integral)
+                    or not 0 <= cluster < len(self._backend.gpmodels[0])):
+                raise ValueError('cluster must be a current candidate index')
+            cluster = int(cluster)
+        import torch
+        devices = [torch.cuda.current_device()] if self._backend.cuda else []
+        with torch.random.fork_rng(devices=devices):
+            results, scores = self._backend.alignment.posterior_next(
+                self._backend, coordinates, values, candidate=cluster)
+        return {m: WarpPosterior(
+            cluster=m, grid_samples=_snapshot(result.grid_samples),
+            mean_displacement=_snapshot(result.mean_displacement),
+            std_displacement=_snapshot(result.std_displacement),
+            mean_whitened=_snapshot(result.mean_whitened),
+            chol_whitened=_snapshot(result.chol_whitened),
+            score_by_output=_snapshot(scores[m]),
+            expected_log_likelihood=float(result.expected_log_likelihood),
+            kl=float(result.kl), elbo=float(result.elbo))
+            for m, result in results.items()}

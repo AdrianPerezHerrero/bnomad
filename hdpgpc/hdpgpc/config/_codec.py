@@ -14,6 +14,11 @@ KERNELS = frozenset(('ConstantKernel', 'WhiteKernel', 'RBF', 'Matern',
 def _encode(value, memo):
     if value is None or type(value) in (str, bool, int):
         return value
+    from ._models import MatrixPolicyConfig, NoisePolicyConfig
+    from dataclasses import fields
+    if type(value) in (MatrixPolicyConfig, NoisePolicyConfig):
+        return {'__type__': type(value).__name__,
+                'fields': {f.name: encode(getattr(value, f.name), memo) for f in fields(value)}}
     if type(value) is float:
         if not math.isfinite(value):
             return {'__type__': 'float', 'value': repr(value)}
@@ -62,6 +67,7 @@ def _decode(value, memo):
     if tag is None:
         return {k: decode(v, memo) for k, v in value.items()}
     keys = {
+        'MatrixPolicyConfig': {'fields'}, 'NoisePolicyConfig': {'fields'},
         'tuple': {'items'}, 'float': {'value'},
         'numpy_scalar': {'dtype', 'value'}, 'ndarray': {'dtype', 'shape', 'values'},
         'kernel': {'class', 'parameters'},
@@ -69,6 +75,15 @@ def _decode(value, memo):
     }
     if tag not in keys or set(value) != keys[tag] | {'__type__'}:
         raise ValueError('Unknown or malformed configuration tag: ' + str(tag))
+    if tag in ('MatrixPolicyConfig', 'NoisePolicyConfig'):
+        from ._models import MatrixPolicyConfig, NoisePolicyConfig
+        from dataclasses import fields
+        typ = {'MatrixPolicyConfig': MatrixPolicyConfig,
+               'NoisePolicyConfig': NoisePolicyConfig}[tag]
+        definitions = value['fields']
+        if not isinstance(definitions, dict) or set(definitions) != {f.name for f in fields(typ)}:
+            raise ValueError('Malformed LDS parameter policy')
+        return typ(**{key: decode(item, memo) for key, item in definitions.items()})
     if tag == 'tuple':
         return tuple(decode(v, memo) for v in value['items'])
     if tag == 'float':

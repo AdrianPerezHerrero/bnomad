@@ -12,6 +12,7 @@ python -m venv .venv
 # Linux/macOS: source .venv/bin/activate
 # Windows PowerShell: .venv/Scripts/Activate.ps1
 python -m pip install --upgrade pip
+python -m pip install torch==2.9.0 --index-url https://download.pytorch.org/whl/cpu
 python -m pip install .
 hdpgpc-reference --check --output reference.json
 ```
@@ -21,6 +22,15 @@ packaged numerical reference and writes the configuration, data hash, results an
 environment. It works from any directory. No datasets or path manipulation are
 needed. `python -m hdpgpc.examples.reference` is an equivalent entry point.
 Choose a new output filename on each run.
+
+The CPU-only PyTorch installation above avoids downloading CUDA libraries on
+machines that do not need GPU execution. It follows the
+[official PyTorch 2.9.0 installation instructions](https://pytorch.org/get-started/previous-versions/#v290).
+Installing the package directly on Linux without first choosing a PyTorch build
+can download several gigabytes of CUDA dependencies and exhaust a small CI disk.
+The installed-package CI workflow preinstalls CPU-only PyTorch in its fresh
+environment, then installs the built wheel with dependency resolution enabled.
+It uses Python archive extraction to handle Linux and Windows paths consistently.
 
 Optional extras:
 
