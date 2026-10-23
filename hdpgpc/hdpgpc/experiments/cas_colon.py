@@ -115,7 +115,7 @@ def _validate(args):
             raise ValueError('MFA learns cluster C and cluster_diagonal Sigma')
         if args.a_mode is not None or args.gamma_mode is not None:
             raise ValueError('Use --dynamic to learn MFA A/Gamma, or --no-dynamic for A=0/Gamma=I')
-        if args.hmm_switch and not args.dynamic:
+        if args.hmm_switch and not args.dynamic and args.transition_topology == 'ergodic':
             raise ValueError('Static MFA uses independent assignments; use --dynamic --hmm-switch for HMM factors')
     if args.representation == 'linear_prediction' and (
             args.prediction_lag < 1 or args.prediction_whitening_components < args.components

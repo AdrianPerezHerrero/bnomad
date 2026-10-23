@@ -14,6 +14,8 @@ class OnlineInference(InferenceEngine):
 
     def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify=False):
         """Run the existing update schedule on the bound owner."""
+        if getattr(self._model, 'transition_topology', 'ergodic') != 'ergodic':
+            raise ValueError('Ordered topology currently supports offline split_merge only')
         from . import _online
 
         return _online.update(self._model, x_train, y, warp, force_model, minibatch, classify)
@@ -44,6 +46,8 @@ class OnlineInference(InferenceEngine):
 
     def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, classify=False):
         """Run the existing update_fast schedule on the bound owner."""
+        if getattr(self._model, 'transition_topology', 'ergodic') != 'ergodic':
+            raise ValueError('Ordered topology currently supports offline split_merge only')
         from . import _online
 
         return _online.update_fast(self._model, x_train, y, warp, force_model, minibatch, classify)
@@ -60,6 +64,9 @@ class OfflineInference(InferenceEngine):
 
     def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         """Run the selected offline optimizer; legacy remains the default."""
+        if (getattr(self._model, 'transition_topology', 'ergodic') != 'ergodic'
+                and getattr(self._model, 'offline_strategy', 'legacy') != 'split_merge'):
+            raise ValueError('Ordered topology requires the constrained split_merge proposal adapter')
         if getattr(self._model, 'offline_strategy', 'legacy') == 'split_merge':
             from . import _split_merge
             return _split_merge.fit(self._model, x_trains, y_trains, it_limit, warp)
@@ -87,12 +94,16 @@ class OfflineInference(InferenceEngine):
 
     def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp=False):
         """Run the existing classify_batch schedule on the bound owner."""
+        if getattr(self._model, 'transition_topology', 'ergodic') != 'ergodic':
+            raise ValueError('Ordered topology does not support the legacy classify_batch utility')
         from . import _offline
 
         return _offline.classify_batch(self._model, x_trains, y_trains, learning, it_limit, warp)
 
     def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
         """Run the existing fit_labels schedule on the bound owner."""
+        if getattr(self._model, 'transition_topology', 'ergodic') != 'ergodic':
+            raise ValueError('Ordered topology does not support the legacy fit_labels utility')
         from . import _offline
 
         return _offline.fit_labels(self._model, x_trains, y_trains, labels, M, warp)

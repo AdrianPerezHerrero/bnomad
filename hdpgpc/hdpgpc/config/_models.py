@@ -28,12 +28,15 @@ class HDPConfig:
     without HMM, where its mixture gamma remains 1.
     less_extra_sticky uses less concentrations with kappa=100; its independent
     mixture gamma remains 0.001.
+    transition_topology='left_to_right' requires HMM assignments and offline
+    split/merge, using a reduced-simplex hierarchical transition prior.
     """
     M: int | None = None
     hdp_hyp: Literal['less', 'less_extra_sticky', 'balanced', 'balanced_sticky', 'more', 'more_sticky',
                      'more_extra_sticky', 'max'] = 'balanced'
     hmm_switch: bool = True
     max_models: int | None = None
+    transition_topology: Literal['ergodic', 'left_to_right'] = 'ergodic'
 
 
 @dataclass(frozen=True)
@@ -374,6 +377,8 @@ def _initialization_options(config, *, schedule=None):
         raise ValueError('conjugate_batch LDS updates require offline inference')
     if config.inference.offline_strategy == 'split_merge' and schedule != 'offline':
         raise ValueError('split_merge strategy requires offline inference')
+    if config.hdp.transition_topology == 'left_to_right' and schedule != 'offline':
+        raise ValueError('left_to_right currently requires offline split_merge inference')
     result = {'x_basis': config.x_basis, 'verbose': config.verbose}
     for name in SECTIONS:
         section = getattr(config, name)

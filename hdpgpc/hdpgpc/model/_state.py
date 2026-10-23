@@ -75,6 +75,7 @@ class ModelState:
         n_explore_steps = options['n_explore_steps']
         self.offline_representer_selection = options['offline_representer_selection']
         self.offline_strategy = options['offline_strategy']
+        self.transition_topology = config.hdp.transition_topology
         self.split_merge_refine_steps = options['split_merge_refine_steps']
         self.split_merge_stability_patience = options['split_merge_stability_patience']
         self.split_merge_score_rtol = options['split_merge_score_rtol']

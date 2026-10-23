@@ -194,6 +194,15 @@ def validate(c, *, for_build=False):
     if (obs.scope == 'shared' or any(p.mode.startswith('shared') for p in policies.values())) and i.warp and a.policy == 'gp_flow':
         raise ValueError('shared LDS learning requires a common LDS grid')
     integer(h.M, 'M', 1, optional=True)
+    if h.transition_topology not in ('ergodic', 'left_to_right'):
+        raise ValueError('transition_topology must be ergodic or left_to_right')
+    if h.transition_topology == 'left_to_right':
+        if not h.hmm_switch:
+            raise ValueError('left_to_right requires hmm_switch=True')
+        if i.offline_strategy != 'split_merge' or i.schedule in ('online', 'online_fast'):
+            raise ValueError('left_to_right currently requires offline_strategy=split_merge and offline inference')
+        if n.cuda:
+            raise ValueError('left_to_right global-weight quadrature currently requires CPU inference')
     M = 1 if h.M is None else h.M
     integer(h.max_models, 'max_models', 1, optional=True)
     if h.max_models is not None and h.max_models < M:

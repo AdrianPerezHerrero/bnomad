@@ -4,6 +4,11 @@
 `hmm_switch`. This switch concerns cluster assignments and is independent of
 the LDS matrix A.
 
+The optional [left-to-right topology](transition_topology.md) enforces ordered,
+non-repeating stages with its own reduced-simplex transition prior and ELBO.
+It requires HMM assignments and offline split/merge inference; kappa alone does
+not enforce that ordering.
+
 ## Markov assignments (`hmm_switch=True`)
 
 These are the **current HMM implementation values**:

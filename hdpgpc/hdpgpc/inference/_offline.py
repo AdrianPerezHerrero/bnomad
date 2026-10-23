@@ -214,6 +214,8 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     self : returns an instance of self.
     """
     # # Redefine HDP hyperparams for batch inclusion
+    if getattr(self, 'transition_topology', 'ergodic') != 'ergodic':
+        raise ValueError('Ordered topology requires offline split_merge, not the legacy optimizer')
     # self.gamma = 0.1
     # self.transAlpha = 0.1
     # self.startAlpha = 0.1
@@ -1207,6 +1209,8 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
 
 
 def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp=False):
+    if getattr(self, 'transition_topology', 'ergodic') != 'ergodic':
+        raise ValueError('Ordered topology does not support legacy batch classification')
     warp = _alignment.configured(self).enabled(warp)
     point_warp = warp and getattr(self.alignment, 'supports_batch_lds_input_warp', False)
     if warp and getattr(self.alignment, 'uses_candidate_input_warp', False) and not point_warp:
@@ -1418,6 +1422,8 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
 
 
 def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
+    if getattr(self, 'transition_topology', 'ergodic') != 'ergodic':
+        raise ValueError('Ordered topology does not support legacy label-conditioned fitting')
     warp = _alignment.configured(self).enabled(warp)
     point_warp = warp and getattr(self.alignment, 'supports_batch_lds_input_warp', False)
     if warp and getattr(self.alignment, 'uses_candidate_input_warp', False) and not point_warp:

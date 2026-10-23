@@ -176,7 +176,8 @@ def with_mfa_emission(config: HDPGPCConfig, initialization, *, dynamic=False,
     PCA decoder). It initializes the prior, not a frozen projection. Each
     cluster learns its intercept, rectangular loading matrix and diagonal noise.
     Static defaults fix A=0, Gamma=I, prior state covariance I and disable HMM
-    assignments. ``dynamic=True`` learns cluster A/Gamma and retains the input
+    assignments, except that explicit left_to_right topology retains its required
+    HMM switch. ``dynamic=True`` learns cluster A/Gamma and retains the input
     HMM switch. Existing inference strategy and KL normalization are retained.
     """
     from ..emissions import AffineGaussianObservation
@@ -199,4 +200,5 @@ def with_mfa_emission(config: HDPGPCConfig, initialization, *, dynamic=False,
             Gamma_policy=NoisePolicyConfig(mode='cluster') if dynamic else
                          NoisePolicyConfig(mode='fixed', value=np.eye(r)),
             annealing=False, lds_scoring='final'),
-        hdp=base.hdp if dynamic else replace(base.hdp, hmm_switch=False))
+        hdp=(base.hdp if dynamic or base.hdp.transition_topology == 'left_to_right'
+             else replace(base.hdp, hmm_switch=False)))

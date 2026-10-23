@@ -152,7 +152,7 @@ def log_configuration(config, args, *, source='configured'):
         return
     from ..config._models import resolved_lds_policies
     from ..diagnostics import format_lds_priors
-    print(f'Schedule={args.schedule}; HMM={config.hdp.hmm_switch}; '
+    print(f'Schedule={args.schedule}; HMM={config.hdp.hmm_switch}; topology={config.hdp.transition_topology}; '
           f'alignment={config.alignment.policy}; fit_gp={config.emission.fit_gp}')
     if args.schedule == 'offline':
         print(f'Offline strategy={config.inference.offline_strategy}; '

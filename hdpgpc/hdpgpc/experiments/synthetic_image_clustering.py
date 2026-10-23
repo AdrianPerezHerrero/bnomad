@@ -82,7 +82,8 @@ def make_config(args, decoder, gamma):
     sigma = float(np.diag(decoder.Sigma).mean())
     config = HDPGPCConfig(
         x_basis=decoder.grid, verbose=args.verbose,
-        hdp=HDPConfig(hdp_hyp=args.hdp_preset, hmm_switch=args.hmm_switch, max_models=args.max_clusters),
+        hdp=HDPConfig(hdp_hyp=args.hdp_preset, hmm_switch=args.hmm_switch, max_models=args.max_clusters,
+                      transition_topology=getattr(args, 'transition_topology', 'ergodic')),
         # The native backend still constructs a GP container for affine LDS
         # emissions. Its kernel initialization must be complete even though
         # fit_gp=False and the observation likelihood uses the fixed decoder.

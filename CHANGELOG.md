@@ -1,5 +1,8 @@
 # 0.3.0 ? native implementation migration
 
+- Added opt-in left-to-right transition topology for CPU offline split/merge:
+  reduced-simplex hierarchical priors/ELBO, ordered messages and joint decoding,
+  temporal boundary splits and adjacent merges. See docs/transition_topology.md.
 - Added learned affine factor-analysis observations through the native HDPGPC
   state and inference strategies, with independent factors by default, optional
   LDS evolution, and a CAS-Colon example. See docs/mfa_emission.md for the

@@ -15,9 +15,11 @@ import torch
 from . import _offline as legacy
 from ._birth_diagnostics import capture_seed, capture_refit
 from ._messages import assignment_messages
+from ..hdp import _topology
+from . import _ordered_messages
 
 
-def _partition_key(resp):
+def _partition_key(resp, pair=None):
     """Compact MAP membership key, invariant to any permutation of cluster slots.
 
     The first observed member names each group. Occupancy totals alone cannot
@@ -26,7 +28,8 @@ def _partition_key(resp):
     structural cycle. Soft-weight refinement is still unrestricted.
     """
     names = {}
-    labels = resp.argmax(1).detach().cpu().tolist()
+    labels = (resp.argmax(1) if pair is None else
+              _ordered_messages.posterior_path(resp, pair)).detach().cpu().tolist()
     canonical = array('q', (names.setdefault(label, len(names)) for label in labels))
     return blake2b(canonical.tobytes(), digest_size=16).digest()
 
@@ -235,10 +238,18 @@ def _score(work):
     work._split_merge_parts = {key: float(value) for key, value in parts.items()}
 
 
-def _stage(previous, resp, pair, sources, *, force=False, initial=False, birth_seed=None):
+def _stage(previous, resp, pair, sources, *, force=False, initial=False, birth_seed=None, birth_slot=None):
     """Fit an isolated proposal, copying posterior state only where necessary."""
-    if not bool(legacy._cluster_occupied(previous, resp).all()):
-        return None
+    ordered = _topology.enabled(previous)
+    if ordered:
+        path = _ordered_messages.posterior_path(resp, pair)
+        ownership = torch.nn.functional.one_hot(path, resp.shape[1]).to(resp)
+        if not bool((ownership.sum(0) > 0).all()) or not bool((resp.sum(0) >= 1e-8).all()):
+            return None
+    else:
+        ownership = resp
+        if not bool(legacy._cluster_occupied(previous, resp).all()):
+            return None
     work = copy(previous)
     # Global/list/cache writes in native helpers must stay in this transaction.
     work.__dict__ = {name: value.copy() if isinstance(value, (list, dict)) else value
@@ -256,13 +267,13 @@ def _stage(previous, resp, pair, sources, *, force=False, initial=False, birth_s
     if work.offline_representer_selection == 'sorted':
         preferred.fill_(-1)
     if birth_seed is not None:
-        preferred[-1] = birth_seed
+        preferred[-1 if birth_slot is None else birth_slot] = birth_seed
     scores = work.weight_mean(work.q_last, work.snr_last)
     slots = torch.arange(work.M, device=resp.device)
-    birth_source = work.M - 1 if birth_seed is not None else None
+    birth_source = (work.M-1 if birth_slot is None else birth_slot) if birth_seed is not None else None
     try:
         work.f_ind_old = legacy._fixed_representers(
-            resp, scores, preferred, slots, birth_source=birth_source)
+            ownership, scores, preferred, slots, birth_source=birth_source)
     except RuntimeError as error:
         if str(error) != 'No distinct representative remains for this cluster':
             raise
@@ -270,12 +281,12 @@ def _stage(previous, resp, pair, sources, *, force=False, initial=False, birth_s
         # then reserve a later singleton's only member. Repair only this failed
         # selection: retain owned seeds, and reselect stale ones from disjoint
         # MAP groups. Every occupied group consequently has an available beat.
-        owners = resp.argmax(1)
+        owners = ownership.argmax(1)
         valid = (preferred >= 0) & (preferred < len(resp))
         valid &= owners[preferred.clamp(0, len(resp) - 1)] == slots
         repaired = torch.where(valid, preferred, preferred.new_full((), -1))
         work.f_ind_old = legacy._fixed_representers(
-            resp, scores, repaired, slots, birth_source=birth_source)
+            ownership, scores, repaired, slots, birth_source=birth_source)
         if work.verbose:
             changed_references = torch.where(work.f_ind_old != preferred)[0].tolist()
             print(f'Representative collision repaired: clusters={changed_references}; '
@@ -356,13 +367,17 @@ def _refine(state, steps):
         start = (state.hdp.expected_log_start(state.M, state.startTheta) if state.hmm_switch
                  else state.hdp.expected_log_iid_weights(state.M))
         state.fmsg = None  # full batch, never the online tail-message cache
-        alpha, beta, scales = assignment_messages(state, start, state.trans_A, evidence)
-        resp = state._safe_exp(torch.log(alpha) + torch.log(beta))
-        if state.hard_assignments:
-            pair = resp.new_zeros((state.T, state.M, state.M))
-            pair[1:] = resp[:-1, :, None] * resp[1:, None, :]
+        if _topology.enabled(state):
+            resp, pair, _ = _ordered_messages.marginals(start, state.trans_A, evidence,
+                                               hard=state.hard_assignments)
         else:
-            pair = state._safe_exp(state.coupled_state_coef(alpha, beta, state.trans_A, evidence, scales))
+            alpha, beta, scales = assignment_messages(state, start, state.trans_A, evidence)
+            resp = state._safe_exp(torch.log(alpha) + torch.log(beta))
+            if state.hard_assignments:
+                pair = resp.new_zeros((state.T, state.M, state.M))
+                pair[1:] = resp[:-1, :, None] * resp[1:, None, :]
+            else:
+                pair = state._safe_exp(state.coupled_state_coef(alpha, beta, state.trans_A, evidence, scales))
         candidate = _stage(state, resp, pair, range(state.M), force=state.lds_update == 'conjugate_batch')
         if candidate is None:
             break
@@ -380,6 +395,10 @@ def _refine(state, steps):
 
 def _moves(state, features, split_features=None):
     """Rank cheap group splits and close-cluster merges; never fit here."""
+    if _topology.enabled(state):
+        from ._ordered_moves import moves
+        yield from moves(state, features if split_features is None else split_features)
+        return
     resp, pair, count = state.resp_last, state.respPair_last, state.M
     budget = state.n_explore_steps
     if budget == 0:
@@ -520,6 +539,9 @@ def _moves(state, features, split_features=None):
 def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     """Separate offline optimizer; preserve the public state/score/plot layouts."""
     state = copy(self)
+    ordered = _topology.enabled(state)
+    if ordered and getattr(self, '_birth_diagnostic_limit', 0):
+        raise ValueError('Birth-warp diagnostics do not yet support inserted ordered stages')
     state.__dict__ = self.__dict__.copy()
     state.warp = state.alignment.enabled(warp)
     if state.reduce_outputs:
@@ -553,13 +575,13 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     features = (features - features.mean(0)) / features.std(0, unbiased=False).clamp_min(1e-8)
     split_features = _proposal_features(state)
     history, iteration, stable_iterations = [], 0, 0
-    visited = {_partition_key(state.resp_last): 0}
+    visited = {_partition_key(state.resp_last, state.respPair_last if ordered else None): 0}
     while True:
         baseline = _refine(state, state.split_merge_refine_steps)
-        visited.setdefault(_partition_key(baseline.resp_last), iteration)
+        visited.setdefault(_partition_key(baseline.resp_last, baseline.respPair_last if ordered else None), iteration)
         best, chosen, chosen_record = baseline, None, None
         for description, resp, pair, sources in _moves(baseline, features, split_features):
-            previous_iteration = visited.get(_partition_key(resp))
+            previous_iteration = visited.get(_partition_key(resp, pair if ordered else None))
             if previous_iteration is not None:
                 history.append(dict(description, iteration=iteration + 1, accepted=False,
                                     reason='partition cycle before refit',
@@ -570,7 +592,8 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                 continue
             record = None
             try:
-                proposal = _stage(baseline, resp, pair, sources, birth_seed=description.get('seed'))
+                proposal = _stage(baseline, resp, pair, sources, birth_seed=description.get('seed'),
+                                  birth_slot=description.get('birth_slot'))
                 if proposal is None:
                     history.append(dict(description, iteration=iteration + 1, accepted=False,
                                         reason='proposal has an empty MAP component'))
@@ -587,7 +610,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                          baseline_elbo=float(baseline.elbo_last), proposal_elbo=float(proposal.elbo_last),
                          baseline_parts=baseline._split_merge_parts, proposal_parts=proposal._split_merge_parts)
             history.append(trace)
-            previous_iteration = visited.get(_partition_key(proposal.resp_last))
+            previous_iteration = visited.get(_partition_key(proposal.resp_last, proposal.respPair_last if ordered else None))
             if previous_iteration is not None:
                 trace.update(reason='partition cycle after refinement',
                              previous_iteration=previous_iteration)
@@ -595,7 +618,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                     print(f'Split/merge rejected {description}: partition already retained '
                           f'at iteration {previous_iteration} (after refinement)', flush=True)
                 continue
-            if description['kind'] == 'split':
+            if description['kind'] == 'split' and not ordered:
                 diagnostic = copy(baseline)
                 diagnostic._birth_diagnostics = records
                 diagnostic._birth_iteration = iteration + 1
@@ -625,16 +648,18 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
             if chosen_record is not None:
                 chosen_record['accepted'] = True
         iteration += 1
-        visited.setdefault(_partition_key(best.resp_last), iteration)
+        visited.setdefault(_partition_key(best.resp_last, best.respPair_last if ordered else None), iteration)
         best.train_elbo = state.train_elbo + [best.elbo_last.detach().clone()]
-        best.resp_assigned = state.resp_assigned + [best.resp_last.argmax(1)]
+        labels = (_ordered_messages.posterior_path(best.resp_last, best.respPair_last)
+                  if ordered else best.resp_last.argmax(1))
+        best.resp_assigned = state.resp_assigned + [labels]
         best.q = state.q + [best.q_last]
         stable_iterations, convergence = _convergence(state, best, chosen is not None, stable_iterations)
         if self.progress:
             message = ''
             if chosen:
                 message = (f'; split cluster {chosen["clusters"][0]} into '
-                           f'{chosen["clusters"][0]} and {best.M - 1}' if chosen['kind'] == 'split'
+                           f'{chosen["clusters"][0]} and {chosen.get("birth_slot", best.M - 1)}' if chosen['kind'] == 'split'
                            else f'; merged clusters {chosen["clusters"]}')
             print(f'Iteration {iteration}: responsibilities='
                   f'{[round(value, 2) for value in best.resp_last.sum(0).tolist()]}{message}', flush=True)

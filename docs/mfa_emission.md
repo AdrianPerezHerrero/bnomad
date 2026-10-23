@@ -68,6 +68,10 @@ choose `sampling='prefix'` or independent calibration data for causal use.
 - independent factors z_t ~ N(0,I), via fixed A=0 and Gamma=I;
 - cluster-learned intercept/C and diagonal Sigma.
 
+An explicit [left-to-right topology](transition_topology.md) retains its required
+HMM assignments even with independent factors. Thus ordered assignment stages
+can be combined with A=0/Gamma=I without enabling latent LDS evolution.
+
 This uses the native **dynamic LDS machinery with fixed zero A**, rather than
 the older `model_type='static'` preset (which means zero process noise and is a
 different model). Neither observation order nor the last assigned waveform

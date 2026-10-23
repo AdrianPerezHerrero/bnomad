@@ -21,6 +21,7 @@
 - [Fixed real windowed Fourier observation](fourier_observation.md)
 - [Fixed orthonormal Haar wavelet observation](wavelet_observation.md)
 - [HDP presets and gamma/transAlpha sensitivity](hdp_presets.md)
+- [Ordered transition topology and constrained segmentation](transition_topology.md)
 - [Offline convergence and reallocation](offline_convergence.md)
 - [Optional offline split–merge inference](offline_split_merge.md)
 - [Alignment choices and computational tradeoffs](alignment_choices.md)

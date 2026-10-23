@@ -13,6 +13,7 @@ from ._optimizer import find_optimum_multiple_tries, kvec
 from ._entropy import state_entropy_terms, pair_entropy_terms
 from ._iid import (update_iid_weights, expected_log_iid_weights,
                    iid_linear_elbo)
+from . import _topology
 
 
 class HDPVariational:
@@ -89,6 +90,8 @@ class HDPVariational:
         self.rho = self.create_initrho(M)
         self.omega = (1.0 + self.gamma) * self.cond_cuda(torch.ones(M))
         transStateCount = self.cond_cuda(torch.ones((M, M)))  # Cause we are on initial moment
+        if _topology.enabled(self._state):
+            transStateCount.zero_()
         startStateCount = self.cond_cuda(torch.ones(M))  # Cause we are on initial moment
         self.transTheta, self.startTheta = self._calcThetaFull(transStateCount, startStateCount, M + 1)
         if not self._state.hmm_switch:
@@ -123,6 +126,8 @@ class HDPVariational:
 
 
     def create_initrho(self, M):
+        if _topology.enabled(self._state):
+            return torch.full((M,), 1./(1.+self.gamma), dtype=torch.float64, device=self.device)
         remMass = np.minimum(0.1, 1.0 / (M * M))
         delta = (-1 + remMass) * np.arange(0, M, 1, dtype=np.float64)
         rho = (1 - remMass) / (M + delta)
@@ -130,6 +135,8 @@ class HDPVariational:
 
 
     def _calcThetaPost(self, transStateCount, startStateCount, M, rho):
+        if _topology.enabled(self._state):
+            return _topology.posterior_matrices(self._state, transStateCount, rho)
         transStateCount_ = transStateCount
         Ebeta = self.rho2beta(self.cond_cpu(rho), returnSize='K+1')
         alphaEbeta = self.transAlpha * Ebeta
@@ -148,6 +155,10 @@ class HDPVariational:
 
 
     def _calcThetaFull(self, transStateCount, startStateCount, M=None, rho=None, kappa=None):
+        if _topology.enabled(self._state):
+            if kappa is not None and kappa != self.kappa:
+                raise ValueError('Ordered transition updates must use the configured sticky prior')
+            return _topology.posterior_matrices(self._state, transStateCount, rho)
         transStateCount_ = transStateCount
         if M is None:
             M = self.M + 1
@@ -212,6 +223,10 @@ class HDPVariational:
     def elbo_Linears(self, resp, respPair, post=False, one_sample=False):
         """ Compute ELBO for linear terms. HDP.
         """
+        if _topology.enabled(self._state):
+            if float(resp[0, 0]) < 1.-1e-8:
+                return -np.inf
+            return _topology.linear_terms(self._state, self.transition_counts(respPair))
         startStateCount = resp[0]
         transStateCount = self.transition_counts(respPair)
         M = resp.shape[1]
@@ -259,6 +274,8 @@ class HDPVariational:
     def refill_resp(self, resp, respPair=None, occupied=None):
         """ Refill HDP parameters if a model is reasignated.
         """
+        if _topology.enabled(self._state):
+            raise ValueError('Ordered stages must be removed by adjacent merges, not slot swapping')
         resp_per_group = torch.sum(resp, axis=0)
         if occupied is None:
             occupied = resp_per_group >= 1.0
@@ -292,6 +309,10 @@ class HDPVariational:
                              transStateCount):
         """ Method to compute HPD linear terms.
         """
+        if _topology.enabled(self._state):
+            if (alpha, kappa, gamma) != (self.transAlpha, self.kappa, self.gamma):
+                raise ValueError('Ordered ELBO must use the configured transition prior')
+            return _topology.linear_terms(self._state, transStateCount, rho, omega, transTheta)
         transStateCount_ = transStateCount
         Ltop = self.L_top(rho=rho, omega=omega, alpha=alpha, startAlpha=startAlpha, kappa=kappa, gamma=gamma)
         LdiffcDir = - self.c_Dir(transTheta) - self.c_Dir(startTheta)
@@ -343,6 +364,9 @@ class HDPVariational:
 
 
     def L_top(self, rho, omega, alpha, startAlpha, kappa, gamma):
+        if _topology.enabled(self._state):
+            a, b = _topology.shapes(rho, omega)
+            return -_topology._beta_kl(a, b, gamma)
         K = rho.size
         eta1 = rho * omega
         eta0 = (1 - rho) * omega
@@ -381,6 +405,10 @@ class HDPVariational:
         c : scalar real
         '''
         AMat = np.asarray(AMat)
+        if _topology.enabled(getattr(self, '_state', None)) and arem is None:
+            rows = AMat[None] if AMat.ndim == 1 else AMat
+            return sum(gammaln(row[row > 0].sum())-gammaln(row[row > 0]).sum()
+                       for row in rows)
         D = AMat.shape[0]
         if arem is None:
             if AMat.ndim == 1:
@@ -407,6 +435,11 @@ class HDPVariational:
                 Info : dict of information about optimization.
                 '''
 
+        if _topology.enabled(self._state):
+            rho, omega, info = _topology.optimize_sticks(
+                self._state, self.transTheta if transTheta is None else transTheta)
+            self.OptimizerInfo = info
+            return rho, omega
         # Calculate expected log transition probability
         # using theta vectors for all K states plus initial state
         if startTheta is None:
@@ -474,6 +507,8 @@ class HDPVariational:
 
 
     def compute_trans_A(self, M):
+        if _topology.enabled(self._state):
+            return _topology.expected_logs(self.transTheta, M)
         digammaSumTransTheta = digamma(torch.sum(self.cond_cpu(self.transTheta[:M, :M + 1]), axis=1))
         transPi = digamma(self.cond_cpu(self.transTheta[:M, :M])) - digammaSumTransTheta[:, None]
         if transPi.shape[0] == M:
@@ -494,11 +529,15 @@ class HDPVariational:
 
 
     def expected_log_transitions(self, M, transTheta):
+        if _topology.enabled(self._state):
+            return _topology.expected_logs(transTheta, M)
         digammaSumTransTheta = digamma(torch.sum(self.cond_cpu(transTheta[:M, :M + 1]), axis=1))
         transPi = digamma(self.cond_cpu(transTheta[:M, :M])) - digammaSumTransTheta[:, None]
         return transPi
 
     def expected_log_start(self, M, startTheta):
+        if _topology.enabled(self._state):
+            return _topology.start_logs(startTheta, M)
         startPi = digamma(self.cond_cpu(startTheta[:M])) - digamma(torch.sum(self.cond_cpu(startTheta[:M + 1])))
         return startPi
 
