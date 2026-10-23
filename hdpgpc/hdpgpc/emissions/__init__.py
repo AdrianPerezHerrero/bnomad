@@ -2,6 +2,7 @@
 __all__ = (
     'EmissionModel', 'GaussianProcessEmission',
     'FixedObservationModel', 'AffineGaussianObservation',
+    'FactorAnalysisEmission', 'estimate_mfa_observation',
     'PCAObservationEstimate', 'estimate_pca_observation',
     'SFAObservationEstimate', 'estimate_sfa_observation',
     'LinearPredictionObservationEstimate', 'estimate_linear_prediction_observation',
@@ -11,6 +12,9 @@ __all__ = (
 )
 
 def __getattr__(name):
+    if name in ('FactorAnalysisEmission', 'estimate_mfa_observation'):
+        from . import _factor_analysis
+        return getattr(_factor_analysis, name)
     if name in ('LinearPredictionObservationEstimate', 'estimate_linear_prediction_observation'):
         from . import _linear_prediction
         return getattr(_linear_prediction, name)

@@ -12,9 +12,10 @@ def compatible(emission):
     policies = getattr(emission, 'lds_pair_policies', None)
     return (emission.lds_update == 'conjugate_batch' and emission.lds_scoring == 'final'
             and not emission.fit_gp
-            and type(getattr(emission, 'fixed_observation_model', None)) is AffineGaussianObservation
+            and isinstance(getattr(emission, 'fixed_observation_model', None), AffineGaussianObservation)
             and policies is not None and policies['transition'][0].mode == 'fixed'
-            and policies['observation'][0].mode == 'fixed'
+            and (policies['observation'][0].mode == 'fixed'
+                 or getattr(emission, 'factor_analysis', False))
             and not emission.A[-1].requires_grad
             and torch.count_nonzero(emission.A[-1]).item() == 0
             and torch.count_nonzero(emission.Gamma[-1]).item() > 0)
@@ -32,6 +33,10 @@ def full_pass(emission, grids, observations, resp, active):
     model = emission.fixed_observation_model
     values = observations[active]
     weights = resp[active]
+    if getattr(emission, 'factor_analysis', False):
+        # q(z|component,y) is conditional on the component; assignment weights
+        # weight its sufficient statistics, not its conditional likelihood.
+        weights = torch.ones_like(weights)
     zero = torch.zeros_like(emission.f_star_sm[0])
     initial = emission.cov_f_sm[0]
     gamma, sigma = emission.Gamma[-1], emission.Sigma[-1]

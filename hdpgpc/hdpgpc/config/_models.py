@@ -26,9 +26,11 @@ class HDPConfig:
     (inactive without HMM); their independent mixture gammas are 0.1 and 1.
     more_extra_sticky uses more concentrations with kappa=100, also inactive
     without HMM, where its mixture gamma remains 1.
+    less_extra_sticky uses less concentrations with kappa=100; its independent
+    mixture gamma remains 0.001.
     """
     M: int | None = None
-    hdp_hyp: Literal['less', 'balanced', 'balanced_sticky', 'more', 'more_sticky',
+    hdp_hyp: Literal['less', 'less_extra_sticky', 'balanced', 'balanced_sticky', 'more', 'more_sticky',
                      'more_extra_sticky', 'max'] = 'balanced'
     hmm_switch: bool = True
     max_models: int | None = None
@@ -76,7 +78,8 @@ class ObservationConfig:
     uses a rectangular fixed C and a separate waveform grid; Sigma can remain
     fixed or use one of the learned noise policies. A direct fixed affine
     decoder uses the generic `fixed_*` fields; the older `pca_*` fields remain
-    readable for existing recipes.
+    readable for existing recipes. ``family='factor_analysis'`` uses the same
+    affine grids but learns the intercept, rectangular C and diagonal Sigma.
     """
     scope: Literal['cluster', 'shared', 'fixed'] = 'cluster'
     C: ndarray | None = None
@@ -92,6 +95,10 @@ class ObservationConfig:
     fixed_grid: ndarray | None = None
     fixed_offset: ndarray | None = None
     fixed_latent_covariance: ndarray | None = None
+    # Factor analysis learns the affine decoder rather than freezing it.
+    family: Literal['linear', 'factor_analysis'] = 'linear'
+    factor_mean_precision: float = 1.0
+    factor_loading_precision: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -240,6 +247,7 @@ NON_CONSTRUCTOR = {'alignment': {'policy', 'flow_inducing', 'flow_features',
                    'inference': {'schedule', 'warp', 'force_model', 'minibatch', 'classify', 'it_limit'},
                    'numerics': {'seed', 'num_threads', 'dtype', 'deterministic'},
                    'observation': {'C_policy', 'Sigma_policy',
+                                   'family', 'factor_mean_precision', 'factor_loading_precision',
                                    'pca_grid', 'pca_mean', 'pca_variances',
                                    'fixed_grid', 'fixed_offset', 'fixed_latent_covariance'},
                    'dynamics': {'A_policy', 'Gamma_policy'}}

@@ -9,21 +9,21 @@ from time import perf_counter
 import numpy as np
 
 from .. import HDPGPC
-from ..config import MatrixPolicyConfig, NoisePolicyConfig
+from ..config import MatrixPolicyConfig, NoisePolicyConfig, with_mfa_emission
 from ..datasets.cas_colon import cas_colon_annotations, load_cas_colon_frames
 from ..diagnostics import (model_latent_trajectories, plot_latent_trajectories,
                            plot_image_clustering_summary)
 from ..emissions import (AffineGaussianObservation, estimate_pca_observation,
                          estimate_autoencoder_observation, estimate_sfa_observation,
-                         estimate_linear_prediction_observation)
+                         estimate_linear_prediction_observation, estimate_mfa_observation)
 from . import records
 from ._arguments import validate_common, validate_affine
 from ._runs import ExperimentRun, experiment_settings, save_results, append_summary, log_configuration
 
 
 def build_parser(description=None, defaults=None, *, representation='pca'):
-    if representation not in ('pca', 'autoencoder', 'sfa', 'linear_prediction'):
-        raise ValueError('CAS-Colon supports pca, autoencoder, sfa or linear_prediction representations')
+    if representation not in ('pca', 'autoencoder', 'sfa', 'linear_prediction', 'mfa'):
+        raise ValueError('Unknown CAS-Colon observation representation')
     selected = dict(records=['1'], components=10, calibration_samples=400,
                     sigma_prior=1., gamma_prior=.01, sigma_mode='fixed',
                     offline_strategy='split_merge', split_merge_refine_steps=1,
@@ -32,6 +32,8 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
                     lds_dynamics_plots=False)
     if representation in ('autoencoder', 'linear_prediction'):
         selected['epochs'] = 250
+    if representation == 'mfa':
+        selected.update(sigma_mode='cluster_diagonal', hard_assignments=False)
     selected.update(defaults or {})
     parser = records.build_parser('cas_colon', representation, description, selected)
     parser.set_defaults(data_dir=(defaults or {}).get(
@@ -45,7 +47,12 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
     parser.add_argument('--frames-per-cluster', type=int, default=10,
                         help='Maximum randomly sampled gallery frames per cluster (default: 10; uses --seed).')
     parser.add_argument('--trajectory-plots', action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument('--hmm-switch', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--hmm-switch', action=argparse.BooleanOptionalAction, default=representation != 'mfa')
+    if representation == 'mfa':
+        parser.add_argument('--dynamic', action=argparse.BooleanOptionalAction, default=False,
+                            help='Learn factor LDS A/Gamma; otherwise independent N(0,I) factors.')
+        parser.add_argument('--mean-precision', type=float, default=1.)
+        parser.add_argument('--loading-precision', type=float, default=1.)
     if representation == 'sfa':
         parser.add_argument('--sfa-lag', type=int, default=1,
                             help='Temporal lag in selected frame steps; pairs never cross segment boundaries.')
@@ -79,6 +86,11 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
 def make_config(grid, args, decoder):
     """Reuse the record affine recipe, with optional independence controls."""
     config = records.make_config(grid, args, decoder=decoder)
+    if args.representation == 'mfa':
+        config = replace(config, hdp=replace(config.hdp, hmm_switch=args.hmm_switch))
+        initialization = replace(decoder, Sigma=config.observation.Sigma_policy.value)
+        return with_mfa_emission(config, initialization, dynamic=args.dynamic,
+            mean_precision=args.mean_precision, loading_precision=args.loading_precision)
     dynamics = config.dynamics
     if args.a_mode == 'fixed':
         dynamics = replace(dynamics, A_policy=MatrixPolicyConfig(
@@ -96,8 +108,15 @@ def _validate(args):
     validate_affine(args)
     if args.schedule != 'offline':
         raise ValueError('CAS-Colon trajectory reports currently require offline inference')
-    if args.representation not in ('pca', 'autoencoder', 'sfa', 'linear_prediction'):
-        raise ValueError('CAS-Colon supports pca, autoencoder, sfa or linear_prediction representations')
+    if args.representation not in ('pca', 'autoencoder', 'sfa', 'linear_prediction', 'mfa'):
+        raise ValueError('Unknown CAS-Colon observation representation')
+    if args.representation == 'mfa':
+        if args.sigma_mode != 'cluster_diagonal' or args.c_mode not in (None, 'cluster'):
+            raise ValueError('MFA learns cluster C and cluster_diagonal Sigma')
+        if args.a_mode is not None or args.gamma_mode is not None:
+            raise ValueError('Use --dynamic to learn MFA A/Gamma, or --no-dynamic for A=0/Gamma=I')
+        if args.hmm_switch and not args.dynamic:
+            raise ValueError('Static MFA uses independent assignments; use --dynamic --hmm-switch for HMM factors')
     if args.representation == 'linear_prediction' and (
             args.prediction_lag < 1 or args.prediction_whitening_components < args.components
             or not np.isfinite(args.prediction_rank_tolerance) or not 0 < args.prediction_rank_tolerance < 1
@@ -121,7 +140,8 @@ def _validate(args):
         raise ValueError('Image, calibration and prior controls must be finite and positive')
     if (args.normalize_samples or args.scaling != 'none' or args.unit_grid or args.max_points is not None
             or args.lds_inducing_points or args.calibrate_lds_noise_priors
-            or args.c_mode not in (None, 'fixed') or args.channels != [0] or args.channel is not None):
+            or (args.c_mode not in (None, 'cluster') if args.representation == 'mfa'
+                else args.c_mode not in (None, 'fixed')) or args.channels != [0] or args.channel is not None):
         raise ValueError('Use grayscale [0,1] frames, --image-size/--crop, fixed affine C and no extra inducing grid; '
                          'waveform/grid scaling, channels, --max-points and waveform noise calibration do not apply')
     if args.birth_plots:
@@ -138,7 +158,19 @@ def run_sequence(sequence, args, run, *, segment):
     sampling = args.calibration_sampling or 'uniform'
     calibration_start = perf_counter()
     calibration_encoder = None
-    if args.representation == 'linear_prediction':
+    if args.representation == 'mfa':
+        decoder = estimate_mfa_observation(values, grid, components=dimension,
+            max_samples=args.calibration_samples, sampling=sampling,
+            random_state=args.seed, noise_floor=args.noise_floor)
+        indices = (np.arange(min(len(values), args.calibration_samples)) if sampling == 'prefix'
+            else np.sort(np.random.default_rng(args.seed).choice(len(values),
+                size=min(len(values), args.calibration_samples), replace=False)))
+        representation_name = 'Learned affine MFA'
+        calibration_metadata = dict(initialization='spectral', dynamic=args.dynamic,
+            decoder_is_fixed=False, factor_coordinates_are_cluster_local=True)
+        codes = (values[:, :, 0]-decoder.offset) @ np.linalg.pinv(decoder.C).T
+        calibration_description = 'spectral prior initialization; cluster means/loadings/diagonal noise are learned'
+    elif args.representation == 'linear_prediction':
         estimate = estimate_linear_prediction_observation(values, grid, components=dimension,
             max_samples=args.calibration_samples, epochs=args.epochs, learning_rate=args.learning_rate,
             prediction_weight=args.prediction_weight, prediction_ridge=args.prediction_ridge,
@@ -233,7 +265,24 @@ def run_sequence(sequence, args, run, *, segment):
         print(f'CAS-Colon video {sequence.video}, segment {segment}: {len(values)} ordered frames, '
               f'image={tuple(args.image_size)}, {representation_name}={dimension}, {calibration_description}')
     log_configuration(config, args, source=f'frame calibration (Sigma multiplier={args.sigma_prior:g})')
+    if args.representation == 'mfa' and args.verbose != 'silent':
+        print(f'MFA affine row prior: mean precision={args.mean_precision:g}; '
+              f'loading precision={args.loading_precision:g}; diagonal noise learned per cluster; '
+              f'factors={"native LDS" if args.dynamic else "independent N(0,I)"}')
     model = HDPGPC(config).fit(values, grid=grid)
+    if args.representation == 'mfa':
+        # The usual LDS artifact keeps A/C/Gamma/Sigma; also retain learned
+        # intercepts and joint conjugate posterior parameters for MFA analysis.
+        np.savez_compressed(run.path / 'mfa_posteriors.npz', **{
+            f'cluster_{cluster}_{name}': value.detach().cpu().numpy()
+                if hasattr(value, 'detach') else np.asarray(value)
+            for cluster, gp in enumerate(model._backend.gpmodels[0])
+            for name, value in dict(
+                offset=gp.fixed_observation_model.offset,
+                joint_mean=gp.observation_params.m_mean,
+                column_precision=gp.observation_params.m_r_cov,
+                noise_scale=gp.observation_params.scale,
+                degrees=gp.observation_params.n0).items()})
     trajectories = model_latent_trajectories(model)
     np.savez_compressed(run.path / 'latent_trajectories.npz', times=sequence.seconds,
         **{f'cluster_{cluster}_{name}': array for cluster, path in trajectories.items()

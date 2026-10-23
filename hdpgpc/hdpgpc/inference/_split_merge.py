@@ -62,6 +62,10 @@ def _proposal_features(state):
     outputs = []
     for output, models in enumerate(state.gpmodels):
         model = getattr(models[0], 'fixed_observation_model', None)
+        if getattr(models[0], 'factor_analysis', False):
+            # Ranking coordinates must not drift with one cluster's learned
+            # loading/noise; retain the common affine initialization here.
+            model = state.fixed_observation_model
         data = values[:, :, output]
         if isinstance(model, AffineGaussianObservation):
             decoder = torch.tensor(model.C.copy(), dtype=data.dtype, device=data.device)

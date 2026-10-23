@@ -27,7 +27,14 @@ def keep_last_all(self):
     """
     for ld in range(self.n_outputs):
         for gp in self.gpmodels[ld]:
-            gp.reinit_LDS(save_last=True)
+            if getattr(gp, 'factor_analysis', False):
+                # Compaction is not a new parameter prior or a new M-step.
+                # Retain the learned intercept/loading/noise posterior for
+                # native serialization and continued online inference.
+                for name in ('A', 'Gamma', 'C', 'Sigma', 'var', 'y_var'):
+                    setattr(gp, name, [getattr(gp, name)[-1]])
+            else:
+                gp.reinit_LDS(save_last=True)
             gp.reinit_GP(save_last=True, save_index=True)
 
 
@@ -348,6 +355,9 @@ def gpmodel_deepcopy(self, gpmodel):
     gp_.internal_params = deepcopy(gpmodel.internal_params)
     gp_.observation_params = deepcopy(gpmodel.observation_params)
     gp_.lds_pair_policies = getattr(gpmodel, 'lds_pair_policies', None)
+    for name in ('factor_analysis', 'factor_mean_precision', 'factor_loading_precision'):
+        if hasattr(gpmodel, name):
+            setattr(gp_, name, getattr(gpmodel, name))
     if getattr(gpmodel, 'direct_observation_offset', None) is not None:
         gp_.direct_observation_grid = gpmodel.direct_observation_grid
         gp_.direct_observation_offset = gpmodel.direct_observation_offset

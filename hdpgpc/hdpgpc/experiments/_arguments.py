@@ -20,7 +20,7 @@ def add_common_arguments(parser, *, defaults=None, ordered=False):
     parser.add_argument('--iterations', type=int, default=30)
     parser.add_argument('--max-clusters', type=int, default=30)
     parser.add_argument('--hdp-preset', choices=(
-        'less', 'balanced', 'balanced_sticky', 'more', 'more_sticky',
+        'less', 'less_extra_sticky', 'balanced', 'balanced_sticky', 'more', 'more_sticky',
         'more_extra_sticky', 'max'), default='max')
     parser.add_argument('--lds-degrees', '--lds-degrees-of-freedom', type=int, default=10)
     parser.add_argument('--lds-update', choices=('conjugate_batch', 'conjugate_sequential',

@@ -54,12 +54,12 @@ class HDPVariational:
         """
 
         # HDP Hyperparams
-        if hdp_hyp == 'less':
+        if hdp_hyp in ('less', 'less_extra_sticky'):
             # Less clusters scheme
             self.gamma = 1e+03
             self.transAlpha = 1e+03
             self.startAlpha = 1e+00
-            self.kappa = 0.0
+            self.kappa = 100.0 if hdp_hyp == 'less_extra_sticky' else 0.0
         elif hdp_hyp in ('balanced', 'balanced_sticky'):
             #Balanced scheme
             self.gamma = 1e+03
@@ -79,7 +79,8 @@ class HDPVariational:
             self.kappa = 0.0
 
         if not self._state.hmm_switch:
-            self.gamma = {'less': 0.001, 'balanced': 0.1, 'balanced_sticky': 0.1,
+            self.gamma = {'less': 0.001, 'less_extra_sticky': 0.001,
+                          'balanced': 0.1, 'balanced_sticky': 0.1,
                           'more': 1.0, 'more_sticky': 1.0, 'more_extra_sticky': 1.0,
                           'max': 100.0}[hdp_hyp]
 

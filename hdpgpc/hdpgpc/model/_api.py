@@ -220,6 +220,12 @@ class HDPGPC:
         self._require_fitted()
         backend = self._backend
         if backend.observation_scope == 'cluster':
+            if getattr(backend, 'factor_analysis', False):
+                return {'scope': 'cluster', 'family': 'factor_analysis', 'outputs': tuple(
+                    tuple({'C': _snapshot(gp.C[-1]), 'Sigma': _snapshot(gp.Sigma[-1]),
+                           'offset': _snapshot(gp.fixed_observation_model.offset),
+                           'posterior': gp.fixed_observation_model.state_dict()}
+                          for gp in output) for output in backend.gpmodels)}
             return {'scope': 'cluster', 'outputs': tuple(
                 tuple({'C': _snapshot(gp.C[-1]), 'Sigma': _snapshot(gp.Sigma[-1])}
                       for gp in output) for output in backend.gpmodels)}

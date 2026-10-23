@@ -251,6 +251,8 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
             raise ValueError(f'Image gallery requires a fixed affine observation model for cluster {cluster}')
         direct_grid = getattr(gp, 'direct_observation_grid', None)
         direct_offset = getattr(gp, 'direct_observation_offset', None)
+        if getattr(gp, 'factor_analysis', False):
+            direct_offset = decoder.offset
         if (direct_grid is None or direct_offset is None
                 or not np.array_equal(_array(gp.C[-1]), decoder.C)
                 or not np.array_equal(_array(direct_grid), decoder.grid)

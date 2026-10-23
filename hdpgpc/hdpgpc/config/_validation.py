@@ -68,6 +68,13 @@ def validate(c, *, for_build=False):
     if (obs.C_policy is not None or obs.Sigma_policy is not None) and (obs.C is not None or obs.Sigma is not None):
         raise ValueError('Custom C/Sigma values belong in their independent policies')
     policies = resolved_lds_policies(c)
+    if obs.family not in ('linear', 'factor_analysis'):
+        raise ValueError('Unknown observation family')
+    factor_analysis = obs.family == 'factor_analysis'
+    for name in ('factor_mean_precision', 'factor_loading_precision'):
+        value = getattr(obs, name)
+        if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value) or value <= 0:
+            raise ValueError(name + ' must be finite and positive')
     pca_fields = (obs.pca_grid, obs.pca_mean, obs.pca_variances)
     fixed_fields = (obs.fixed_grid, obs.fixed_offset, obs.fixed_latent_covariance)
     if any(value is not None for value in pca_fields) and any(
@@ -75,6 +82,8 @@ def validate(c, *, for_build=False):
         raise ValueError('Use either legacy PCA fields or fixed observation fields')
     pca_observation = any(value is not None for value in pca_fields + fixed_fields)
     direct_observation_dimension = None
+    if factor_analysis and not pca_observation:
+        raise ValueError('Factor analysis requires an affine feature grid and initialization; use with_mfa_emission')
     if pca_observation:
         direct_fields = fixed_fields if any(value is not None for value in fixed_fields) else pca_fields
         if any(value is None for value in direct_fields):
@@ -99,14 +108,18 @@ def validate(c, *, for_build=False):
                 or not all(np.isfinite(value).all() for value in
                            (grid, mean, variances, decoder, noise))):
             raise ValueError('Fixed observation dimensions/values must match the waveform and latent grids')
-        if (policies['C'].mode != 'fixed' or policies['Sigma'].mode not in (
+        if factor_analysis and (policies['C'].mode != 'cluster'
+                or policies['Sigma'].mode != 'cluster_diagonal'
+                or d.lds_scoring != 'final' or d.lds_update == 'legacy'):
+            raise ValueError('Factor analysis requires cluster C, cluster_diagonal Sigma, final scoring and a conjugate/natural-gradient LDS update')
+        if ((policies['C'].mode != 'fixed' and not factor_analysis) or policies['Sigma'].mode not in (
                     'fixed', 'cluster', 'cluster_diagonal', 'shared', 'shared_diagonal')
                 or (policies['A'].mode, policies['Gamma'].mode) not in (
                     ('cluster', 'cluster'), ('fixed', 'cluster'),
                     ('fixed', 'fixed'))
                 or d.model_type != 'dynamic' or o.n_outputs != 1 or i.warp or n.cuda
                  or e.fit_gp or not e.inducing_points or i.reestimate_initial_params):
-            raise ValueError('Fixed affine observation requires fixed C, supported Sigma policy, cluster A/Gamma or fixed A with cluster/fixed Gamma, one output, '
+            raise ValueError('Affine observation requires a supported C/Sigma family, cluster A/Gamma or fixed A with cluster/fixed Gamma, one output, '
                              'fixed GP kernel, inducing mode, CPU and no warp/recalibration')
     for name in ('A', 'C'):
         policy = policies[name]
@@ -185,9 +198,9 @@ def validate(c, *, for_build=False):
     integer(h.max_models, 'max_models', 1, optional=True)
     if h.max_models is not None and h.max_models < M:
         raise ValueError('max_models cannot be smaller than initial M')
-    if h.hdp_hyp not in ('less', 'balanced', 'balanced_sticky', 'more', 'more_sticky',
+    if h.hdp_hyp not in ('less', 'less_extra_sticky', 'balanced', 'balanced_sticky', 'more', 'more_sticky',
                          'more_extra_sticky', 'max'):
-        raise ValueError('hdp_hyp must be less, balanced, balanced_sticky, more, more_sticky, more_extra_sticky or max')
+        raise ValueError('hdp_hyp must be less, less_extra_sticky, balanced, balanced_sticky, more, more_sticky, more_extra_sticky or max')
     integer(o.n_outputs, 'n_outputs', 1)
     if (obs.scope != 'cluster' or any(p.mode.startswith('shared') for p in policies.values())) and o.n_outputs != 1:
         raise ValueError('shared/fixed observation parameters currently require one output')

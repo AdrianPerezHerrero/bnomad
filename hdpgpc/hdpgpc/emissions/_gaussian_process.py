@@ -262,6 +262,9 @@ class GaussianProcessEmission:
                 self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
             elif pair_policies is None:
                 self.observation_params = matrix_normal_inv_wishart(ini_C, np.eye(ini_C.shape[0]), self.free_deg_MNIV, ini_Sigma)
+            if getattr(self, 'factor_analysis', False):
+                from ._factor_analysis import observation_prior
+                self.observation_params = observation_prior(self, ini_C, ini_Sigma)
         if self.lds_scoring == 'historical':
             self.lds_internal_score_history = []
             self.lds_observation_score_history = []
@@ -462,7 +465,8 @@ class GaussianProcessEmission:
             self.y_train.append(self.cond_to_torch(y))
             f_star_, cov_f_ = self.gp.posterior(self.f_star_sm[-1], self.cov_f_sm[-1], self.y_train[-1], self.A[-1],
                                                 self.Gamma[-1], self.C[-1], self.Sigma[-1], x_train=x_train,
-                                                x_warped=x_warped, embedding=embedding, h=h)
+                                                x_warped=x_warped, embedding=embedding,
+                                                h=1. if self._independent_factors() else h)
             self.f_star.append(f_star_)
             self.f_star_sm.append(f_star_)
             self.cov_f.append(cov_f_)
@@ -674,7 +678,8 @@ class GaussianProcessEmission:
                     _trajectory.hold_lds_params(self)
                 elif model_type == 'dynamic':
                     self.backwards_pair(h)
-                    self.bayesian_new_params(h)
+                    self.bayesian_new_params(h, first_observation=(
+                        getattr(self, 'factor_analysis', False) and self.N == 1))
 
         if model_type == 'dynamic':
             self.backwards()
@@ -722,8 +727,12 @@ class GaussianProcessEmission:
             # Carry the last fit into the next offline E-step, while resetting
             # the MNIW posterior to the original prior for its next batch step.
             filter_start = (self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1])
+            factor_snapshot = getattr(self, 'fixed_observation_model', None)
             result = _trajectory.reinit_LDS(self, False, save_last_diag, return_likelihood)
             self.A[0], self.Gamma[0], self.C[0], self.Sigma[0] = filter_start
+            if getattr(self, 'factor_analysis', False):
+                self.fixed_observation_model = factor_snapshot
+                self.gp.fixed_observation_model = factor_snapshot
             return result
         if self.lds_update == 'conjugate_batch':
             return _trajectory.reinit_LDS(self, False, save_last_diag, return_likelihood)
@@ -748,6 +757,18 @@ class GaussianProcessEmission:
 
         if len(self.indexes) == 0:
             return sq_err
+
+        if self._independent_factors():
+            # MFA factors are conditional on each observation/component, even
+            # for observations not currently assigned to that component.
+            if not torch.equal(x_trains, self.direct_observation_grid[None].expand_as(x_trains)):
+                raise ValueError('Factor analysis requires its configured feature grid')
+            model = self.fixed_observation_model
+            means, covariances = model.condition_batch(
+                torch.zeros_like(self.f_star_sm[0]), self.ini_cov_def, y_trains,
+                responsibilities=y_trains.new_ones(len(y_trains)))
+            self._factor_local_moments = (means, covariances)
+            return model.expected_log_likelihood_batch(y_trains, means, covariances)
 
         from ..dynamics import _independent
         if _independent.compatible(self):
@@ -852,6 +873,17 @@ class GaussianProcessEmission:
         sq_err = torch.zeros(x_trains.shape[0], device=x_trains[0].device)
         if self.N == 0:
             return sq_err
+        if self._independent_factors() and hasattr(self, '_factor_local_moments'):
+            means, covariances = self._factor_local_moments
+            if len(means) != len(x_trains):
+                raise ValueError('Factor local scores require the matching observation batch')
+            factor = self._chol_spd(self.ini_cov_def)
+            precision = torch.cholesky_inverse(factor)
+            logdet = torch.linalg.slogdet(covariances).logabsdet
+            dimension = means.shape[1]
+            return .5*(dimension + logdet - 2*factor.diag().log().sum()
+                - torch.einsum('nix,ij,njx->n', means, precision, means)
+                - torch.einsum('ij,nji->n', precision, covariances))
         if len(torch.nonzero(self.Gamma[-1]))< 1:
             return sq_err
         from ..dynamics import _independent
@@ -867,6 +899,8 @@ class GaussianProcessEmission:
         y = self.cond_to_torch(y)
         x_train = self.cond_to_torch(x_train)
         if h > 0.0:
+            if self._independent_factors():
+                h = 1.
             if t is not None and len(self.indexes) > t:
                 f_star_sm_, cov_f_sm_ = self.f_star[t], self.cov_f[t]
                 A, Gamma, C, Sigma = self.get_params(t)
@@ -925,10 +959,21 @@ class GaussianProcessEmission:
         offset = getattr(self, 'direct_observation_offset', None)
         if offset is None:
             return self.gp.pred_dist(x_post, x_basis, mean, Sigma)
+        if getattr(self, 'factor_analysis', False):
+            offset = torch.as_tensor(self.fixed_observation_model.offset.copy(),
+                                     dtype=mean.dtype, device=mean.device).reshape(-1, 1)
         x_post = self.cond_to_torch(x_post).reshape(-1, 1)
         if not torch.equal(x_post, self.direct_observation_grid):
             raise ValueError('Fixed observation requires its configured waveform grid')
         return mean.reshape(-1, 1) + offset, Sigma
+
+    def _independent_factors(self):
+        policies = getattr(self, 'lds_pair_policies', None)
+        return (getattr(self, 'factor_analysis', False) and policies is not None
+                and policies['transition'][0].mode == 'fixed'
+                and torch.count_nonzero(self.A[-1]).item() == 0
+                and policies['transition'][1].mode == 'fixed'
+                and torch.equal(self.Gamma[-1], self.ini_cov_def))
 
     def _project_process_noise(self, Gamma, C):
         if getattr(self, 'direct_observation_offset', None) is not None:
