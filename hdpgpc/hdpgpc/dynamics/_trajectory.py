@@ -51,7 +51,10 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
     if transition_policy is not None:
         self.internal_params = transition_policy.posterior
     if policy is not None:
-        self.observation_params = policy.posterior
+        if getattr(policy, 'factor_analysis', False):
+            policy.attach(self)
+        else:
+            self.observation_params = policy.posterior
     elif pair_policies is not None:
         self.observation_params = make_pair_prior(ini_C, ini_Sigma, self.free_deg_MNIV,
                                                   *pair_policies['observation'])
@@ -59,6 +62,10 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
         self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
     else:
         self.observation_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
+    if getattr(self, 'factor_analysis', False) and policy is None:
+        from ..emissions._factor_analysis import observation_prior, refresh_factor_observation
+        self.observation_params = observation_prior(self, self.C_def, self.Sigma_def)
+        refresh_factor_observation(self)
     if self.lds_scoring == 'historical':
         self.lds_internal_score_history = []
         self.lds_observation_score_history = []
@@ -90,7 +97,10 @@ def _lds_parameter_score_components(self):
     if getattr(self, 'observation_policy', None) is not None:
         return transition, transition.new_zeros(())
 
-    if pair_policies is not None:
+    if getattr(self, 'factor_analysis', False):
+        from ..emissions._factor_analysis import observation_prior
+        prior_C = observation_prior(self, self.C_def, self.Sigma_def)
+    elif pair_policies is not None:
         prior_C = make_pair_prior(self.C_def, self.Sigma_def, self.free_deg_MNIV,
                                   *pair_policies['observation'])
     elif isinstance(self.observation_params, inv_wishart):
@@ -397,7 +407,7 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
     observation_dim = prior_obs.get_mean().shape[0]
     obs_noise_cov = torch.zeros((observation_dim, observation_dim), device=device, dtype=dtype)
     obs_cross_cov = torch.zeros((observation_dim, dim), device=device, dtype=dtype)
-    obs_y, obs_f = [], []
+    obs_y, obs_f, obs_roots = [], [], []
     transition_y, transition_f = [], []
     transition_cov_y = torch.zeros_like(obs_cov)
     transition_cov_f = torch.zeros_like(obs_cov)
@@ -424,6 +434,7 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
                 raise ValueError('conjugate_batch observation dimension differs from the observation map')
             obs_y.append(root * observation)
             obs_f.append(root * mean)
+            obs_roots.append(root)
             obs_cov = obs_cov + weight * covariance
         observation_mass += weight
 
@@ -463,9 +474,11 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
             new_scale = ((prior_obs.n0 - 2) * prior_obs.scale + scatter) / (new_n0 - 2)
             new_obs = inv_wishart(new_n0, 0.5 * (new_scale + new_scale.T), C_fixed)
         else:
+            extra = ({'intercept_weights': obs_roots}
+                     if getattr(prior_obs, 'affine_intercept', False) else {})
             new_obs = prior_obs.posterior(
                 observation_mass, observations, latent_observations,
-                obs_noise_cov, obs_cov, obs_cross_cov)
+                obs_noise_cov, obs_cov, obs_cross_cov, **extra)
     new_int = prior_int
     if transition_y and getattr(self, 'transition_policy', None) is None:
         new_int = prior_int.posterior(
@@ -492,6 +505,9 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
             Sigma_new = self.Sigma_def
     self.A[-1], self.Gamma[-1] = A_new, Gamma_new
     self.C[-1], self.Sigma[-1] = C_new, Sigma_new
+    if getattr(self, 'factor_analysis', False):
+        from ..emissions._factor_analysis import refresh_factor_observation
+        refresh_factor_observation(self)
     self.var[-1] = torch.atleast_2d(torch.sqrt(torch.diag(Gamma_new).clamp_min(0))).T
     self.y_var[-1] = torch.atleast_2d(torch.sqrt(torch.diag(Sigma_new).clamp_min(0))).T
     record_lds_parameter_score(self, replace_last=True)
@@ -679,6 +695,9 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                 new_obs_dist = self.observation_params
             self.internal_params = new_int_dist
             self.observation_params = new_obs_dist
+            if getattr(self, 'factor_analysis', False):
+                from ..emissions._factor_analysis import refresh_factor_observation
+                refresh_factor_observation(self)
             if 1 < self.N or first_observation_update:
                 Gamma_ = (self.Gamma[-1] if first_observation_update else
                           _lds_scale(self, new_int_dist, final=full_data))

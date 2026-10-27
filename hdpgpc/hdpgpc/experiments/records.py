@@ -104,7 +104,8 @@ def make_config(grid, args, outputs=1, decoder=None, noise_scales=None):
         basis = grid[np.linspace(0, len(grid) - 1, args.lds_inducing_points, dtype=int)]
     config = HDPGPCConfig(
         x_basis=basis, verbose=args.verbose,
-        hdp=HDPConfig(hdp_hyp=args.hdp_preset, hmm_switch=True, max_models=args.max_clusters),
+        hdp=HDPConfig(hdp_hyp=args.hdp_preset, hmm_switch=True, max_models=args.max_clusters,
+                      transition_topology=getattr(args, 'transition_topology', 'ergodic')),
         emission=GPEmissionConfig(kernels=[ConstantKernel(args.gp_outputscale, tuple(args.gp_outputscale_bounds))
             * RBF(args.lengthscale, tuple(args.lengthscale_bounds)) + WhiteKernel(args.gp_noise, tuple(args.gp_noise_bounds))],
             fit_gp=args.fit_gp, ini_lengthscale=args.lengthscale, bound_lengthscale=tuple(args.lengthscale_bounds),

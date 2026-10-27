@@ -88,7 +88,8 @@ def make_config(grid, args, decoder=None):
               + WhiteKernel(getattr(args, 'gp_noise', .01), (1e-5, 1.)))
     config = HDPGPCConfig(
         x_basis=grid, verbose=args.verbose,
-        hdp=HDPConfig(hdp_hyp=args.hdp_preset, hmm_switch=False, max_models=args.max_clusters),
+        hdp=HDPConfig(hdp_hyp=args.hdp_preset, hmm_switch=False, max_models=args.max_clusters,
+                      transition_topology=getattr(args, 'transition_topology', 'ergodic')),
         emission=GPEmissionConfig(kernels=[kernel], fit_gp=args.fit_gp,
                                   ini_sigma=sigma, bound_sigma=(1e-8, 1e8)),
         dynamics=DynamicsConfig(

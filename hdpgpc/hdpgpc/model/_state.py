@@ -75,6 +75,7 @@ class ModelState:
         n_explore_steps = options['n_explore_steps']
         self.offline_representer_selection = options['offline_representer_selection']
         self.offline_strategy = options['offline_strategy']
+        self.transition_topology = config.hdp.transition_topology
         self.split_merge_refine_steps = options['split_merge_refine_steps']
         self.split_merge_stability_patience = options['split_merge_stability_patience']
         self.split_merge_score_rtol = options['split_merge_score_rtol']
@@ -83,6 +84,9 @@ class ModelState:
         self.lds_scoring = options['lds_scoring']
         self.lds_step_size = options['lds_step_size']
         self.observation_scope = options['scope']
+        self.factor_analysis = config.observation.family == 'factor_analysis'
+        self.factor_mean_precision = config.observation.factor_mean_precision
+        self.factor_loading_precision = config.observation.factor_loading_precision
         self.observation_C_initial = options['C']
         self.observation_Sigma_initial = options['Sigma']
         self.fixed_observation_grid = (config.observation.fixed_grid if
@@ -311,7 +315,12 @@ class ModelState:
                              else template.C[0])
                 initial_Sigma = (self.observation_Sigma_initial if self.observation_Sigma_initial is not None
                                  else template.Sigma[0])
-                if self.custom_lds_policies:
+                if self.factor_analysis:
+                    from ..emissions._shared_factor_analysis import SharedFactorAnalysisPolicy
+                    policy = SharedFactorAnalysisPolicy(initial_C, initial_Sigma,
+                        self.free_deg_MNIV * self.lds_policies['Sigma'].strength,
+                        self.factor_mean_precision, self.factor_loading_precision)
+                elif self.custom_lds_policies:
                     policy = ObservationPolicy(self.observation_scope, initial_C, initial_Sigma,
                                                self.free_deg_MNIV,
                                                self.lds_policies['C'], self.lds_policies['Sigma'])
@@ -345,6 +354,9 @@ class ModelState:
     )
 
     def initialize_lds_emission(self, emission, initial):
+        emission.factor_analysis = self.factor_analysis
+        emission.factor_mean_precision = self.factor_mean_precision
+        emission.factor_loading_precision = self.factor_loading_precision
         if self.custom_lds_policies:
             emission.lds_pair_policies = {
                 'transition': (self.lds_policies['A'], self.lds_policies['Gamma']),
@@ -382,6 +394,9 @@ class ModelState:
         emission.initial_conditions(ini_mean=None, ini_cov=initial_covariance,
                                     ini_A=initial[0], ini_Gamma=initial[1],
                                     ini_C=initial[2], ini_Sigma=initial[3])
+        if self.factor_analysis:
+            from ..emissions._factor_analysis import refresh_factor_observation
+            refresh_factor_observation(emission)
 
     def update_shared_observation(self, responsibilities, *, online=False):
         if self.observation_scope == 'shared':

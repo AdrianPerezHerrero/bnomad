@@ -4,6 +4,11 @@
 `hmm_switch`. This switch concerns cluster assignments and is independent of
 the LDS matrix A.
 
+The optional [left-to-right topology](transition_topology.md) enforces ordered,
+non-repeating stages with its own reduced-simplex transition prior and ELBO.
+It requires HMM assignments and offline split/merge inference; kappa alone does
+not enforce that ordering.
+
 ## Markov assignments (`hmm_switch=True`)
 
 These are the **current HMM implementation values**:
@@ -11,6 +16,7 @@ These are the **current HMM implementation values**:
 | Preset | `gamma` | `transAlpha` | `startAlpha` | `kappa` |
 | --- | ---: | ---: | ---: | ---: |
 | `less` | 1000 | 1000 | 1 | 0 |
+| `less_extra_sticky` | 1000 | 1000 | 1 | 100 |
 | `balanced` | 1000 | 100 | 1 | 0 |
 | `balanced_sticky` | 1000 | 100 | 1 | 10 |
 | `more` | 10 | 100 | 1 | 0 |
@@ -35,6 +41,10 @@ python examples/cas_colon_sfa_clustering.py --records 1 --hdp-preset balanced_st
 `more_extra_sticky` keeps those concentrations and raises kappa to 100. Select
 `HDPConfig(hdp_hyp='more_extra_sticky')` or `--hdp-preset more_extra_sticky`.
 
+`less_extra_sticky` uses the `less` concentrations with kappa=100. Select it
+with `HDPConfig(hdp_hyp='less_extra_sticky')` or
+`--hdp-preset less_extra_sticky`.
+
 It encourages persistence, without imposing a minimum dwell time. Its strength
 is relative to `transAlpha` and the transition counts. The nonzero-kappa
 top-level surrogate score uses the same stick coefficients as the optimizer
@@ -57,6 +67,7 @@ Only gamma is active in the independent stick-weight prior and linear ELBO:
 | Preset | `gamma` |
 | --- | ---: |
 | `less` | 0.001 |
+| `less_extra_sticky` | 0.001 |
 | `balanced` | 0.1 |
 | `balanced_sticky` | 0.1 |
 | `more` | 1.0 |
@@ -74,6 +85,7 @@ Consequently, `balanced_sticky` and `balanced` behave identically when
 `hmm_switch=False`: their gamma is 0.1 and the sticky mass has no effect.
 Likewise, `more_sticky` matches `more` with gamma=1.0 when HMM is disabled.
 `more_extra_sticky` also resolves gamma=1.0 with inactive stickiness in that mode.
+`less_extra_sticky` matches `less` with gamma=0.001 when HMM is disabled.
 The independent weight posterior remains
 `q(v_k) = Beta(1 + N_k, gamma + sum_{j>k} N_j)`.
 

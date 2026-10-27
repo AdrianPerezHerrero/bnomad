@@ -152,7 +152,7 @@ def log_configuration(config, args, *, source='configured'):
         return
     from ..config._models import resolved_lds_policies
     from ..diagnostics import format_lds_priors
-    print(f'Schedule={args.schedule}; HMM={config.hdp.hmm_switch}; '
+    print(f'Schedule={args.schedule}; HMM={config.hdp.hmm_switch}; topology={config.hdp.transition_topology}; '
           f'alignment={config.alignment.policy}; fit_gp={config.emission.fit_gp}')
     if args.schedule == 'offline':
         print(f'Offline strategy={config.inference.offline_strategy}; '
@@ -172,7 +172,8 @@ def log_configuration(config, args, *, source='configured'):
 def save_results(run, model, values, labels, grid, args, *, ordered,
                  metadata=None, codes=None, projection_name='Latent',
                  row_metadata=None, annotation_colors=None, extra_figures=None,
-                 positive_label=None, summary_plotter=None, evaluation_mask=None):
+                 positive_label=None, summary_plotter=None, evaluation_mask=None,
+                 equal_duration_baseline=False):
     """Common report/plot schema; optional diagnostics never refit the model."""
     import matplotlib.pyplot as plt
     from ..diagnostics import (cluster_label_statistics, format_confusion_matrix,
@@ -216,8 +217,29 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
         print(f'Label metrics: {evaluated.sum()}/{len(labels)} frames; '
               f'{(~evaluated).sum()} ambiguous/unlabeled frames excluded.')
     print('Cluster-majority mapping and label scores are evaluated in-sample.')
+    baseline = None
+    if equal_duration_baseline:
+        from ._baselines import equal_duration_baseline as make_baseline
+        baseline = make_baseline(labels, model.n_clusters_, evaluation_mask=evaluated)
+        write_json(run.path / 'equal_duration_baseline.json', baseline)
+        baseline_scores = baseline['metrics']
+        print(f'Equal-duration baseline: clusters={baseline["clusters"]}, '
+              f'purity={baseline_scores["purity"]:.3f}, '
+              f'ARI={baseline_scores["adjusted_rand_index"]:.3f}, '
+              f'NMI={baseline_scores["normalized_mutual_information"]:.3f}')
     (run.path / 'config.yaml').write_text(model.config.to_yaml(), encoding='utf-8')
     columns = {} if row_metadata is None else dict(row_metadata)
+    if baseline is not None:
+        columns.update(baseline_cluster=baseline['assignments'],
+                       baseline_majority_label=baseline['majority_labels'])
+        with (run.path / 'equal_duration_assignments.csv').open('w', newline='', encoding='utf-8') as stream:
+            writer = csv.writer(stream)
+            writer.writerow(['fit_row', 'true_label', 'baseline_cluster',
+                             'baseline_majority_label', 'evaluation_included', 'second'])
+            seconds = columns.get('second', ['']*len(labels))
+            for index, cluster in enumerate(baseline['assignments']):
+                writer.writerow([index, labels[index], int(cluster), baseline['majority_labels'][index],
+                                 bool(evaluated[index]), seconds[index]])
     if any(len(value) != len(labels) for value in columns.values()):
         raise ValueError('Assignment metadata must have one row per observation')
     with (run.path / 'assignments.csv').open('w', newline='', encoding='utf-8') as stream:
@@ -234,10 +256,17 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
     failures = {}
     def save(figure, name):
         try:
+            if baseline is not None:
+                from ._baselines import add_baseline_header
+                add_baseline_header(figure, scores, baseline)
             figure.savefig(run.path / name, dpi=150)
         finally:
             plt.close(figure)
     if args.plots:
+        if baseline is not None:
+            from ._baselines import plot_equal_duration_baseline
+            save(plot_equal_duration_baseline(baseline, labels,
+                 times=columns.get('second'), title=run.dataset), 'equal_duration_baseline.png')
         summary_plotter = plot_clustering_summary if summary_plotter is None else summary_plotter
         for output, figure in enumerate(summary_plotter(
                 model, values, labels, grid=grid, record=run.dataset, metrics=scores,
@@ -300,5 +329,9 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
               'output_directory': str(run.path.resolve()),
               'artifacts': sorted(str(path.relative_to(run.path)) for path in run.path.rglob('*')
                                   if path.is_file() and path.name != 'results.json')}
+    if baseline is not None:
+        report['baselines'] = {'equal_duration': {
+            key: value for key, value in baseline.items()
+            if key not in ('assignments', 'majority_labels')}}
     write_json(run.path / 'results.json', report)
     return report

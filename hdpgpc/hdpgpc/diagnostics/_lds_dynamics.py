@@ -101,6 +101,8 @@ def model_lds_dynamics(model, *, grid=None, output=0):
             if not np.array_equal(coordinates, _grid(direct_grid)):
                 raise ValueError('fixed observation requires its calibrated waveform grid')
             offset = _array(emission.direct_observation_offset).reshape(-1)
+            if getattr(emission, 'factor_analysis', False):
+                offset = emission.fixed_observation_model.offset.copy()
             H, residual = C.copy(), Sigma.copy()
         else:
             H, offset, residual = _gp_projection(emission, coordinates, C, Sigma)

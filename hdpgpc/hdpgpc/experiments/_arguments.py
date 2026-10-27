@@ -20,8 +20,10 @@ def add_common_arguments(parser, *, defaults=None, ordered=False):
     parser.add_argument('--iterations', type=int, default=30)
     parser.add_argument('--max-clusters', type=int, default=30)
     parser.add_argument('--hdp-preset', choices=(
-        'less', 'balanced', 'balanced_sticky', 'more', 'more_sticky',
+        'less', 'less_extra_sticky', 'balanced', 'balanced_sticky', 'more', 'more_sticky',
         'more_extra_sticky', 'max'), default='max')
+    parser.add_argument('--transition-topology', choices=('ergodic', 'left_to_right'), default='ergodic',
+                        help='Left-to-right requires HMM assignments and offline split_merge; regimes cannot recur.')
     parser.add_argument('--lds-degrees', '--lds-degrees-of-freedom', type=int, default=10)
     parser.add_argument('--lds-update', choices=('conjugate_batch', 'conjugate_sequential',
                                                'natural_gradient', 'legacy'), default=None)
@@ -67,6 +69,9 @@ def lds_update(args):
 
 
 def validate_common(args):
+    if getattr(args, 'transition_topology', 'ergodic') == 'left_to_right' and (
+            args.schedule != 'offline' or args.offline_strategy != 'split_merge'):
+        raise ValueError('left_to_right requires --schedule offline --offline-strategy split_merge')
     if getattr(args, 'min_cluster_samples', 1) < 1:
         raise ValueError('min_cluster_samples must be a positive integer')
     if (args.iterations < 1 or args.max_clusters < 1 or args.lds_degrees < 3
