@@ -176,22 +176,99 @@ identifiable coordinate system.
 
 ## Scope and validation status
 
-The same native offline engines and online entry points are used. Batch static
+Cluster-local mode uses the same native offline engines and online entry
+points. Shared mode uses offline batch inference only. Batch static
 conditioning uses the existing independent-state optimization. The current
 affine route requires CPU, one output, no warp/GP fitting, final LDS scoring and
 a conjugate or natural-gradient update. C is learned per cluster and Sigma is
-learned diagonal per cluster; shared FA parameters, full Sigma and historical
-FA parameter scoring are rejected explicitly. The native restrictions on A/Gamma
+learned diagonal per cluster by default; shared C/shared diagonal Sigma are supported as described
+below. Full Sigma and historical FA parameter scoring are rejected explicitly. The native restrictions on A/Gamma
 policies still apply.
 
 `FactorAnalysisEmission` is an immutable observation snapshot implementing the
 affine observation contract. Its state dictionary round-trips its predictive
-and scoring moments. The native cluster owns the trainable conjugate posterior;
-ordinary native model pickling retains it. Snapshot serialization alone is not
+and scoring moments. Native clusters own local trainable posteriors; shared
+mode has one model-owned joint posterior with cluster observation marginals.
+Ordinary native model pickling retains the appropriate ownership. Snapshot serialization alone is not
 a training checkpoint. Existing configuration serialization also records the
 family, initialization and hyperparameters.
 
-For this implementation change, syntax and diff formatting were checked.
-Numerical inference, runtime plotting, serialization round trips and GP
-regression tests have not been run. Cluster recovery and monotonic convergence
-are not claimed from source inspection alone.
+Shared-mode validation includes an independent augmented-regression posterior
+comparison, fractional weights, KL counting, structural changes, dynamic/static
+fits, serialization/conversion and small CAS-Colon runs with plotting. These
+checks do not establish cluster recovery, held-out forecasting, anatomical
+interpretability or monotonic convergence for all configurations.
+
+## Shared loadings and diagonal noise
+
+To pool the learned observation map across clusters while retaining a learned
+mean per cluster, use:
+
+```bash
+python examples/cas_colon_mfa_clustering.py --records 29 --shared-emission --dynamic --hmm-switch --transition-topology left_to_right --lds-plots
+```
+
+The explicit policy form is `--c-mode shared --sigma-mode shared_diagonal`.
+Cluster-specific C and diagonal Sigma remain the default. Only the paired
+shared-C/shared-diagonal-Sigma variant is supported; mixing shared and local
+MFA observation policies is rejected. The shared mode currently requires CPU,
+offline inference, `conjugate_batch` updates, final scoring, and the existing
+no-warp/no-GP-fitting affine restrictions. The CAS runner selects batch updates
+by default and rejects an explicit incompatible update. For Python:
+
+```python
+config = with_mfa_emission(config, initialization, dynamic=True, shared=True)
+```
+
+The helper selects batch updates in shared mode. HMM and dynamic/static factor
+choices remain independent; omit `--dynamic` for independent factors while
+retaining ordered assignments with `--transition-topology left_to_right`.
+
+The model is
+
+\[
+y_t = \mu_0 + \delta\mu_k + C z_{tk} + \epsilon_t,
+\qquad \epsilon_t \sim N(0,\operatorname{diag}(s)).
+\]
+
+C and s are learned jointly from the responsibility-weighted observations of
+all clusters. Cluster means and (in dynamic mode) A/Gamma remain local. This
+creates a common loading basis within a fitted model. Coordinates still denote
+deviations from each cluster's own mean, and independently fitted videos can
+have different global bases; shared C does not establish anatomical semantics.
+
+For K represented native slots, the joint row coefficients are
+`B_j = [delta_mu_1j, ..., delta_mu_Kj, C_j]`, with prior mean `[0,...,0,C0_j]`
+and prior column precision
+`diag(mean_precision * I_K, loading_precision * I_d)`. For an observation's
+candidate cluster k, the augmented predictor is `[e_k; z_tk]`. Its expected
+outer product includes the latent posterior covariance in the lower block.
+Pooling yields one conjugate normal/inverse-gamma posterior:
+
+\[
+K_n = K_0 + \sum_{t,k} r_{tk} E[u_{tk}u_{tk}^T],\quad
+M_nK_n = M_0K_0 + \sum_{t,k} r_{tk}(y_t-\mu_0)E[u_{tk}]^T.
+\]
+
+Noise updates include expected residuals and the prior-deviation term. Total
+observation mass is `sum(r_tk)`, not an independent full count for each cluster.
+Offline refits restart sufficient statistics from the original prior. The
+joint posterior retains correlations between local means and shared loadings;
+each cluster receives the `[delta_mu_k,C]` marginal, including coefficient
+uncertainty, for filtering, scoring and prediction. The global observation KL
+is counted once through the native shared-policy scoring path. Structural
+proposals own separate policies and rebuild the joint posterior after changes
+in cluster order/count. An unused intercept keeps its prior.
+
+`model.observation_parameters_` reports `scope='shared'`,
+`family='factor_analysis'`, the shared C/Sigma, and per-output cluster offsets
+and observation snapshots. Native model pickling retains the full pooled
+posterior. Configuration YAML records the paired shared policies.
+
+CAS runs keep the existing per-cluster marginal `mfa_posteriors.npz` and add
+`mfa_shared_posterior.npz`: joint mean, joint column precision, diagonal noise
+scale, degrees, and intercept count. Joint columns are native cluster-slot
+intercepts followed by shared loading columns. The complete joint artifact is
+needed to preserve cross-cluster parameter correlations. These NPZ diagnostics
+are not restart checkpoints. The snapshot serialization describes a single
+cluster's observation marginal, not the entire shared fitted model.

@@ -315,7 +315,12 @@ class ModelState:
                              else template.C[0])
                 initial_Sigma = (self.observation_Sigma_initial if self.observation_Sigma_initial is not None
                                  else template.Sigma[0])
-                if self.custom_lds_policies:
+                if self.factor_analysis:
+                    from ..emissions._shared_factor_analysis import SharedFactorAnalysisPolicy
+                    policy = SharedFactorAnalysisPolicy(initial_C, initial_Sigma,
+                        self.free_deg_MNIV * self.lds_policies['Sigma'].strength,
+                        self.factor_mean_precision, self.factor_loading_precision)
+                elif self.custom_lds_policies:
                     policy = ObservationPolicy(self.observation_scope, initial_C, initial_Sigma,
                                                self.free_deg_MNIV,
                                                self.lds_policies['C'], self.lds_policies['Sigma'])

@@ -51,7 +51,10 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
     if transition_policy is not None:
         self.internal_params = transition_policy.posterior
     if policy is not None:
-        self.observation_params = policy.posterior
+        if getattr(policy, 'factor_analysis', False):
+            policy.attach(self)
+        else:
+            self.observation_params = policy.posterior
     elif pair_policies is not None:
         self.observation_params = make_pair_prior(ini_C, ini_Sigma, self.free_deg_MNIV,
                                                   *pair_policies['observation'])
@@ -59,7 +62,7 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
         self.observation_params = inv_wishart(self.free_deg_MNIV, ini_Sigma, ini_C)
     else:
         self.observation_params = matrix_normal_inv_wishart(ini_C, torch.eye(ini_C.shape[0], device=self.device), self.free_deg_MNIV, ini_Sigma)
-    if getattr(self, 'factor_analysis', False):
+    if getattr(self, 'factor_analysis', False) and policy is None:
         from ..emissions._factor_analysis import observation_prior, refresh_factor_observation
         self.observation_params = observation_prior(self, self.C_def, self.Sigma_def)
         refresh_factor_observation(self)

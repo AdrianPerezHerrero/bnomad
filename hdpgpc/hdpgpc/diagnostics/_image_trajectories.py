@@ -44,7 +44,8 @@ def model_latent_trajectories(model, *, output=0):
 
 
 def _colors(ids):
-    palette = plt.get_cmap('tab20' if len(ids) <= 20 else 'turbo')
+    # Cluster identities use a separate categorical palette from anatomical tab10.
+    palette = plt.get_cmap('tab20b' if len(ids) <= 20 else 'turbo')
     positions = np.arange(len(ids)) if len(ids) <= 20 else np.linspace(0., 1., len(ids))
     return {int(cluster): palette(position) for cluster, position in zip(ids, positions)}
 
@@ -159,6 +160,9 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
     smoothed states and forecasts always use the model's Gaussian LDS posterior.
     min_cluster_samples filters galleries and latent paths by final MAP counts;
     assignment timelines, transition counts and metrics retain all observations.
+    All clusters stay on one page with fixed-height gallery blocks; canvas
+    height grows with the number of displayed clusters. The smoothed-state
+    overview uses latent components 1/2 and observation time as its 3-D axes.
     """
     from ..emissions._fixed_observation import AffineGaussianObservation
 
@@ -193,13 +197,19 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
         majority_correct += int(counts.max()) if len(counts) else 0
     purity = majority_correct / evaluated.sum() if evaluated.any() else None
     rng = np.random.default_rng(random_state)
-    fig = plt.figure(figsize=(18, 5.8 + 4.1 * len(visible_ids)), constrained_layout=True)
-    layout = fig.add_gridspec(len(visible_ids) + 1, 1, height_ratios=[5.5] + [4.] * len(visible_ids))
-    top = layout[0].subgridspec(1, 3)
-    timeline = top[0].subgridspec(3, 1)
+    # Use physical dimensions on one growing canvas. Constrained layout on
+    # many nested grids progressively shrinks the final clusters' image axes.
+    overview_height, cluster_height, bottom_margin = 6.2, 4.6, .4
+    figure_height = overview_height + cluster_height * len(visible_ids) + bottom_margin
+    fig = plt.figure(figsize=(18, figure_height), layout='none')
+    top = fig.add_gridspec(1, 3, left=.065, right=.985,
+        bottom=(figure_height - 5.6) / figure_height,
+        top=(figure_height - .9) / figure_height, wspace=.5)
+    timeline = top[0].subgridspec(3, 1, hspace=.85)
     truth_axis, assignment_axis = fig.add_subplot(timeline[0]), fig.add_subplot(timeline[1])
     majority_axis = fig.add_subplot(timeline[2], sharex=assignment_axis)
-    path_axis, transition_axis = fig.add_subplot(top[1]), fig.add_subplot(top[2])
+    path_axis = fig.add_subplot(top[1], projection='3d')
+    transition_axis = fig.add_subplot(top[2])
     classes = sorted(np.unique(annotations))
     class_colors = {name: plt.get_cmap('tab10')(i % 10) for i, name in enumerate(classes)}
     truth_axis.scatter(times, [classes.index(label) for label in annotations],
@@ -223,13 +233,17 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
         rows = state['indices'][owned]
         xy = _coordinates(state['means'][owned])
         for run in _runs(rows):
-            path_axis.plot(xy[run, 0], xy[run, 1], color=colors[cluster], linewidth=.8)
-        path_axis.scatter(xy[:, 0], xy[:, 1], color=colors[cluster], s=7)
-    path_axis.set(title=f'Smoothed states: common {representation_name} coordinates',
-                  xlabel='Latent component 1', ylabel='Latent component 2')
+            path_axis.plot(xy[run, 0], xy[run, 1], times[rows[run]],
+                           color=colors[cluster], linewidth=.8)
+        path_axis.scatter(xy[:, 0], xy[:, 1], times[rows],
+                          color=colors[cluster], s=7, depthshade=False)
+    path_axis.set(title='Smoothed states over time', xlabel='Latent component 1',
+                  ylabel='Latent component 2', zlabel=time_label)
+    path_axis.invert_zaxis()
+    path_axis.view_init(elev=25, azim=-60)
     if not visible_ids:
-        path_axis.text(.5, .5, f'No clusters with >= {min_cluster_samples} samples',
-                       ha='center', va='center', transform=path_axis.transAxes)
+        path_axis.text2D(.5, .5, f'No clusters with >= {min_cluster_samples} samples',
+                         ha='center', va='center', transform=path_axis.transAxes)
     transitions = np.zeros((len(ids), len(ids)))
     slots = {cluster: index for index, cluster in enumerate(ids)}
     for a, b in zip(labels[:-1], labels[1:]):
@@ -272,8 +286,10 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
         reconstructed = offset + states @ C.T
         forecast = offset + (states @ A.T) @ C.T
         majority = majorities[cluster] or 'unlabeled'
-        gallery = layout[row].subgridspec(5, frames_per_cluster,
-                                         height_ratios=[.3, 1, 1, 1, 1])
+        gallery = fig.add_gridspec(5, frames_per_cluster, left=.065, right=.985,
+            bottom=(figure_height - overview_height - row * cluster_height) / figure_height,
+            top=(figure_height - overview_height - (row - 1) * cluster_height) / figure_height,
+            height_ratios=[.55, 1, 1, 1, 1], hspace=.35, wspace=.35)
         heading = fig.add_subplot(gallery[0, :])
         heading.axis('off')
         heading.text(0., .5, f'Cluster {cluster} | n={len(members)} | majority {majority} | '
@@ -292,7 +308,7 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
                     continue
                 axis.imshow(np.clip(frames[column].reshape(shape), low, high), cmap='gray', vmin=low, vmax=high)
                 if image_row == 0:
-                    axis.set_title(f'{times[selected[column]]:g}{time_unit} | {annotations[selected[column]]}', fontsize=8)
+                    axis.set_title(f'{times[selected[column]]:g}{time_unit}\n{annotations[selected[column]]}', fontsize=8)
                 for spine in axis.spines.values():
                     spine.set_edgecolor(colors[cluster]); spine.set_linewidth(1.5)
     metric_text = f' | Purity {purity:.3f}' if purity is not None else ' | Purity N/A'
@@ -302,5 +318,6 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
                       'overview and scores include all observations' if min_cluster_samples > 1 else '')
     fig.suptitle(f'{record} | {len(values)} frames | {len(ids)} clusters{metric_text}\n'
                  f'Label metrics: {evaluated.sum()}/{len(values)} frames; '
-                 'A one-step is a native cluster step, not an observed future frame' + selection_text)
+                 'A one-step is a native cluster step, not an observed future frame' + selection_text,
+                 y=1 - .2 / figure_height, va='top')
     return [fig]

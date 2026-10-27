@@ -63,6 +63,23 @@ def _hypergeometric(A, B, C, nodes):
     return values
 
 
+def _direct_row_statistics(a, b, c, d, alpha, kappa, order):
+    """Evaluate a row directly when its ratio-density representation is unsafe."""
+    v, wv = _beta_rule(float(a), float(b), order)
+    w, ww = _beta_rule(float(c), float(d), order)
+    denominator = v[:, None]+(1-v[:, None])*w[None]
+    ratio = v[:, None]/denominator
+    advance = (1-v[:, None])*w[None]/denominator
+    weight = wv[:, None]*ww[None]
+    average = lambda value: float(np.sum(weight*value))
+    log_denominator = average(np.log(denominator))
+    mean_r, mean_advance = average(ratio), average(advance)
+    x, y = alpha*ratio+kappa, alpha*advance
+    ex_gamma = average(gammaln(1+x)+gammaln(1+y))
+    ex_log_x = average(np.log(x)) if kappa else None
+    return log_denominator, mean_r, mean_advance, ex_gamma, ex_log_x
+
+
 @lru_cache(maxsize=8192)
 def row_moments(a, b, c, d, alpha, kappa, order=128):
     """Return E[r] and E[log normalization] of one conditional row prior.
@@ -78,6 +95,7 @@ def row_moments(a, b, c, d, alpha, kappa, order=128):
              else _hypergeometric(a+b, d, a+c+d, r))
     with np.errstate(over='ignore', invalid='ignore'):
         weighted = wr*hyper
+        mass = weighted.sum()
     if min(a, b, c, d) >= .5 and max(a, b, c, d) <= 100 and abs(b-c) < 1.5:
         # Near b=c the ratio density has a logarithmic endpoint. Adaptive
         # integration resolves it accurately without thousands of Jacobi nodes.
@@ -87,20 +105,30 @@ def row_moments(a, b, c, d, alpha, kappa, order=128):
             value = np.clip(value, np.finfo(float).eps, 1-np.finfo(float).eps)
             h = (hyp2f1(c+d-b, a+c, a+c+d, value) if b >= c
                  else hyp2f1(a+b, d, a+c+d, value))
+            # SciPy can return inf near r=1 even for integrable densities.
+            # Do not let invalid samples contaminate quad_vec's error estimate.
+            if not np.isfinite(h) or h <= 0:
+                raise FloatingPointError('Nonfinite ordered ratio density')
             density = np.exp(constant+(a-1)*np.log(value)
                              +(power-1)*np.log1p(-value)+np.log(h))
             return density*np.array([1., value, np.log(value),
                 gammaln(1+alpha*value+kappa)+gammaln(1+alpha*(1-value)),
                 np.log(alpha*value+kappa) if kappa else 0.])
-        moments, error, info = quad_vec(integrand, 0., 1., epsabs=1e-9, epsrel=1e-10,
-                                        limit=512, full_output=True)
-        if not info.success or not np.isfinite(moments).all():
-            raise FloatingPointError('Ordered transition-prior integration did not converge')
-        mass, mean_r, log_r, ex_gamma, ex_log_x = moments/moments[0]
-        mean_advance = 1-mean_r
-        log_denominator = digamma(a)-digamma(a+b)-log_r
-    elif np.isfinite(weighted).all() and (weighted >= 0).all() and weighted.sum() > 0:
-        mass = weighted.sum()
+        try:
+            with np.errstate(over='raise', invalid='raise', divide='raise'):
+                moments, error, info = quad_vec(integrand, 0., 1., epsabs=1e-9,
+                    epsrel=1e-10, limit=512, full_output=True)
+                if (not info.success or not np.isfinite(moments).all()
+                        or moments[0] <= 0):
+                    raise FloatingPointError('Ordered transition-prior integration did not converge')
+                mass, mean_r, log_r, ex_gamma, ex_log_x = moments/moments[0]
+                mean_advance = 1-mean_r
+                log_denominator = digamma(a)-digamma(a+b)-log_r
+        except FloatingPointError:
+            log_denominator, mean_r, mean_advance, ex_gamma, ex_log_x = (
+                _direct_row_statistics(a, b, c, d, alpha, kappa, order))
+    elif (np.isfinite(weighted).all() and (weighted >= 0).all()
+          and np.isfinite(mass) and mass > np.sqrt(np.finfo(float).eps)):
         weighted = weighted/mass
         # Integrate the log(r) endpoint singularity analytically using h(0).
         # Since log(r) vanishes at r=1, no divergent h(1) is needed when b=c.
@@ -111,26 +139,21 @@ def row_moments(a, b, c, d, alpha, kappa, order=128):
         ex_gamma = float(weighted @ (gammaln(1+alpha*r+kappa)+gammaln(1+alpha*(1-r))))
         ex_log_x = float(weighted @ np.log(alpha*r+kappa)) if kappa else None
     else:
-        # Very asymmetric posteriors can overflow hyp2f1. Their ratio is
-        # concentrated, where the direct two-dimensional rule is well behaved.
-        v, wv = _beta_rule(float(a), float(b), order)
-        w, ww = _beta_rule(float(c), float(d), order)
-        denominator = v[:, None]+(1-v[:, None])*w[None]
-        ratio = v[:, None]/denominator
-        advance = (1-v[:, None])*w[None]/denominator
-        weight = wv[:, None]*ww[None]
-        average = lambda value: float(np.sum(weight*value))
-        log_denominator = average(np.log(denominator))
-        mean_r, mean_advance = average(ratio), average(advance)
-        x, y = alpha*ratio+kappa, alpha*advance
-        ex_gamma = average(gammaln(1+x)+gammaln(1+y))
-        ex_log_x = average(np.log(x)) if kappa else None
+        # Very asymmetric posteriors can overflow or underflow hyp2f1.
+        # Tiny positive mass is unsafe too: the analytic log(r) numerator
+        # subtracts O(1) terms, amplifying roundoff by 1/mass. Requiring mass
+        # above sqrt(eps) limits that amplification even before subnormality.
+        # The concentrated ratio is well behaved under the direct 2-D rule.
+        log_denominator, mean_r, mean_advance, ex_gamma, ex_log_x = (
+            _direct_row_statistics(a, b, c, d, alpha, kappa, order))
     log_y = (np.log(alpha)+digamma(b)-digamma(a+b)
              +digamma(c)-digamma(c+d)-log_denominator)
     log_x = (ex_log_x if kappa else
              np.log(alpha)+digamma(a)-digamma(a+b)-log_denominator)
     normalizer = (gammaln(alpha+kappa)-ex_gamma
                   +log_x+log_y)
+    if not np.isfinite([mean_r, normalizer, mean_advance]).all():
+        raise FloatingPointError('Nonfinite ordered transition-prior moments')
     return mean_r, normalizer, mean_advance
 
 
@@ -238,20 +261,30 @@ def optimize_sticks(state, theta):
     a, b = shapes(_array(state.rho), _array(state.omega))
     initial = np.log(np.concatenate((a, b)))
     counts = np.zeros((len(a), len(a)))
+    # An infinite rejection value makes finite differences evaluate inf-inf.
+    # Keep the barrier finite and well below float64's overflow scale.
+    rejected = 1e100
     def objective(parameters):
-        left, right = np.exp(parameters).reshape(2, -1)
-        omega = left+right
         try:
-            return -linear_terms(state, counts, left/omega, omega, theta)
+            with np.errstate(over='raise', invalid='raise', divide='raise'):
+                left, right = np.exp(parameters).reshape(2, -1)
+                omega = left+right
+                value = -linear_terms(state, counts, left/omega, omega, theta)
+            return value if np.isfinite(value) else rejected
         except FloatingPointError:
-            return np.inf
+            return rejected
     result = minimize(objective, initial, method='L-BFGS-B',
         bounds=[(np.log(1e-3), np.log(1e8))]*len(initial),
         options={'maxiter': 40, 'ftol': 1e-10, 'maxls': 20})
     # An incomplete optimizer is useful only if its actual objective improved.
-    chosen = result.x if np.isfinite(result.fun) and result.fun < objective(initial) else initial
+    chosen = (result.x if np.isfinite(result.fun) and result.fun < rejected
+              and result.fun < objective(initial) else initial)
     left, right = np.exp(chosen).reshape(2, -1)
-    fine = linear_terms(state, counts, left/(left+right), left+right, theta, order=256)
+    try:
+        with np.errstate(over='raise', invalid='raise', divide='raise'):
+            fine = linear_terms(state, counts, left/(left+right), left+right, theta, order=256)
+    except FloatingPointError:
+        fine = np.nan
     coarse = -objective(chosen)
     integration_error = abs(fine-coarse)
     reliable = np.isfinite(fine) and integration_error <= 1e-7+1e-10*max(1., abs(fine))

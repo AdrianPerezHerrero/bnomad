@@ -51,6 +51,8 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
     if representation == 'mfa':
         parser.add_argument('--dynamic', action=argparse.BooleanOptionalAction, default=False,
                             help='Learn factor LDS A/Gamma; otherwise independent N(0,I) factors.')
+        parser.add_argument('--shared-emission', action=argparse.BooleanOptionalAction, default=False,
+                            help='Pool learned C and diagonal Sigma across clusters; retain cluster means (offline batch only).')
         parser.add_argument('--mean-precision', type=float, default=1.)
         parser.add_argument('--loading-precision', type=float, default=1.)
     if representation == 'sfa':
@@ -85,12 +87,16 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
 
 def make_config(grid, args, decoder):
     """Reuse the record affine recipe, with optional independence controls."""
-    config = records.make_config(grid, args, decoder=decoder)
+    base_args = argparse.Namespace(**vars(args))
+    if args.representation == 'mfa':
+        base_args.c_mode = None
+    config = records.make_config(grid, base_args, decoder=decoder)
     if args.representation == 'mfa':
         config = replace(config, hdp=replace(config.hdp, hmm_switch=args.hmm_switch))
         initialization = replace(decoder, Sigma=config.observation.Sigma_policy.value)
         return with_mfa_emission(config, initialization, dynamic=args.dynamic,
-            mean_precision=args.mean_precision, loading_precision=args.loading_precision)
+            mean_precision=args.mean_precision, loading_precision=args.loading_precision,
+            shared=args.c_mode == 'shared')
     dynamics = config.dynamics
     if args.a_mode == 'fixed':
         dynamics = replace(dynamics, A_policy=MatrixPolicyConfig(
@@ -111,8 +117,15 @@ def _validate(args):
     if args.representation not in ('pca', 'autoencoder', 'sfa', 'linear_prediction', 'mfa'):
         raise ValueError('Unknown CAS-Colon observation representation')
     if args.representation == 'mfa':
-        if args.sigma_mode != 'cluster_diagonal' or args.c_mode not in (None, 'cluster'):
-            raise ValueError('MFA learns cluster C and cluster_diagonal Sigma')
+        if args.shared_emission:
+            if args.c_mode not in (None, 'shared') or args.sigma_mode not in ('cluster_diagonal', 'shared_diagonal'):
+                raise ValueError('--shared-emission requires shared C and shared_diagonal Sigma')
+            args.c_mode, args.sigma_mode = 'shared', 'shared_diagonal'
+        if (args.c_mode, args.sigma_mode) not in (
+                (None, 'cluster_diagonal'), ('cluster', 'cluster_diagonal'), ('shared', 'shared_diagonal')):
+            raise ValueError('MFA requires cluster C/cluster_diagonal Sigma or shared C/shared_diagonal Sigma')
+        if args.c_mode == 'shared' and args.lds_update not in (None, 'conjugate_batch'):
+            raise ValueError('Shared MFA requires --lds-update conjugate_batch')
         if args.a_mode is not None or args.gamma_mode is not None:
             raise ValueError('Use --dynamic to learn MFA A/Gamma, or --no-dynamic for A=0/Gamma=I')
         if args.hmm_switch and not args.dynamic and args.transition_topology == 'ergodic':
@@ -140,7 +153,7 @@ def _validate(args):
         raise ValueError('Image, calibration and prior controls must be finite and positive')
     if (args.normalize_samples or args.scaling != 'none' or args.unit_grid or args.max_points is not None
             or args.lds_inducing_points or args.calibrate_lds_noise_priors
-            or (args.c_mode not in (None, 'cluster') if args.representation == 'mfa'
+            or (args.c_mode not in (None, 'cluster', 'shared') if args.representation == 'mfa'
                 else args.c_mode not in (None, 'fixed')) or args.channels != [0] or args.channel is not None):
         raise ValueError('Use grayscale [0,1] frames, --image-size/--crop, fixed affine C and no extra inducing grid; '
                          'waveform/grid scaling, channels, --max-points and waveform noise calibration do not apply')
@@ -165,9 +178,9 @@ def run_sequence(sequence, args, run, *, segment):
         indices = (np.arange(min(len(values), args.calibration_samples)) if sampling == 'prefix'
             else np.sort(np.random.default_rng(args.seed).choice(len(values),
                 size=min(len(values), args.calibration_samples), replace=False)))
-        representation_name = 'Learned affine MFA'
+        representation_name = 'Shared affine MFA' if args.c_mode == 'shared' else 'Learned affine MFA'
         calibration_metadata = dict(initialization='spectral', dynamic=args.dynamic,
-            decoder_is_fixed=False, factor_coordinates_are_cluster_local=True)
+            decoder_is_fixed=False, factor_coordinates_are_cluster_local=args.c_mode != 'shared')
         codes = (values[:, :, 0]-decoder.offset) @ np.linalg.pinv(decoder.C).T
         calibration_description = 'spectral prior initialization; cluster means/loadings/diagonal noise are learned'
     elif args.representation == 'linear_prediction':
@@ -267,7 +280,7 @@ def run_sequence(sequence, args, run, *, segment):
     log_configuration(config, args, source=f'frame calibration (Sigma multiplier={args.sigma_prior:g})')
     if args.representation == 'mfa' and args.verbose != 'silent':
         print(f'MFA affine row prior: mean precision={args.mean_precision:g}; '
-              f'loading precision={args.loading_precision:g}; diagonal noise learned per cluster; '
+              f'loading precision={args.loading_precision:g}; emission scope={config.observation.C_policy.mode}; '
               f'factors={"native LDS" if args.dynamic else "independent N(0,I)"}')
     model = HDPGPC(config).fit(values, grid=grid)
     if args.representation == 'mfa':
@@ -283,6 +296,14 @@ def run_sequence(sequence, args, run, *, segment):
                 column_precision=gp.observation_params.m_r_cov,
                 noise_scale=gp.observation_params.scale,
                 degrees=gp.observation_params.n0).items()})
+    if args.representation == 'mfa' and args.c_mode == 'shared':
+        owner = model._backend.observation_policies[0]
+        posterior = owner.posterior
+        np.savez_compressed(run.path / 'mfa_shared_posterior.npz',
+            joint_mean=posterior.m_mean.detach().cpu().numpy(),
+            column_precision=posterior.m_r_cov.detach().cpu().numpy(),
+            noise_scale=posterior.scale.detach().cpu().numpy(), degrees=posterior.n0,
+            intercept_count=owner.intercepts)
     trajectories = model_latent_trajectories(model)
     np.savez_compressed(run.path / 'latent_trajectories.npz', times=sequence.seconds,
         **{f'cluster_{cluster}_{name}': array for cluster, path in trajectories.items()
@@ -313,7 +334,7 @@ def run_sequence(sequence, args, run, *, segment):
     metadata = dict(video=sequence.video, segment=segment, image_shape=list(args.image_size),
         grayscale=True, pixel_range=[0, 1], crop=args.crop, frame_step=args.frame_step,
         time_units='seconds encoded in official frame filenames (one-second bins)',
-        representation=args.representation, calibration_indices=indices,
+        representation=args.representation, observation_scope=config.observation.C_policy.mode, calibration_indices=indices,
         calibration_sampling=sampling, latent_dimension=dimension, **calibration_metadata,
         sigma_prior_multiplier=args.sigma_prior, sigma_prior_diagonal_mean=config.emission.ini_sigma,
         ambiguous_seconds=sequence.seconds[~sequence.evaluation_mask],
@@ -327,7 +348,7 @@ def run_sequence(sequence, args, run, *, segment):
                       'source_variants': ['|'.join(names) for names in sequence.source_variants],
                       'evaluation_included': sequence.evaluation_mask},
         summary_plotter=summary_plotter, extra_figures=extra_figures,
-        evaluation_mask=sequence.evaluation_mask)
+        evaluation_mask=sequence.evaluation_mask, equal_duration_baseline=True)
 
 
 def run_cas_colon(args, parser=None):

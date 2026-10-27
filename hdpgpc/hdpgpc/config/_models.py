@@ -83,6 +83,8 @@ class ObservationConfig:
     decoder uses the generic `fixed_*` fields; the older `pca_*` fields remain
     readable for existing recipes. ``family='factor_analysis'`` uses the same
     affine grids but learns the intercept, rectangular C and diagonal Sigma.
+    Factor-analysis policies can pair shared C/shared_diagonal Sigma while
+    retaining cluster-specific intercepts (offline conjugate_batch only).
     """
     scope: Literal['cluster', 'shared', 'fixed'] = 'cluster'
     C: ndarray | None = None

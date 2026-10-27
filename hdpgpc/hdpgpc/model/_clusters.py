@@ -35,6 +35,9 @@ def keep_last_all(self):
                     setattr(gp, name, [getattr(gp, name)[-1]])
             else:
                 gp.reinit_LDS(save_last=True)
+            policy = getattr(gp, 'observation_policy', None)
+            if getattr(policy, 'factor_analysis', False):
+                policy.attach(gp)
             gp.reinit_GP(save_last=True, save_index=True)
 
 

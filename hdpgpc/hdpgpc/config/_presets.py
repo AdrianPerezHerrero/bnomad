@@ -169,18 +169,23 @@ def with_fixed_observation_model(config: HDPGPCConfig, model, *,
 
 
 def with_mfa_emission(config: HDPGPCConfig, initialization, *, dynamic=False,
-                      mean_precision=1., loading_precision=1.) -> HDPGPCConfig:
+                      mean_precision=1., loading_precision=1., shared=False) -> HDPGPCConfig:
     """Learn affine cluster emissions using native HDPGPC inference.
 
     ``initialization`` is an AffineGaussianObservation (for example a calibrated
     PCA decoder). It initializes the prior, not a frozen projection. Each
     cluster learns its intercept, rectangular loading matrix and diagonal noise.
+    With shared=True, loadings and diagonal noise are pooled while intercepts
+    stay cluster-specific. This mode selects conjugate_batch and requires
+    offline inference; its joint posterior counts the shared prior only once.
     Static defaults fix A=0, Gamma=I, prior state covariance I and disable HMM
     assignments, except that explicit left_to_right topology retains its required
     HMM switch. ``dynamic=True`` learns cluster A/Gamma and retains the input
     HMM switch. Existing inference strategy and KL normalization are retained.
     """
     from ..emissions import AffineGaussianObservation
+    if type(shared) is not bool:
+        raise TypeError('shared must be boolean')
     if type(dynamic) is not bool:
         raise ValueError('dynamic must be boolean')
     if not isinstance(initialization, AffineGaussianObservation):
@@ -191,10 +196,11 @@ def with_mfa_emission(config: HDPGPCConfig, initialization, *, dynamic=False,
     r = initial.latent_dim
     return replace(base,
         observation=replace(base.observation, family='factor_analysis',
-            C_policy=MatrixPolicyConfig(mode='cluster', value=initial.C.copy()),
-            Sigma_policy=NoisePolicyConfig(mode='cluster_diagonal', value=initial.Sigma.copy()),
+            C_policy=MatrixPolicyConfig(mode='shared' if shared else 'cluster', value=initial.C.copy()),
+            Sigma_policy=NoisePolicyConfig(mode='shared_diagonal' if shared else 'cluster_diagonal', value=initial.Sigma.copy()),
             factor_mean_precision=mean_precision, factor_loading_precision=loading_precision),
         dynamics=replace(base.dynamics,
+            lds_update='conjugate_batch' if shared else base.dynamics.lds_update,
             A_policy=MatrixPolicyConfig(mode='cluster') if dynamic else
                      MatrixPolicyConfig(mode='fixed', value=np.zeros((r, r))),
             Gamma_policy=NoisePolicyConfig(mode='cluster') if dynamic else

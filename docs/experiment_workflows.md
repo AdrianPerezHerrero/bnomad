@@ -254,3 +254,47 @@ writing assignments or metrics, rather than drawing a report for missing models.
 The cleanup does not change cluster birth/pruning mathematics. The tested
 offline, affine-online and Daphnet `online_fast` cases completed successfully;
 they do not establish that every archive/settings combination will succeed.
+
+## Automatic CAS-Colon equal-duration baseline
+
+Every CAS-Colon representation (PCA, autoencoder, SFA, linear prediction and
+MFA, including shared MFA) now computes a deterministic temporal baseline after
+fitting. No extra flag is needed. For the fitted model's K occupied clusters,
+the baseline divides the full fitted segment into K contiguous equal-duration
+bins. CAS-Colon frames have a fixed cadence; when the frame count is not
+divisible by K, bin lengths differ by at most one frame. It uses K from the
+final assignments, not the maximum cluster cap or a plot's minimum-size filter.
+
+Each bin is assigned its majority anatomical label using the same evaluation
+mask as the model. Ambiguous/excluded frames still occupy their original time
+positions but do not contribute to majority fitting or scores. A bin with no
+evaluated frames has no majority label. Majority ties use the same deterministic
+class order as the model. Purity measures the majority-label agreement; ARI and
+NMI compare the unmerged temporal-bin IDs with reference labels. Two bins with
+the same majority label remain distinct for ARI/NMI.
+
+Model and baseline purity/ARI/NMI appear together in the saved plot headers,
+including the image gallery, projections, latent trajectories, calibration
+plots and every LDS diagnostic page. `equal_duration_baseline.png` also shows
+the reference regions, baseline bin IDs and baseline-majority timeline using
+the established anatomical/independent-cluster palettes. Fixed-size image
+galleries gain header space without shrinking their thumbnails.
+
+Each run saves:
+
+- `equal_duration_baseline.json`: assignments, majority labels, metrics,
+  per-bin boundaries/counts and confusion matrix.
+- `equal_duration_assignments.csv`: per-frame bins, majority labels, reference
+  labels, evaluation flags and timestamps.
+- `results.json` → `baselines.equal_duration`: baseline definition and scores.
+- `assignments.csv`: added `baseline_cluster` and `baseline_majority_label`
+  columns alongside the fitted assignments.
+
+Baseline metrics and assignments are saved and printed even with `--no-plots`;
+PNG generation follows the existing plotting controls. The root results table
+continues to summarize model scores. The baseline uses no pixels, inference,
+random sampling or label-driven boundaries. Majority labels are assigned and
+scored in sample, just as the model's majority-label mapping is. It provides a
+matched-K temporal comparison, not a separately trained anatomical classifier.
+Existing completed run folders are not modified; subsequent runs include the
+baseline under their updated code-derived run ID.

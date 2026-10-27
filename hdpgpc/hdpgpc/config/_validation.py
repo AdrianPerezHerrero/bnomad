@@ -108,10 +108,13 @@ def validate(c, *, for_build=False):
                 or not all(np.isfinite(value).all() for value in
                            (grid, mean, variances, decoder, noise))):
             raise ValueError('Fixed observation dimensions/values must match the waveform and latent grids')
-        if factor_analysis and (policies['C'].mode != 'cluster'
-                or policies['Sigma'].mode != 'cluster_diagonal'
-                or d.lds_scoring != 'final' or d.lds_update == 'legacy'):
-            raise ValueError('Factor analysis requires cluster C, cluster_diagonal Sigma, final scoring and a conjugate/natural-gradient LDS update')
+        if factor_analysis:
+            family = (policies['C'].mode, policies['Sigma'].mode)
+            if (family not in (('cluster', 'cluster_diagonal'), ('shared', 'shared_diagonal'))
+                    or d.lds_scoring != 'final' or d.lds_update == 'legacy'):
+                raise ValueError('Factor analysis requires cluster C/cluster_diagonal Sigma or shared C/shared_diagonal Sigma, final scoring and a conjugate update')
+            if family[0] == 'shared' and (i.schedule != 'offline' or d.lds_update != 'conjugate_batch'):
+                raise ValueError('Shared MFA currently requires offline conjugate_batch updates')
         if ((policies['C'].mode != 'fixed' and not factor_analysis) or policies['Sigma'].mode not in (
                     'fixed', 'cluster', 'cluster_diagonal', 'shared', 'shared_diagonal')
                 or (policies['A'].mode, policies['Gamma'].mode) not in (

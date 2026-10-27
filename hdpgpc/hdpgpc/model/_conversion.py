@@ -24,6 +24,12 @@ def _convert_observation_owners(self, target):
     for output, owner in enumerate(getattr(self, 'observation_policies', ())):
         owner.convert(target)
         for emission in self.gpmodels[output]:
+            if getattr(owner, 'factor_analysis', False):
+                method = {'numpy': 'to_numpy', 'torch': 'to_torch',
+                          'cpu': 'to_cpu', 'cuda': 'to_cuda'}[target]
+                getattr(emission.observation_params, method)()
+                emission.C_def, emission.Sigma_def = owner.initial_C, owner.initial_Sigma
+                continue
             emission.C_def = owner.prior.get_mean()
             emission.Sigma_def = owner.prior.get_scale()
             emission.observation_params = owner.posterior
