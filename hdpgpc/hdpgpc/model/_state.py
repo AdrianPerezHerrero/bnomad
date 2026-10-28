@@ -76,6 +76,10 @@ class ModelState:
         self.offline_representer_selection = options['offline_representer_selection']
         self.offline_strategy = options['offline_strategy']
         self.transition_topology = config.hdp.transition_topology
+        self.hdp_concentrations = {target: getattr(config.hdp, field)
+            for field, target in (('gamma', 'gamma'), ('trans_alpha', 'transAlpha'),
+                                  ('start_alpha', 'startAlpha'), ('kappa', 'kappa'))
+            if getattr(config.hdp, field) is not None}
         self.split_merge_refine_steps = options['split_merge_refine_steps']
         self.split_merge_stability_patience = options['split_merge_stability_patience']
         self.split_merge_score_rtol = options['split_merge_score_rtol']

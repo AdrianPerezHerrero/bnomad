@@ -197,6 +197,11 @@ def validate(c, *, for_build=False):
     if (obs.scope == 'shared' or any(p.mode.startswith('shared') for p in policies.values())) and i.warp and a.policy == 'gp_flow':
         raise ValueError('shared LDS learning requires a common LDS grid')
     integer(h.M, 'M', 1, optional=True)
+    for name in ('gamma', 'trans_alpha', 'start_alpha', 'kappa'):
+        value = getattr(h, name)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, Real)
+                or not math.isfinite(value) or (value < 0 if name == 'kappa' else value <= 0)):
+            raise ValueError('hdp.' + name + ' must be finite and ' + ('nonnegative' if name == 'kappa' else 'positive'))
     if h.transition_topology not in ('ergodic', 'left_to_right'):
         raise ValueError('transition_topology must be ergodic or left_to_right')
     if h.transition_topology == 'left_to_right':

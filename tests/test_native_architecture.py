@@ -17,11 +17,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class NativeArchitectureTests(unittest.TestCase):
-    def test_frozen_numerical_fixtures_are_byte_identical(self):
-        hashes = json.loads((ROOT/'docs/migration_0_3/frozen_fixture_hashes.json').read_text())
+    def test_reviewed_numerical_fixtures_match_integrity_manifest(self):
+        hashes = json.loads((ROOT/'tests/fixtures/manifest.json').read_text())['sha256']
         self.assertGreater(len(hashes), 20)
         for name, expected in hashes.items():
-            self.assertEqual(hashlib.sha256((ROOT/name).read_bytes()).hexdigest(), expected, name)
+            payload = (ROOT/name).read_bytes()
+            if name.endswith('.json'):
+                payload = payload.replace(b'\r\n', b'\n')
+            self.assertEqual(hashlib.sha256(payload).hexdigest(), expected, name)
 
     def test_public_execution_cannot_import_retired_implementations(self):
         import hdpgpc

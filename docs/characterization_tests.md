@@ -301,7 +301,7 @@ Normal tests only read baselines. They never regenerate expected values. To reco
 a proposed baseline in a **new** directory:
 
 ```text
-python -B -m tests.characterization.record_baseline --output tests/characterization/proposed_baselines
+python -B -m tests.characterization.record_baseline --output agents/characterization/proposed_baselines --reference-commit REVIEWED_REVISION
 ```
 
 The recorder refuses an existing output directory. Review numerical changes,
@@ -426,3 +426,9 @@ The record reports reproducible Python dispatch overhead in tiny helpers and
 unchanged numerical workloads, rather than claiming zero runtime change.
 Every data-dependent offline pruning branch and GPU execution remain outside the
 small-fixture coverage claim.
+
+
+Development reference version 2 (2026-10-27) updates the historical snapshots for
+intentional inference corrections. See [reference history](reproducibility.md#reference-version-2).
+Repeated captures compare exactly with one another; comparison with a reviewed
+baseline uses the established scientific floating-point tolerance across platforms.

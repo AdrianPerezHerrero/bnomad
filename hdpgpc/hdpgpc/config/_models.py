@@ -37,6 +37,11 @@ class HDPConfig:
     hmm_switch: bool = True
     max_models: int | None = None
     transition_topology: Literal['ergodic', 'left_to_right'] = 'ergodic'
+    # Explicit concentrations override the selected preset and survive recipe serialization.
+    gamma: float | None = None
+    trans_alpha: float | None = None
+    start_alpha: float | None = None
+    kappa: float | None = None
 
 
 @dataclass(frozen=True)

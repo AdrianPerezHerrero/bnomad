@@ -79,6 +79,9 @@
     "estimation_limit": null,
     "free_deg_MNIV": 5,
     "ini_gamma": 0.03,
+    "lds_scoring": "final",
+    "lds_step_size": 0.2,
+    "lds_update": "conjugate_sequential",
     "model_type": "dynamic",
     "reest_conditions": {
       "__id__": 10,
@@ -116,17 +119,25 @@
   },
   "hdp": {
     "M": null,
+    "gamma": 1.0,
     "hdp_hyp": "balanced",
     "hmm_switch": true,
-    "max_models": 4
+    "kappa": 0.0,
+    "max_models": 4,
+    "start_alpha": 0.1,
+    "trans_alpha": 1.0
   },
   "inference": {
     "batch": null,
+    "birth_lds_kl_per_dimension": false,
     "classify": false,
     "force_model": null,
+    "hard_assignments": true,
     "it_limit": null,
     "minibatch": 0,
     "n_explore_steps": 2,
+    "offline_representer_selection": "sorted",
+    "offline_strategy": "legacy",
     "reestimate_initial_params": false,
     "schedule": "online",
     "warp": false

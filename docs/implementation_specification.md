@@ -1418,6 +1418,11 @@ expectations for the assignment, global updates and final state.
 110 preceding boundary events against the preserved source. This describes this
 fixture and does not claim that every forced-model path fails.
 
+Development update (2026-10-27): this paragraph describes the historical failure.
+The corrected implementation completes forced reuse. The version 2 supplemental
+`forced_reuse` trace checks successful execution, unchanged cluster count, and
+retention of both observations in the forced component.
+
 ### D15. Configuration preserves constructor defaults and value structure
 
 **Current behaviour:** `HDPGPCConfig` groups the existing constructor values into

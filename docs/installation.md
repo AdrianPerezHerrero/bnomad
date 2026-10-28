@@ -17,11 +17,15 @@ python -m pip install .
 hdpgpc-reference --check --output reference.json
 ```
 
-The last command generates synthetic data, runs offline inference, checks the
-packaged numerical reference and writes the configuration, data hash, results and
-environment. It works from any directory. No datasets or path manipulation are
+The last command generates synthetic data, runs offline inference and writes
+the configuration, data hash, results and environment. It works from any directory. No datasets or path manipulation are
 needed. `python -m hdpgpc.examples.reference` is an equivalent entry point.
 Choose a new output filename on each run.
+
+`--check` compares the explicitly pinned recipe and input hashes, exact labels,
+and numerical outputs against the versioned packaged snapshot. Omit it to write
+an exploratory report without comparison. See [reference version 2](reproducibility.md#reference-version-2)
+for the intentional changes since the original snapshot.
 
 The CPU-only PyTorch installation above avoids downloading CUDA libraries on
 machines that do not need GPU execution. It follows the
@@ -36,6 +40,7 @@ Optional extras:
 
 ```sh
 python -m pip install '.[datasets]'  # WFDB and audio readers; no data download
+python -m pip install '.[images]'    # Pillow for image readers such as CAS-Colon
 python -m pip install '.[examples]'  # notebook tools and full YAML parser
 python -m pip install '.[tutorials]' # automatic execution of the real-record notebooks
 python -m pip install '.[yaml]'      # full YAML parser only
@@ -52,8 +57,8 @@ Dependency ranges deliberately stay close to the characterized stack: NumPy 1.26
 SciPy 1.14, PyTorch 2.9.0, GPyTorch 1.13, linear-operator 0.5 and scikit-learn 1.5.
 PyTorch is bounded below 2.9.1: the Windows 2.9.1 wheel bundles a newer MKL and
 failed exact inference-trace comparisons at approximately 7e-17 in a covariance
-entry. The public offline result remained within 5.6e-17 of the reference. This
-release retains exact-reference compatibility rather than relaxing those tests.
+entry. The public offline result remained within 5.6e-17 of the reference. That was historical packaging evidence; the current development reference is
+version 2, described in the reproducibility guide.
 Pyro, plotting and pandas remain core dependencies because existing model imports
 use them eagerly. Moving them behind optional imports would be a separate change.
 Python's lower bound follows [PyTorch 2.9](https://pypi.org/project/torch/2.9.0/)

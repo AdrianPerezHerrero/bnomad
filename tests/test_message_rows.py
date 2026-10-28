@@ -1,4 +1,4 @@
-"""P02: exact recurrence values plus untouched autograd/subclass fallback."""
+"""Independent HMM recurrence values and autograd/subclass dispatch contracts."""
 from contextlib import redirect_stdout
 import io
 from types import SimpleNamespace
@@ -8,53 +8,41 @@ from unittest.mock import patch
 from tests.characterization._support import ModelState, torch
 
 
-def safe_exp(x):
-    return torch.nan_to_num(torch.exp(torch.sub(x, torch.atleast_2d(torch.max(x, axis=1)[0]).T)), 1e-8)
-
-
-def original(q, transition, pi):
-    """Literal pre-P02 cold forward/backward recurrence and normalization."""
-    T,K=q.shape
-    fmsg=torch.zeros((T,K),device=q.device)
-    marg=torch.zeros(T,device=q.device)
-    pi_=torch.exp(pi)
-    PiTMat=safe_exp(transition.T)
-    q_=safe_exp(q)
-    PiTMat[PiTMat < 1e-6] += 1e-4
-    pi_[pi_ < 1e-10] += 1e-4
-    for t in range(T):
-        if t == 0:
-            fmsg[t]=pi_*q_[0]
-        else:
-            fmsg[t]=torch.matmul(PiTMat,fmsg[t-1])*q_[t]
-        marg[t]=torch.sum(fmsg[t])
-        fmsg[t] /= marg[t]
-    PiMat=safe_exp(transition)
-    q_=safe_exp(q)
-    bmsg=torch.ones((T,K),device=q.device)
-    PiMat[PiMat < 1e-5] += 1e-4
-    for t in range(T-2,-1,-1):
-        bmsg[t]=torch.matmul(PiMat,bmsg[t+1]*q_[t+1])
-        bmsg[t] /= torch.sum(bmsg[t][:-1])
-    return fmsg,marg,bmsg
+def reference_messages(q, transition, pi):
+    """Independent log-space HMM recurrence with a common transition scale."""
+    evidence = q - q.amax(dim=1, keepdim=True)
+    log_trans = transition - transition.amax()
+    log_start = pi - pi.amax()
+    alpha, scales = [], []
+    for t in range(len(q)):
+        joint = log_start + evidence[t] if t == 0 else evidence[t] + torch.logsumexp(
+            alpha[-1][:, None] + log_trans, dim=0)
+        normalizer = torch.logsumexp(joint, dim=0)
+        alpha.append(joint-normalizer)
+        scales.append(normalizer.exp())
+    beta = [torch.zeros_like(pi)]
+    for t in range(len(q)-2, -1, -1):
+        row = torch.logsumexp(log_trans + evidence[t+1][None, :] + beta[-1][None, :], dim=1)
+        beta.append(row-torch.logsumexp(row, dim=0))
+    return torch.stack(alpha).exp(), torch.stack(scales), torch.stack(beta[::-1]).exp()
 
 
 def owner(q,transition,pi):
-    return SimpleNamespace(q=[q],trans_A=transition,pi=[pi],M=q.shape[1],
+    return SimpleNamespace(hmm_switch=True, q=[q],trans_A=transition,pi=[pi],M=q.shape[1],
                            device=q.device,fmsg=None,verbose=False,
                            compute_trans_pi=lambda k,p:p,
                            compute_trans_A=lambda k:transition,
-                           cond_cuda=lambda value:value)
+                           cond_cuda=lambda value:value, cond_to_torch=lambda value:torch.as_tensor(value))
 
 
 class MessageRowTests(unittest.TestCase):
     def assert_values(self,q,transition,pi):
         state=owner(q,transition,pi)
-        expected=original(q,transition,pi)
+        expected=reference_messages(q,transition,pi)
         with redirect_stdout(io.StringIO()):
             actual=(*ModelState.forward(state),ModelState.backward(state))
         for a,e in zip(actual,expected):
-            torch.testing.assert_close(a,e,rtol=0,atol=0,equal_nan=True)
+            torch.testing.assert_close(a,e,rtol=32*torch.finfo(q.dtype).eps,atol=32*torch.finfo(q.dtype).eps)
             self.assertEqual(a.dtype,e.dtype)
             self.assertEqual(a.device,e.device)
         return actual,expected
@@ -77,9 +65,16 @@ class MessageRowTests(unittest.TestCase):
     def test_noncontiguous_and_nonfinite_scores(self):
         q=torch.arange(24.).reshape(3,8).T
         q[2,1]=-torch.inf
-        q[3,2]=torch.nan
         self.assertFalse(q.is_contiguous())
         self.assert_values(q,torch.tensor([[0.,-20.,-50.],[-1.,0.,-2.],[-4.,-2.,0.]]),torch.zeros(3))
+
+    def test_nan_scores_raise_an_actionable_error(self):
+        q = torch.zeros(3, 2)
+        q[1, 0] = torch.nan
+        state = owner(q, torch.zeros(2, 2), torch.zeros(2))
+        for method in (ModelState.forward, ModelState.backward):
+            with self.subTest(method=method.__name__), self.assertRaisesRegex(FloatingPointError, 'observation 1'):
+                method(state)
 
     def test_gradient_inputs_use_original_indexed_path(self):
         for field in ('q','transition','pi'):

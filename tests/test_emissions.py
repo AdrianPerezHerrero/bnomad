@@ -83,7 +83,7 @@ class EmissionTests(unittest.TestCase):
     def test_responsibility_and_snr_gates_preserve_history_aliases(self):
         model, x, y = make_emission(cls=GaussianProcessEmission)
         with patch.object(model, "fit_kernel_params", wraps=model.fit_kernel_params) as fit:
-            model.include_weighted_sample(0, x, x, y, .999)
+            model.include_weighted_sample(0, x, x, y, 0.)
             fit.assert_not_called()
         self.assertEqual(model.N, 0)
         self.assertEqual(model.indexes, [])
@@ -103,6 +103,17 @@ class EmissionTests(unittest.TestCase):
         self.assertIs(clone.cov_f[-1], clone.cov_f_sm[-1])
         self.assertIsNot(clone.cov_f[-1], model.cov_f[-1])
 
+    def test_fractional_responsibility_trains_with_less_precision(self):
+        model, x, y = make_emission(cls=GaussianProcessEmission)
+        model.fitted = True
+        full = copy.deepcopy(model)
+        model.include_weighted_sample(0, x, x, y, .25)
+        full.include_weighted_sample(0, x, x, y, 1.)
+        self.assertEqual(model.N, 1)
+        self.assertEqual(model.indexes, [0])
+        self.assertGreater(torch.trace(model.cov_f[-1]).item(),
+                           torch.trace(full.cov_f[-1]).item())
+
     def test_exact_grid_returns_covariance_by_identity_and_dtype(self):
         model, x, _ = make_emission(cls=GaussianProcessEmission)
         mean, covariance = model.observe_last(x)
@@ -113,13 +124,17 @@ class EmissionTests(unittest.TestCase):
         self.assertIs(mean, model.f_star_sm[-1])
         self.assertIs(covariance, model.cov_f_sm[-1])
 
-    def test_score_omits_log_determinant(self):
+    def test_score_includes_log_determinant_and_latent_uncertainty(self):
         model, x, _ = make_emission(cls=GaussianProcessEmission)
         zero = torch.zeros_like(x)
-        expected = -.5 * len(x) * math.log(2. * math.pi)
+        latent = model.C[-1] @ model.cov_f_sm[0] @ model.C[-1].T
         for variance in (.04, .8):
             model.Sigma[-1] = variance * torch.eye(len(x))
-            self.assertEqual(model.log_sq_error(x, zero, i=-1).item(), expected)
+            # Analytic E_q[log N(0 | C f, variance I)], including Cholesky jitter.
+            effective_variance = variance * (1. + 1e-8)
+            expected = -.5 * (len(x) * math.log(2. * math.pi * effective_variance)
+                              + torch.trace(latent).item() / effective_variance)
+            self.assertAlmostEqual(model.log_sq_error(x, zero, i=-1).item(), expected, places=10)
 
     def test_prediction_equal_diagonal_shortcut_ignores_off_diagonals(self):
         model, x, _ = make_emission(cls=GaussianProcessEmission)
@@ -137,7 +152,8 @@ class EmissionTests(unittest.TestCase):
         self.assertIsNot(eye, eye32)
         self.assertEqual(eye32.dtype, torch.float32)
         batch = torch.stack((y, y * .9))
-        scores = model._gaussian_score_shared_cov(batch, model.f_star[0], model.Sigma[0])
+        latent = model.C[0] @ model.cov_f_sm[0] @ model.C[0].T
+        scores = model._gaussian_score_shared_cov(batch, model.f_star[0], model.Sigma[0], latent)
         scalar = torch.stack([model.log_sq_error(x, observation, i=-1) for observation in batch])
         torch.testing.assert_close(scores, scalar, rtol=1e-14, atol=1e-14)
 

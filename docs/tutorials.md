@@ -17,8 +17,8 @@ from hdpgpc import HDPGPC
 from hdpgpc.examples import configuration, waveforms
 
 model = HDPGPC(configuration('offline')).fit(waveforms())
-print(model.labels_)       # [0 0 1 1 0 1]
-print(model.n_clusters_)   # 2 represented clusters
+print(model.labels_)       # one discrete label per observation
+print(model.n_clusters_)   # occupied clusters, excluding empty reserved slots
 prediction = model.predictive(0)
 latent = model.posterior(0)[0]
 ```
@@ -43,8 +43,10 @@ print(model.labels_)       # [0 0 0 0] for this dynamic online recipe
 
 Each update commits one observation. The first cluster exists before the first
 observation; `new_cluster` indicates allocation growth during the update.
-`responsibilities` is the retained hard vector and `assignment_probabilities` is
-`None`; the implementation does not retain calibrated soft probabilities. Optional
+`responsibilities` in this streaming result is a one-hot summary and
+`assignment_probabilities` is `None`. Soft inference is separately enabled with
+`InferenceConfig.hard_assignments=False`; see the
+[assignment contract](public_api.md#hard-and-soft-assignments). Optional
 `include_prediction=True, include_posterior=True` request independent snapshots.
 An offline fit cannot be continued with online updates.
 
@@ -98,3 +100,12 @@ For different data, construct a recipe with `x_basis` set to the observation dom
 (or use `dataclasses.replace` on the frozen configuration); pass `grid=`
 explicitly if observed coordinates differ from the configured basis. Save
 `config.to_dict()` or `config.to_yaml()` with each experiment.
+
+
+## Small real-ECG quickstart
+
+Run `python examples/ecg_quickstart.py --output-dir agents/ecg_quickstart/my_run`
+from the repository with the package installed. It clusters the first 64 archived
+beats of MIT-BIH record 208, and saves a figure plus complete input/configuration
+and result provenance. It reuses local data or retrieves checksum-pinned arrays;
+no WFDB dependency is needed. See the [ECG guide](ecg_quickstart.md).

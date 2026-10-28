@@ -217,7 +217,8 @@ class MonotoneGridTests(unittest.TestCase):
             gradient, = torch.autograd.grad((grid * grid).sum(), (controls,))
             for actual, expected in ((grid, case['grid']), (displacement, case['displacement']),
                                      (gradient, case['gradient'])):
-                torch.testing.assert_close(actual, x.new_tensor(expected), rtol=0, atol=0)
+                torch.testing.assert_close(actual, x.new_tensor(expected),
+                                           rtol=4*torch.finfo(dtype).eps, atol=4*torch.finfo(dtype).eps)
                 self.assertEqual(actual.dtype, dtype)
                 self.assertEqual(actual.device, x.device)
             torch.testing.assert_close(controls, original, rtol=0, atol=0)

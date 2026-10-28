@@ -2,6 +2,7 @@
 
 - [Installation and supported versions](installation.md)
 - [Runnable tutorials](tutorials.md)
+- [Small reproducible ECG example](ecg_quickstart.md)
 - [Choose a model setup](model_choices.md)
 - [Comparable experiment scripts, arguments and run folders](experiment_workflows.md)
 - [Complete-record workflow and reusable helpers](record_workflow.md)

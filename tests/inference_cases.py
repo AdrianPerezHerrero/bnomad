@@ -13,11 +13,13 @@ import gzip
 import hashlib
 import inspect
 import io
+import math
 import json
 import os
 from pathlib import Path
 import sys
 from unittest.mock import patch
+from sklearn.gaussian_process.kernels import Kernel
 
 WORKSPACE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(WORKSPACE))
@@ -57,29 +59,35 @@ class InferenceDivergence(BaseException):
     """Stop immediately without being swallowed by legacy fallback handlers."""
 
 
-def first_difference(actual, expected, path='boundary'):
+def first_difference(actual, expected, path='boundary', exact=False):
     if type(actual) is not type(expected):
         return path + ': type'
     if isinstance(expected, dict):
         if actual.keys() != expected.keys():
             return path + ': keys'
         for key in expected:
-            diff = first_difference(actual[key], expected[key], path + '.' + key)
+            discrete = key in ('responsibilities', 'pair_responsibilities', 'resp_last', 'respPair_last')
+            diff = first_difference(actual[key], expected[key], path + '.' + key, exact or discrete)
             if diff:
                 return diff
     elif isinstance(expected, list):
         if len(actual) != len(expected):
             return path + ': length'
         for i, (a, e) in enumerate(zip(actual, expected)):
-            diff = first_difference(a, e, f'{path}[{i}]')
+            diff = first_difference(a, e, f'{path}[{i}]', exact)
             if diff:
                 return diff
+    elif isinstance(expected, float) and not exact:
+        if not math.isclose(actual, expected, rel_tol=1e-7, abs_tol=1e-9):
+            return f'{path}: {actual!r} != {expected!r} (rtol=1e-7, atol=1e-9)'
     elif actual != expected:
         return f'{path}: {actual!r} != {expected!r}'
     return None
 
 
 def snapshot(value):
+    if isinstance(value, Kernel):
+        return {"kernel_type": type(value).__name__, "params": snapshot(value.get_params(deep=False))}
     if isinstance(value, GaussianProcessEmission):
         return encode(gp_state(value))
     if isinstance(value, dict):
@@ -153,19 +161,18 @@ def edge_case(name):
         model.offline.fit(xs, y, it_limit=1, warp=False)
     elif name == 'reload_labels':
         model.fit_labels(xs, y, torch.tensor([0, 0, 1, 1, 0, 1]), 2, warp=False)
-    elif name == 'known_failure_forced_reuse':
+    elif name == 'forced_reuse':
         model.online.update(x, y[0], warp=False)
-        try:
-            model.online.update(x, y[1], warp=False, force_model=0)
-        except UnboundLocalError as error:
-            return dict(exception_type=type(error).__name__, message=str(error), partial_state=model_state(model))
-        raise AssertionError('Forced-reuse failure changed: review this path explicitly')
+        clusters_before = model.M
+        model.online.update(x, y[1], warp=False, force_model=0)
+        assert model.M == clusters_before, 'Forced reuse created a cluster'
+        assert model.gpmodels[0][0].indexes == [0, 1], 'Forced reuse lost observation history'
     else:
         raise KeyError(name)
     return model_state(model)
 
 
-EDGE_NAMES = ('offline_single', 'offline_limit', 'reload_labels', 'known_failure_forced_reuse')
+EDGE_NAMES = ('offline_single', 'offline_limit', 'reload_labels', 'forced_reuse')
 
 
 def run_case(name, expected=None, direct=False):

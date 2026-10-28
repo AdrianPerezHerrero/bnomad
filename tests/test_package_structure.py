@@ -113,10 +113,10 @@ class PackageStructureTests(unittest.TestCase):
             before = torch.get_default_dtype()
             from hdpgpc.hdp import HDPVariational
             from types import SimpleNamespace
-            state = SimpleNamespace()
+            state = SimpleNamespace(hmm_switch=True)
             component = HDPVariational(state)
             component.set_hyperparameters('balanced')
-            assert state.gamma == 1.0
+            assert state.gamma == 1000.0
             assert torch.get_default_dtype() == before
             for name in ('hdpgpc.GPI_HDP', 'hdpgpc.GPI_model', 'hdpgpc.GPI',
                          'hdpgpc.alignment._amtgp', 'hdpgpc.dynamics._kalman'):

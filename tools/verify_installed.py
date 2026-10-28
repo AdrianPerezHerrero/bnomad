@@ -51,6 +51,8 @@ def main():
         status[name] = result.returncode
         (output/'status.json').write_text(json.dumps(status, indent=2)+'\n')
         if result.returncode:
+            tail = (output/(name+'.log')).read_text(encoding='utf-8', errors='replace').splitlines()[-60:]
+            print('\n'.join(tail), file=sys.stderr, flush=True)
             raise SystemExit(f'{name} failed; inspect {output/(name+".log")}')
     print('All installed-package release gates passed', flush=True)
 

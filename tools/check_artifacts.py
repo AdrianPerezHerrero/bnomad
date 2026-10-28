@@ -25,7 +25,9 @@ def main():
         for required in ('pyproject.toml', 'CITATION.cff', 'tests/test_release.py',
                          'tests/characterization/baselines/manifest.json',
                          'docs/release_checklist.md', 'tools/performance_smoke.py',
-                         'tools/verify_installed.py',
+                         'tools/verify_installed.py', 'tools/plot_synthetic_reference.py',
+                         'docs/assets/synthetic_reference.svg', 'docs/assets/ecg_quickstart.svg',
+                         'examples/ecg_quickstart.py', 'docs/ecg_quickstart.md',
                          *(f'examples/minimal_{mode}.py' for mode in
                            ('online', 'offline', 'static', 'warping', 'multi_output'))):
             assert required in names, required

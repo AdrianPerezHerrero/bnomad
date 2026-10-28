@@ -1,0 +1,1410 @@
+{
+  "schema_version": 2,
+  "source_revision": "034c61b + reviewed reference fixes (2026-10-27)",
+  "reason": "Version 2: explicit reference concentrations and birth-score policy; current normalized Gaussian score, corrected conjugate posterior and soft weighting, current HMM transitions, current warp derivatives. Existing array comparison tolerances are unchanged; discrete scientific expectations reviewed separately.",
+  "comparison": {
+    "structure_and_discrete": "exact",
+    "float_rtol": 1e-07,
+    "float_atol": 1e-09
+  },
+  "invariants": [
+    "Offline fixtures retain 2 occupied clusters in each output",
+    "Online static growth remains [1,1,2,2]",
+    "Known online warp and multi-output failures retain their exception types",
+    "Forced online reuse now succeeds without creating clusters or losing history"
+  ],
+  "files": [
+    {
+      "file": "tests/characterization/baselines/warper_batch.json",
+      "old_sha256": "26f297aaaa1084101ee8e9f8ba9437e4fc04ec8fb5144a403c7b8a12381bd6a3",
+      "new_sha256": "ef65a2af15dde57043fddfb19f135db0fb8b10a27fdc2e4e2b2ea1fa3046bd52",
+      "difference_counts": {
+        "float": 126,
+        "discrete": 0,
+        "type": 0,
+        "key": 0,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".calls[0].warm_start.values[0]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[1]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[2]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[3]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[4]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[5]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[6]",
+          "float"
+        ],
+        [
+          ".calls[0].result[0].values[1][1][0]",
+          "float"
+        ],
+        [
+          ".calls[0].result[0].values[1][3][0]",
+          "float"
+        ],
+        [
+          ".calls[0].result[1].values[1][1][0]",
+          "float"
+        ],
+        [
+          ".calls[0].result[1].values[1][3][0]",
+          "float"
+        ],
+        [
+          ".calls[0].result[2].values[0]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/online_static.json",
+      "old_sha256": "6e7ddb83137d36efefe195654b934393c07b12a6e9445cfd7bbffa218261e79d",
+      "new_sha256": "eb8feb6d7f01b8bb268a516ae5431b3d0d5709ec0a89e99880b1fb287814e664",
+      "difference_counts": {
+        "float": 1638,
+        "discrete": 0,
+        "type": 35,
+        "key": 0,
+        "length": 30
+      },
+      "first_changed_fields": [
+        [
+          ".steps[0].gpmodels[0][0].f_star[1].values[0][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].f_star[1].values[1][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].f_star[1].values[2][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].f_star[1].values[3][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].f_star[1].values[4][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].cov_f_sm[0].values[0][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].cov_f_sm[0].values[0][1]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].cov_f_sm[0].values[0][2]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].cov_f_sm[0].values[0][3]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].cov_f_sm[0].values[0][4]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].cov_f_sm[0].values[1][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].cov_f_sm[0].values[1][1]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/manifest.json",
+      "old_sha256": "4cf6a3706ef39a06076673446a5913cf2c4d8b314500371a94fcf1abe6ad2d24",
+      "new_sha256": "376a60a2db06f032aeef90a8ac60d581b7b7c7186155e4b643ec02d95cef15c5",
+      "difference_counts": {
+        "float": 0,
+        "discrete": 3,
+        "type": 0,
+        "key": 117,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".reference_commit",
+          "discrete"
+        ],
+        [
+          ".environment.python",
+          "discrete"
+        ],
+        [
+          ".environment.source_sha256.alignment/_covariance.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.datasets/mitbih.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.alignment/_dtw_integration.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.diagnostics/_lds_plots.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.emissions/_fourier.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.emissions/_interface.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.emissions/_fixed_observation.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.alignment/_flow_integration.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.dynamics/_distributions.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.datasets/__init__.py",
+          "key"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/offline_multi_snr.json",
+      "old_sha256": "27bab9d6ae09f238f9b225cb6ad72b6a6a33ce65fdfe466a3b9414a408d16217",
+      "new_sha256": "0a10353af0617f70b891c408bcfd366344c4eb2832648bba5174216c78f86633",
+      "difference_counts": {
+        "float": 3442,
+        "discrete": 4,
+        "type": 104,
+        "key": 0,
+        "length": 96
+      },
+      "first_changed_fields": [
+        [
+          ".inference_trace[0].result",
+          "float"
+        ],
+        [
+          ".inference_trace[1].result.shape",
+          "length"
+        ],
+        [
+          ".inference_trace[1].result.values",
+          "type"
+        ],
+        [
+          ".inference_trace[2].result.shape",
+          "length"
+        ],
+        [
+          ".inference_trace[2].result.values",
+          "type"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[0][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[1][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[2][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[3][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[4][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[5][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].emission_input.values[0][0]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/emission_dynamic.json",
+      "old_sha256": "a28b4a9d4e604cc35df032b5fdf40befd5679e5ffebb7eda9bbf94bbd78aa189",
+      "new_sha256": "4ed6aca09d30a363dde97388c62e6162bee2eb772e42032d7c541b90c65a980b",
+      "difference_counts": {
+        "float": 1276,
+        "discrete": 0,
+        "type": 4,
+        "key": 0,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".observe_interpolated[0].values[0][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[1][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[2][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[3][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[4][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[5][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[6][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][1]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][2]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][3]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][4]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/online_dynamic.json",
+      "old_sha256": "180197a4e5682b0ba27125946b2feb87b5c4675a6aac3aa02b6ca0e1eb290713",
+      "new_sha256": "939501d8da9226e1e34bbebc1b64204b9afaa1f2ed1c5ab309ef3c3c3c1596bc",
+      "difference_counts": {
+        "float": 881,
+        "discrete": 15,
+        "type": 5,
+        "key": 0,
+        "length": 9
+      },
+      "first_changed_fields": [
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][1]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][2]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][3]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][4]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][1]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][2]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][3]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][4]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[2][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[2][1]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/emission_static.json",
+      "old_sha256": "fbed649a597894a1b738a70a6a060d38b66b04f80be31aab353a18c81897c7e4",
+      "new_sha256": "9049269ccaae508086d1f35b18f408ac530b5db3c9c363f86603b146834748c9",
+      "difference_counts": {
+        "float": 864,
+        "discrete": 0,
+        "type": 2,
+        "key": 0,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".observe_interpolated[0].values[0][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[1][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[2][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[3][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[4][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[5][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[0].values[6][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][0]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][1]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][2]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][3]",
+          "float"
+        ],
+        [
+          ".observe_interpolated[1].values[0][4]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/hdp_messages.json",
+      "old_sha256": "107e237785d7f67ab0bcf5e5a20af4ce73f766fd0862001a42d596fce2fa6c63",
+      "new_sha256": "c1b36b80e94d41c2317165265218f7d173f2951af3008f176fee9270d39bcb03",
+      "difference_counts": {
+        "float": 22,
+        "discrete": 0,
+        "type": 0,
+        "key": 0,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".pair_responsibilities.values[0][0][0]",
+          "float"
+        ],
+        [
+          ".omega_after.values[0]",
+          "float"
+        ],
+        [
+          ".omega_after.values[1]",
+          "float"
+        ],
+        [
+          ".log_pair_responsibilities.values[1][0][0]",
+          "float"
+        ],
+        [
+          ".log_pair_responsibilities.values[1][0][1]",
+          "float"
+        ],
+        [
+          ".log_pair_responsibilities.values[1][1][0]",
+          "float"
+        ],
+        [
+          ".log_pair_responsibilities.values[1][1][1]",
+          "float"
+        ],
+        [
+          ".log_pair_responsibilities.values[2][0][0]",
+          "float"
+        ],
+        [
+          ".log_pair_responsibilities.values[2][0][1]",
+          "float"
+        ],
+        [
+          ".log_pair_responsibilities.values[2][1][0]",
+          "float"
+        ],
+        [
+          ".log_pair_responsibilities.values[2][1][1]",
+          "float"
+        ],
+        [
+          ".log_responsibilities.values[0][1]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/offline_multi.json",
+      "old_sha256": "3eabfdee75ed3da0690dd46c581faead742afba58c63f6adda0fb805cee5d310",
+      "new_sha256": "de689a159d2fb77df8a2ec8fe7de72fbfa4ecee05996bd9dda85c225957bebd5",
+      "difference_counts": {
+        "float": 3406,
+        "discrete": 5,
+        "type": 104,
+        "key": 0,
+        "length": 96
+      },
+      "first_changed_fields": [
+        [
+          ".inference_trace[0].result",
+          "float"
+        ],
+        [
+          ".inference_trace[1].result.shape",
+          "length"
+        ],
+        [
+          ".inference_trace[1].result.values",
+          "type"
+        ],
+        [
+          ".inference_trace[2].result.shape",
+          "length"
+        ],
+        [
+          ".inference_trace[2].result.values",
+          "type"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[0][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[1][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[2][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[3][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[4][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].latent_input.values[5][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[3].emission_input.values[0][0]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/offline_static.json",
+      "old_sha256": "6341e1fd117e7963859fc0f1852bbce8ba62884d03021a3419709c1bf4166d8c",
+      "new_sha256": "b00b0e227f84ab9e8e4e893f954ab6e492ec96c13dbc58bfde0de7f6df2b894f",
+      "difference_counts": {
+        "float": 633,
+        "discrete": 3,
+        "type": 3,
+        "key": 3,
+        "length": 4
+      },
+      "first_changed_fields": [
+        [
+          ".inference_trace",
+          "length"
+        ],
+        [
+          ".final.train_elbo[0].shape",
+          "length"
+        ],
+        [
+          ".final.train_elbo[0].values",
+          "type"
+        ],
+        [
+          ".final.train_elbo[1].shape",
+          "length"
+        ],
+        [
+          ".final.train_elbo[1].values",
+          "type"
+        ],
+        [
+          ".final.f_ind_old.values[1]",
+          "discrete"
+        ],
+        [
+          ".final.gpmodels[0][0].observation_params.m_r_cov",
+          "key"
+        ],
+        [
+          ".final.gpmodels[0][0].observation_params.m_mean",
+          "key"
+        ],
+        [
+          ".final.gpmodels[0][0].observation_params.C_fixed",
+          "key"
+        ],
+        [
+          ".final.gpmodels[0][0].f_star[1].values[0][0]",
+          "float"
+        ],
+        [
+          ".final.gpmodels[0][0].f_star[1].values[1][0]",
+          "float"
+        ],
+        [
+          ".final.gpmodels[0][0].f_star[1].values[2][0]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/offline_dynamic.json",
+      "old_sha256": "a99d705355b732c4559ef07ea73ac15ad2d81c35588396cab437ec30fe8cadcb",
+      "new_sha256": "57e33aa74139c20a02948c7e70e3118281cb1341a0bb2888b62eb3a6a787b8a5",
+      "difference_counts": {
+        "float": 2038,
+        "discrete": 3,
+        "type": 69,
+        "key": 0,
+        "length": 65
+      },
+      "first_changed_fields": [
+        [
+          ".inference_trace[0].result",
+          "float"
+        ],
+        [
+          ".inference_trace[1].result.shape",
+          "length"
+        ],
+        [
+          ".inference_trace[1].result.values",
+          "type"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[0][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[1][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[2][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[3][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[4][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[5][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].emission_input.values[0][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].emission_input.values[0][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].emission_input.values[1][0]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/offline_warp.json",
+      "old_sha256": "e8b506f460a7857e50a62062118a6c6388cd0cccb943cdb59dfc5d5deb468513",
+      "new_sha256": "4fe29e789cd7ddcb3ddfab6bf127cf492eeb907bb7eaa10d61ac42eeffb83f39",
+      "difference_counts": {
+        "float": 2071,
+        "discrete": 4,
+        "type": 69,
+        "key": 0,
+        "length": 65
+      },
+      "first_changed_fields": [
+        [
+          ".inference_trace[0].result",
+          "float"
+        ],
+        [
+          ".inference_trace[1].result.shape",
+          "length"
+        ],
+        [
+          ".inference_trace[1].result.values",
+          "type"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[0][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[1][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[2][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[3][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[4][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].latent_input.values[5][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].emission_input.values[0][0]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].emission_input.values[0][1]",
+          "float"
+        ],
+        [
+          ".inference_trace[2].emission_input.values[1][0]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/warper_scalar.json",
+      "old_sha256": "527d29759ed3df60b88c326a726c69c2591c2ae9117679ca6ce9cc579eb47b87",
+      "new_sha256": "410f9c63b21e8e7994c81f59187b903aafcd085c0e2fd1c41abb5fe5fde7dade",
+      "difference_counts": {
+        "float": 114,
+        "discrete": 0,
+        "type": 0,
+        "key": 0,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".calls[0].warm_start.values[0]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[1]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[2]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[3]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[4]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[5]",
+          "float"
+        ],
+        [
+          ".calls[0].warm_start.values[6]",
+          "float"
+        ],
+        [
+          ".calls[0].result[0].values[1][0]",
+          "float"
+        ],
+        [
+          ".calls[0].result[0].values[2][0]",
+          "float"
+        ],
+        [
+          ".calls[0].result[0].values[3][0]",
+          "float"
+        ],
+        [
+          ".calls[0].result[0].values[5][0]",
+          "float"
+        ],
+        [
+          ".calls[0].result[1].values[1][0]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/online_fast.json",
+      "old_sha256": "6dbaa48a946326313bf048fa5566effc07598893c4c5bf3f1680a1df87c31c8e",
+      "new_sha256": "69e071fdf0f481ee32bc77e3dca7c400f9fb18145b5dbb9865e0946c22fe86c5",
+      "difference_counts": {
+        "float": 891,
+        "discrete": 21,
+        "type": 5,
+        "key": 0,
+        "length": 35
+      },
+      "first_changed_fields": [
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][1]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][2]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][3]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][4]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][1]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][2]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][3]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[1][4]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[2][0]",
+          "float"
+        ],
+        [
+          ".steps[0].gpmodels[0][0].observation_params.m_mean.values[2][1]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/known_failure_online_warp.json",
+      "old_sha256": "480bff5e51900715b32378e8ee4e52cb347ce4a54010e538b87a309f6321e69f",
+      "new_sha256": "18fdc0ada58f41670b683b46d6b4b938f41c15daf8ee25d0bb8a177c7ed470f2",
+      "difference_counts": {
+        "float": 299,
+        "discrete": 0,
+        "type": 1,
+        "key": 0,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][1]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][2]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][3]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][4]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[1][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[1][1]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[1][2]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[1][3]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[1][4]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[2][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[2][1]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/characterization/baselines/known_failure_online_multi.json",
+      "old_sha256": "f186f1d185772a3d7368d78d963bfaea3a4161267a7a18e07d165bf8e6dc5724",
+      "new_sha256": "ff0bd95f8bfe01b7ac4b05feb653cdb146017d3ca64e23046a3f92436562ecb0",
+      "difference_counts": {
+        "float": 1127,
+        "discrete": 0,
+        "type": 4,
+        "key": 0,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".partial_state.gpmodels[0][0].var[2].values[0][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].var[2].values[1][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].var[2].values[2][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].var[2].values[3][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].var[2].values[4][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][1]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][2]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][3]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][4]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[1][0]",
+          "float"
+        ],
+        [
+          ".partial_state.gpmodels[0][0].observation_params.m_mean.values[1][1]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/fixtures/emission_reference.json",
+      "old_sha256": "fbb0c5ff63a22cf1d890443edac0dc2419996a160b619cb48ae6964c881efaea",
+      "new_sha256": "9b94abdfb42b3d8abf11e13c95e965725185c3fa08218bc9182ce8b5cdb62ce9",
+      "difference_counts": {
+        "float": 1723,
+        "discrete": 4,
+        "type": 7,
+        "key": 0,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".provenance.source",
+          "discrete"
+        ],
+        [
+          ".provenance.sha256",
+          "discrete"
+        ],
+        [
+          ".provenance.torch",
+          "discrete"
+        ],
+        [
+          ".legacy_pickle_b64",
+          "discrete"
+        ],
+        [
+          ".cases.projected.latent[0].values[0][0]",
+          "float"
+        ],
+        [
+          ".cases.projected.latent[0].values[1][0]",
+          "float"
+        ],
+        [
+          ".cases.projected.latent[0].values[2][0]",
+          "float"
+        ],
+        [
+          ".cases.projected.latent[0].values[3][0]",
+          "float"
+        ],
+        [
+          ".cases.projected.latent[0].values[4][0]",
+          "float"
+        ],
+        [
+          ".cases.projected.latent[0].values[5][0]",
+          "float"
+        ],
+        [
+          ".cases.projected.latent[0].values[6][0]",
+          "float"
+        ],
+        [
+          ".cases.projected.latent[1].values[0][0]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/fixtures/dynamics_reference.json",
+      "old_sha256": "3923242f141af1984680ad989629a03143c8e204232d5e00ceb3edfe96787f6b",
+      "new_sha256": "0673db8a407f65e0ba6990044c1c54a0eebd93ee19ce7b15b1d0b2ed78ca8aaa",
+      "difference_counts": {
+        "float": 7507,
+        "discrete": 4,
+        "type": 27,
+        "key": 5,
+        "length": 12
+      },
+      "first_changed_fields": [
+        [
+          ".source_sha256.GPI.py",
+          "key"
+        ],
+        [
+          ".source_sha256.emissions/_prior.py",
+          "key"
+        ],
+        [
+          ".source_sha256.emissions/_gaussian_process.py",
+          "discrete"
+        ],
+        [
+          ".torch",
+          "discrete"
+        ],
+        [
+          ".cases.trajectory_linear_gates.value.steps[1].f_star[1].values[0][0]",
+          "float"
+        ],
+        [
+          ".cases.trajectory_linear_gates.value.steps[1].f_star[1].values[1][0]",
+          "float"
+        ],
+        [
+          ".cases.trajectory_linear_gates.value.steps[1].f_star[1].values[2][0]",
+          "float"
+        ],
+        [
+          ".cases.trajectory_linear_gates.value.steps[1].f_star[1].values[3][0]",
+          "float"
+        ],
+        [
+          ".cases.trajectory_linear_gates.value.steps[1].f_star[1].values[4][0]",
+          "float"
+        ],
+        [
+          ".cases.trajectory_linear_gates.value.steps[1].cov_f_sm[1].values[0][0]",
+          "float"
+        ],
+        [
+          ".cases.trajectory_linear_gates.value.steps[1].cov_f_sm[1].values[0][1]",
+          "float"
+        ],
+        [
+          ".cases.trajectory_linear_gates.value.steps[1].cov_f_sm[1].values[0][2]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/fixtures/alignment_reference.json",
+      "old_sha256": "4b58cbdff132bf6e2e86dba13536eed5c38b2bd1b2a5e669263483ea5afa8490",
+      "new_sha256": "09580b9ef6d70de771edaefa6cc2f0888d05beb603a6a5832b6db032837e454b",
+      "difference_counts": {
+        "float": 1323,
+        "discrete": 1,
+        "type": 0,
+        "key": 4,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".source_sha256.model/_state.py",
+          "key"
+        ],
+        [
+          ".source_sha256.GPI_HDP.py",
+          "key"
+        ],
+        [
+          ".source_sha256.amtgp_warping_system.py",
+          "key"
+        ],
+        [
+          ".source_sha256.alignment/_amtgp.py",
+          "key"
+        ],
+        [
+          ".torch",
+          "discrete"
+        ],
+        [
+          ".cases.batch_changed_grid[0].state.prior_L.values[2][2]",
+          "float"
+        ],
+        [
+          ".cases.batch_changed_grid[0].state.prior_L.values[3][2]",
+          "float"
+        ],
+        [
+          ".cases.batch_changed_grid[0].state.prior_L.values[3][3]",
+          "float"
+        ],
+        [
+          ".cases.batch_changed_grid[0].state.prior_L.values[4][2]",
+          "float"
+        ],
+        [
+          ".cases.batch_changed_grid[0].state.prior_L.values[4][3]",
+          "float"
+        ],
+        [
+          ".cases.batch_changed_grid[0].state.prior_L.values[4][4]",
+          "float"
+        ],
+        [
+          ".cases.batch_changed_grid[0].state.prior_L.values[5][2]",
+          "float"
+        ]
+      ]
+    },
+    {
+      "file": "tests/fixtures/hdp_reference.json",
+      "old_sha256": "1532c65dc088d58c752f1517b77fc2e88996ef5253862b72fd1d22aa7ab99c53",
+      "new_sha256": "9d33b7b8c9aa2857ac6e5973aea29468050f134a7e438d394120c83601fb6ee6",
+      "difference_counts": {
+        "float": 123,
+        "discrete": 1,
+        "type": 0,
+        "key": 4,
+        "length": 0
+      },
+      "first_changed_fields": [
+        [
+          ".source_sha256.OptimizerRhoOmega.py",
+          "key"
+        ],
+        [
+          ".source_sha256.GPI_HDP.py",
+          "key"
+        ],
+        [
+          ".source_sha256.hdp/_optimizer.py",
+          "key"
+        ],
+        [
+          ".source_sha256.hdp/_variational.py",
+          "key"
+        ],
+        [
+          ".torch",
+          "discrete"
+        ],
+        [
+          ".cases.initial_one.pi.values[0][0]",
+          "float"
+        ],
+        [
+          ".cases.initial_one.pi.values[0][1]",
+          "float"
+        ],
+        [
+          ".cases.initial_one.pi.values[1][0]",
+          "float"
+        ],
+        [
+          ".cases.initial_one.pi.values[1][1]",
+          "float"
+        ],
+        [
+          ".cases.optimizer_sticky.unconstrained[1].values[1]",
+          "float"
+        ],
+        [
+          ".cases.optimizer_sticky.unconstrained[1].values[3]",
+          "float"
+        ],
+        [
+          ".cases.optimizer_sticky.unconstrained[1].values[4]",
+          "float"
+        ]
+      ],
+      "note": "Independent Dirichlet E[log p] formula now shared by online, batch, stored and classification paths."
+    },
+    {
+      "file": "tests/fixtures/inference_reference.json.gz",
+      "old_sha256": "33134f79eb23079a86c72fd9409eb62d4899f672ce2ac28b191681a08d6a66df",
+      "new_sha256": "9b663d0afdb3397dee590f02a69dee142fff948329033e1cae13b8461d256b52",
+      "difference_counts": {
+        "float": 1266054,
+        "discrete": 3240,
+        "type": 5292,
+        "key": 4944,
+        "length": 2919
+      },
+      "first_changed_fields": [
+        [
+          ".reference_revision",
+          "key"
+        ],
+        [
+          ".environment.python",
+          "discrete"
+        ],
+        [
+          ".environment.source_sha256.alignment/_covariance.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.datasets/mitbih.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.alignment/_dtw_integration.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.diagnostics/_lds_plots.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.emissions/_fourier.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.emissions/_interface.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.emissions/_fixed_observation.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.alignment/_flow_integration.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.dynamics/_distributions.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.datasets/__init__.py",
+          "key"
+        ]
+      ]
+    },
+    {
+      "file": "tests/fixtures/inference_edge_reference.json.gz",
+      "old_sha256": "0cf0999cd3042de9dafc188f5076c736aad471d54c14478077b36ea28377adc3",
+      "new_sha256": "e18c1697b5147199c73dc695b5a5bff0823a8454cde6f85f86032a50c40bb9cc",
+      "difference_counts": {
+        "float": 148999,
+        "discrete": 386,
+        "type": 387,
+        "key": 150,
+        "length": 39
+      },
+      "first_changed_fields": [
+        [
+          ".reference_revision",
+          "key"
+        ],
+        [
+          ".environment.python",
+          "discrete"
+        ],
+        [
+          ".environment.source_sha256.alignment/_covariance.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.datasets/mitbih.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.alignment/_dtw_integration.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.diagnostics/_lds_plots.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.emissions/_fourier.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.emissions/_interface.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.emissions/_fixed_observation.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.alignment/_flow_integration.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.dynamics/_distributions.py",
+          "key"
+        ],
+        [
+          ".environment.source_sha256.datasets/__init__.py",
+          "key"
+        ]
+      ]
+    }
+  ],
+  "sha256": {
+    "tests/fixtures/alignment_reference.json": "09580b9ef6d70de771edaefa6cc2f0888d05beb603a6a5832b6db032837e454b",
+    "tests/fixtures/calculation_reference.json": "787e381d1932612ae598b3cce8375e8036228edfbdaf4c7576003a2c3c8f00bb",
+    "tests/fixtures/dynamics_reference.json": "0673db8a407f65e0ba6990044c1c54a0eebd93ee19ce7b15b1d0b2ed78ca8aaa",
+    "tests/fixtures/emission_reference.json": "9b94abdfb42b3d8abf11e13c95e965725185c3fa08218bc9182ce8b5cdb62ce9",
+    "tests/fixtures/hdp_reference.json": "9d33b7b8c9aa2857ac6e5973aea29468050f134a7e438d394120c83601fb6ee6",
+    "tests/fixtures/inference_edge_reference.json.gz": "e18c1697b5147199c73dc695b5a5bff0823a8454cde6f85f86032a50c40bb9cc",
+    "tests/fixtures/inference_reference.json.gz": "9b663d0afdb3397dee590f02a69dee142fff948329033e1cae13b8461d256b52",
+    "tests/characterization/baselines/emission_dynamic.json": "4ed6aca09d30a363dde97388c62e6162bee2eb772e42032d7c541b90c65a980b",
+    "tests/characterization/baselines/emission_static.json": "9049269ccaae508086d1f35b18f408ac530b5db3c9c363f86603b146834748c9",
+    "tests/characterization/baselines/hdp_messages.json": "c1b36b80e94d41c2317165265218f7d173f2951af3008f176fee9270d39bcb03",
+    "tests/characterization/baselines/known_failure_online_multi.json": "ff0bd95f8bfe01b7ac4b05feb653cdb146017d3ca64e23046a3f92436562ecb0",
+    "tests/characterization/baselines/known_failure_online_warp.json": "18fdc0ada58f41670b683b46d6b4b938f41c15daf8ee25d0bb8a177c7ed470f2",
+    "tests/characterization/baselines/manifest.json": "376a60a2db06f032aeef90a8ac60d581b7b7c7186155e4b643ec02d95cef15c5",
+    "tests/characterization/baselines/offline_dynamic.json": "57e33aa74139c20a02948c7e70e3118281cb1341a0bb2888b62eb3a6a787b8a5",
+    "tests/characterization/baselines/offline_multi.json": "de689a159d2fb77df8a2ec8fe7de72fbfa4ecee05996bd9dda85c225957bebd5",
+    "tests/characterization/baselines/offline_multi_snr.json": "0a10353af0617f70b891c408bcfd366344c4eb2832648bba5174216c78f86633",
+    "tests/characterization/baselines/offline_static.json": "b00b0e227f84ab9e8e4e893f954ab6e492ec96c13dbc58bfde0de7f6df2b894f",
+    "tests/characterization/baselines/offline_warp.json": "4fe29e789cd7ddcb3ddfab6bf127cf492eeb907bb7eaa10d61ac42eeffb83f39",
+    "tests/characterization/baselines/online_dynamic.json": "939501d8da9226e1e34bbebc1b64204b9afaa1f2ed1c5ab309ef3c3c3c1596bc",
+    "tests/characterization/baselines/online_fast.json": "69e071fdf0f481ee32bc77e3dca7c400f9fb18145b5dbb9865e0946c22fe86c5",
+    "tests/characterization/baselines/online_static.json": "eb8feb6d7f01b8bb268a516ae5431b3d0d5709ec0a89e99880b1fb287814e664",
+    "tests/characterization/baselines/warper_batch.json": "ef65a2af15dde57043fddfb19f135db0fb8b10a27fdc2e4e2b2ea1fa3046bd52",
+    "tests/characterization/baselines/warper_scalar.json": "410f9c63b21e8e7994c81f59187b903aafcd085c0e2fd1c41abb5fe5fde7dade",
+    "hdpgpc/hdpgpc/examples/reference_offline.json": "a5873491b0f37226781ff83b19599c1ad9e0150e3f209e9bb81bed281c1bd5d6"
+  },
+  "hash_encoding": "SHA-256; JSON text normalizes CRLF to LF, binary gzip remains byte-exact"
+}

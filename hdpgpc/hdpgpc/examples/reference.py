@@ -73,9 +73,15 @@ def check_reference(report):
     if report['mode'] != 'offline':
         raise ValueError('--check uses the offline reference experiment')
     expected = json.loads(files(__package__).joinpath('reference_offline.json').read_text())
+    provenance = expected['_reference']
+    config_hash = hashlib.sha256(json.dumps(report['config'], sort_keys=True).encode()).hexdigest()
+    if config_hash != provenance['config_sha256'] or report['data_sha256'] != provenance['data_sha256']:
+        raise AssertionError('Reference recipe or input data changed; review the versioned reference')
     actual = report['scientific_result']
     if actual['labels'] != expected['labels'] or actual['n_clusters'] != expected['n_clusters']:
-        raise AssertionError('Reference cluster assignments changed')
+        raise AssertionError(f'Reference cluster assignments changed: expected {expected["labels"]} '
+                             f'({expected["n_clusters"]} clusters), got {actual["labels"]} '
+                             f'({actual["n_clusters"]} clusters)')
     if actual['online_updates'] != expected['online_updates'] or len(actual['clusters']) != len(expected['clusters']):
         raise AssertionError('Reference result structure changed')
     for a, e in zip(actual['clusters'], expected['clusters']):
