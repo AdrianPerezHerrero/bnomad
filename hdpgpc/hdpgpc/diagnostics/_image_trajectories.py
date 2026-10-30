@@ -67,7 +67,8 @@ def _times(times, count):
 
 
 def plot_latent_trajectories(model, *, times=None, output=0, title='', trajectories=None,
-                             min_cluster_samples=1, time_label='Video time (s)', time_unit='s'):
+                             min_cluster_samples=1, time_label='Video time (s)', time_unit='s',
+                             observation_label='frames'):
     """Per cluster: state path, component uncertainty and final-A changes.
 
     Uses the first two common latent coordinates (one-dimensional states get a
@@ -99,7 +100,7 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
         means, covariances = state['means'][owned], state['covariances'][owned]
         forecasts = state['forecast_means'][owned]
         color = colors[cluster]
-        axes[row, 0].set(title=f'Cluster {cluster}: {len(indices)} MAP frames (color = time)',
+        axes[row, 0].set(title=f'Cluster {cluster}: {len(indices)} MAP {observation_label} (color = time)',
                          xlabel='Latent component 1', ylabel='Latent component 2')
         axes[row, 1].set(title='Smoothed components +/- 2 posterior SD',
                          xlabel=time_label, ylabel='Latent coefficient')

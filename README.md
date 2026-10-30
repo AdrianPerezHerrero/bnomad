@@ -203,7 +203,8 @@ result shapes, streaming behavior, and supported combinations.
 ## Run a dataset experiment
 
 The repository includes runners for UCR time series, MIT-BIH ECG, Daphnet
-sensor windows, CAS-Colon frames, and synthetic image sequences. Dataset files
+sensor windows, CAS-Colon frames, zebrafish/Xenopus expression snapshots, and synthetic
+image sequences. Dataset files
 are obtained separately; inspect each runner's `--help` and data-layout guide.
 
 ```sh
@@ -232,6 +233,9 @@ Shared MFA currently requires CPU and offline batch updates.
 | Common script arguments and saved results | [Experiment workflows](docs/experiment_workflows.md) |
 | Complete sensor/ECG records | [Record workflow](docs/record_workflow.md) |
 | CAS-Colon observations and learned MFA | [Image workflow](docs/cas_colon_pca.md), [MFA](docs/mfa_emission.md) |
+| All-gene zebrafish expression states, independent versus evolving factors | [Zebrafish workflow](docs/zebrafish_workflow.md) |
+| Denser Xenopus expression trajectories and independent clutches | [Xenopus workflow](docs/xenopus_workflow.md) |
+| Fixed PCA or autoencoder observations for either expression dataset | [Expression representations](docs/expression_representations.md) |
 | Executable notebooks | [Notebook suite](tutorials/README.md) |
 
 For notebook tools, install `python -m pip install '.[examples,tutorials]'`.

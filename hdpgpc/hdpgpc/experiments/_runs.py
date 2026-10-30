@@ -66,7 +66,7 @@ def code_digest():
 
 def experiment_settings(args):
     return {key: value for key, value in vars(args).items()
-            if key not in ('output_dir', 'resume', 'download', 'datasets', 'records',
+            if key not in ('output_dir', 'resume', 'download', 'datasets', 'records', 'clutches',
                            'list_records', 'single_dataset', 'archive_sha256') and not key.startswith('_')}
 
 
@@ -167,6 +167,31 @@ def log_configuration(config, args, *, source='configured'):
           observation_noise=config.emission.ini_sigma, process_noise=config.dynamics.ini_gamma,
           degrees_of_freedom=args.lds_degrees, source=source,
           policies=resolved_lds_policies(config)))
+
+
+def save_mfa_posteriors(model, directory):
+    """Export local MFA marginals and the pooled posterior when present.
+
+    These are diagnostic NPZs, not training checkpoints. Keep exports identical
+    across image and expression experiments.
+    """
+    directory = Path(directory)
+    def array(value):
+        return value.detach().cpu().numpy() if hasattr(value, 'detach') else np.asarray(value)
+    np.savez_compressed(directory / 'mfa_posteriors.npz', **{
+        f'cluster_{cluster}_{name}': array(value)
+        for cluster, gp in enumerate(model._backend.gpmodels[0])
+        for name, value in dict(offset=gp.fixed_observation_model.offset,
+            joint_mean=gp.observation_params.m_mean,
+            column_precision=gp.observation_params.m_r_cov,
+            noise_scale=gp.observation_params.scale, degrees=gp.observation_params.n0).items()})
+    if model.config.observation.C_policy.mode == 'shared':
+        owner = model._backend.observation_policies[0]
+        posterior = owner.posterior
+        np.savez_compressed(directory / 'mfa_shared_posterior.npz',
+            joint_mean=array(posterior.m_mean), column_precision=array(posterior.m_r_cov),
+            noise_scale=array(posterior.scale), degrees=posterior.n0,
+            intercept_count=owner.intercepts)
 
 
 def save_results(run, model, values, labels, grid, args, *, ordered,

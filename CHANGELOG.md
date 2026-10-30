@@ -1,5 +1,14 @@
 # 0.3.0 ? native implementation migration
 
+- Added zebrafish and Xenopus PCA/autoencoder entry scripts using the shared
+  expression workflow, fixed calibrated decoders, and standard artifacts.
+- Added dense Xenopus GSE65785 expression experiments with separate clutches,
+  unsmoothed all-gene inputs, published sample QC and explicit reference-label
+  provenance. Zebrafish and Xenopus share expression configuration/execution.
+- Added an all-gene zebrafish temporal expression-state experiment with
+  versioned/checksummed count loading, shared experiment arguments/results,
+  and paired independent-factor/HMM versus dynamic-factor/HMM configurations.
+  See docs/zebrafish_workflow.md.
 - Added opt-in left-to-right transition topology for CPU offline split/merge:
   reduced-simplex hierarchical priors/ELBO, ordered messages and joint decoding,
   temporal boundary splits and adjacent merges. See docs/transition_topology.md.
