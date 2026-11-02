@@ -18,6 +18,8 @@
 - [Zebrafish all-gene temporal expression-state comparison](zebrafish_workflow.md)
 - [Xenopus dense expression time courses and separate clutch comparisons](xenopus_workflow.md)
 - [PCA and fixed autoencoder variants for both expression datasets](expression_representations.md)
+- [Flutter motion windows and autoencoder dynamics](flutter_workflow.md)
+- [XJTU-SY raw acquisition windows with PCA/autoencoder clustering](xjtu_sy_workflow.md)
 - [MIT-BIH beat and annotation alignment](mitbih_annotations.md)
 - [LDS inference, PCA, inducing points, and prior calibration](lds_inference.md)
 - [Fixed observation models and decoder contract](fixed_observation_models.md)

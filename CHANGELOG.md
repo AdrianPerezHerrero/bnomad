@@ -1,5 +1,13 @@
 # 0.3.0 ? native implementation migration
 
+- Added XJTU-SY raw-acquisition-window PCA/autoencoder clustering with explicit
+  acquisition clocks, bounded per-bearing downloads, terminal-inspection
+  references and standard unlabeled artifacts. Shared transition diagnostics
+  are reused by flutter and bearing experiments.
+- Added checksum-pinned flutter motion loading and a raw-window autoencoder
+  experiment with shared calibration, unlabeled clustering reports and
+  variational transition-stability diagnostics. Shared affine configuration is
+  reused by flutter and expression experiments.
 - Added zebrafish and Xenopus PCA/autoencoder entry scripts using the shared
   expression workflow, fixed calibrated decoders, and standard artifacts.
 - Added dense Xenopus GSE65785 expression experiments with separate clutches,

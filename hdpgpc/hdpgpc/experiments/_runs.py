@@ -206,28 +206,39 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
         model_lds_dynamics, model_warp_arrays, plot_lds_diagnostics,
         plot_lds_dynamics, plot_warp_diagnostics, plot_birth_warp_diagnostic)
     from ..diagnostics._plot_selection import cluster_plot_ids, empty_cluster_figure
-    values, labels = np.asarray(values), np.asarray(labels)
+    values = np.asarray(values)
+    has_labels = labels is not None
+    labels = np.asarray(labels) if has_labels else None
+    if not has_labels and (evaluation_mask is not None or positive_label is not None or equal_duration_baseline):
+        raise ValueError('Label evaluation and reference baselines require reference labels')
     min_cluster_samples = getattr(args, 'min_cluster_samples', 1)
     plotted_ids = set(int(cluster) for cluster in cluster_plot_ids(model.labels_, min_cluster_samples))
     if any(int(cluster) >= len(output) for output in model._backend.gpmodels
            for cluster in model.cluster_ids_):
         raise RuntimeError('Inference retained assignments for missing cluster components; '
                            'a consistent final report cannot be generated')
-    evaluated = (np.ones(len(labels), dtype=bool) if evaluation_mask is None
+    evaluated = (np.ones(len(values), dtype=bool) if evaluation_mask is None
                  else np.asarray(evaluation_mask, dtype=bool))
-    if evaluated.shape != (len(labels),) or not evaluated.any():
+    if evaluated.shape != (len(values),) or not evaluated.any():
         raise ValueError('Evaluation mask must select at least one aligned observation')
-    scores, classes, confusion, mapping = cluster_label_statistics(
-        np.asarray(model.labels_)[evaluated], labels[evaluated])
-    if evaluation_mask is None:
-        assigned = np.array([mapping[int(cluster)] for cluster in model.labels_])
+    if not has_labels:
+        scores, classes, confusion = {}, [], np.zeros((0, 0), dtype=int)
+        mapping = {int(cluster): None for cluster in model.cluster_ids_}
+        assigned = np.full(len(values), None, dtype=object)
     else:
-        # A component containing only ambiguous frames has no reference class.
-        for cluster in model.cluster_ids_:
-            mapping.setdefault(int(cluster), None)
-        assigned = np.array([mapping[int(cluster)] for cluster in model.labels_], dtype=object)
-        scores.update(evaluation_frames=int(evaluated.sum()),
-                      excluded_evaluation_frames=int((~evaluated).sum()))
+        if labels.shape != (len(values),):
+            raise ValueError('Reference labels must align with observations')
+        scores, classes, confusion, mapping = cluster_label_statistics(
+            np.asarray(model.labels_)[evaluated], labels[evaluated])
+        if evaluation_mask is None:
+            assigned = np.array([mapping[int(cluster)] for cluster in model.labels_])
+        else:
+            # A component containing only ambiguous frames has no reference class.
+            for cluster in model.cluster_ids_:
+                mapping.setdefault(int(cluster), None)
+            assigned = np.array([mapping[int(cluster)] for cluster in model.labels_], dtype=object)
+            scores.update(evaluation_frames=int(evaluated.sum()),
+                          excluded_evaluation_frames=int((~evaluated).sum()))
     if positive_label is not None:
         actual, predicted = labels[evaluated] == positive_label, assigned[evaluated] == positive_label
         tp = int((actual & predicted).sum()); fp = int((~actual & predicted).sum())
@@ -235,13 +246,17 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
         scores.update(positive_label_precision_in_sample=tp / (tp + fp) if tp + fp else 0.,
                       positive_label_recall_in_sample=tp / (tp + fn) if tp + fn else None,
                       positive_label_f1_in_sample=2 * tp / (2 * tp + fp + fn) if 2 * tp + fp + fn else None)
-    print(f'{run.dataset}: clusters={model.n_clusters_}, purity={scores["purity"]:.3f}, '
-          f'ARI={scores["adjusted_rand_index"]:.3f}, NMI={scores["normalized_mutual_information"]:.3f}')
-    print(format_confusion_matrix(classes, confusion))
+    if has_labels:
+        print(f'{run.dataset}: clusters={model.n_clusters_}, purity={scores["purity"]:.3f}, '
+              f'ARI={scores["adjusted_rand_index"]:.3f}, NMI={scores["normalized_mutual_information"]:.3f}')
+        print(format_confusion_matrix(classes, confusion))
+        print('Cluster-majority mapping and label scores are evaluated in-sample.')
+    else:
+        print(f'{run.dataset}: clusters={model.n_clusters_}; no sample-level reference labels; '
+              'classification metrics unavailable.')
     if evaluation_mask is not None:
         print(f'Label metrics: {evaluated.sum()}/{len(labels)} frames; '
               f'{(~evaluated).sum()} ambiguous/unlabeled frames excluded.')
-    print('Cluster-majority mapping and label scores are evaluated in-sample.')
     baseline = None
     if equal_duration_baseline:
         from ._baselines import equal_duration_baseline as make_baseline
@@ -265,13 +280,13 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
             for index, cluster in enumerate(baseline['assignments']):
                 writer.writerow([index, labels[index], int(cluster), baseline['majority_labels'][index],
                                  bool(evaluated[index]), seconds[index]])
-    if any(len(value) != len(labels) for value in columns.values()):
+    if any(len(value) != len(values) for value in columns.values()):
         raise ValueError('Assignment metadata must have one row per observation')
     with (run.path / 'assignments.csv').open('w', newline='', encoding='utf-8') as stream:
         writer = csv.writer(stream)
         writer.writerow(['fit_row', 'true_label', 'cluster', 'cluster_majority_label', *columns])
         for index, cluster in enumerate(model.labels_):
-            writer.writerow([index, labels[index], int(cluster), assigned[index],
+            writer.writerow([index, labels[index] if has_labels else '', int(cluster), assigned[index],
                              *(column[index] for column in columns.values())])
     matrices = [model_lds_arrays(model, output=output) for output in range(values.shape[2])]
     np.savez_compressed(run.path / 'lds_parameters.npz', **{
@@ -294,13 +309,13 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
                  times=columns.get('second'), title=run.dataset), 'equal_duration_baseline.png')
         summary_plotter = plot_clustering_summary if summary_plotter is None else summary_plotter
         for output, figure in enumerate(summary_plotter(
-                model, values, labels, grid=grid, record=run.dataset, metrics=scores,
+                model, values, labels, grid=grid, record=run.dataset, metrics=scores if has_labels else None,
                 ordered=ordered, warped=model.config.inference.warp,
                 show_latent=ordered or args.lds_plots or args.lds_dynamics_plots,
                 annotation_colors=annotation_colors,
                 **({'min_cluster_samples': min_cluster_samples} if min_cluster_samples > 1 else {}))):
             save(figure, f'clusters_output_{output}.png')
-        if args.projection_plots:
+        if args.projection_plots and has_labels:
             projection = values.reshape(len(values), -1) if codes is None else codes
             save(plot_embedding_summary(projection, model.labels_, labels, scores,
                  title=run.dataset, projection_name=projection_name), 'projection.png')
@@ -339,6 +354,7 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
     report = {'schema_version': 1, 'dataset': run.dataset, 'run_id': run.run_id,
               'experiment': run.experiment, 'status': 'ok', 'fitted': len(values),
               'classes': len(classes), 'clusters': model.n_clusters_, 'metrics': scores,
+              'reference_labels_available': has_labels,
               'confusion_classes': classes, 'confusion': confusion,
               'cluster_majority_labels': mapping,
               'cluster_cap_reached': model.n_clusters_ >= args.max_clusters,

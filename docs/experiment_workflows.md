@@ -123,6 +123,8 @@ The singular `--dataset` remains an alias for one UCR dataset.
 | Zebrafish all-gene MFA | Chronological stage means; HMM on; same all-gene PCA and MFA priors in both arms | Shared C/diagonal Sigma; fixed A=0/Gamma=I versus learned A/Gamma |
 | Xenopus all-gene MFA | Chronological measured polyA+ gene TPMs; each clutch fitted separately; shared expression runner | Same independent/dynamic factor comparison as zebrafish |
 | Zebrafish / Xenopus PCA and autoencoder | Same expression preparation and HMM; fixed calibrated affine decoder | Gamma learned per cluster; A fixed at zero or learned; Sigma fixed by default |
+| Flutter autoencoder | Causal raw two-channel delay windows; common unlabeled linear AE; each recording fitted separately; no preliminary PCA | Fixed C/Sigma; cluster A/Gamma or independent A=0; record-level references only |
+| XJTU-SY raw-window PCA / autoencoder | One raw window inside each numbered burst; common unlabeled fixed decoder; bearing sequences kept separate on acquisition time | Fixed C/Sigma; learned A/Gamma versus independent A=0; terminal inspection only |
 | UCR waveform | HMM off; A=0, C=I; DTW-GP enabled | Sigma full per cluster; Gamma fixed |
 | UCR PCA | HMM off; A=0; fixed PCA C | Gamma full and Sigma diagonal per cluster |
 | UCR autoencoder | HMM off; A=0; fixed trained affine C | Gamma full per cluster; Sigma fixed |

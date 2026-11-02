@@ -236,6 +236,8 @@ Shared MFA currently requires CPU and offline batch updates.
 | All-gene zebrafish expression states, independent versus evolving factors | [Zebrafish workflow](docs/zebrafish_workflow.md) |
 | Denser Xenopus expression trajectories and independent clutches | [Xenopus workflow](docs/xenopus_workflow.md) |
 | Fixed PCA or autoencoder observations for either expression dataset | [Expression representations](docs/expression_representations.md) |
+| Learn flutter motion regimes from raw windows with a shared autoencoder | [Flutter workflow](docs/flutter_workflow.md) |
+| Cluster XJTU-SY bearing lifetimes using raw acquisition windows with PCA or an autoencoder | [XJTU-SY workflow](docs/xjtu_sy_workflow.md) |
 | Executable notebooks | [Notebook suite](tutorials/README.md) |
 
 For notebook tools, install `python -m pip install '.[examples,tutorials]'`.
