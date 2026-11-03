@@ -158,7 +158,9 @@ def _fit_record(windows, args, run, configuration, calibration, calibration_name
         observation_layout='time-major, two channels interleaved; causal complete windows',
         channel_center=center, channel_scale=scale, per_window_normalization=False,
         overlapping_windows=args.step < args.window_samples,
-        dynamics_clock='successive retained windows per cluster; gap validity recorded in dynamics.json',
+        dynamics_clock=args.dynamics_clock,
+        dynamics_clock_description=('Global regular sampling ticks' if args.dynamics_clock=='physical-clock'
+                                    else 'Successive retained observations; gap validity recorded in dynamics.json'),
         interpretation='Latent window dynamics and smoothed in-sample reconstructions, not proof of physical instability or causal warning',
         diagnostics=diagnostics)
 
@@ -170,7 +172,8 @@ def _fit_record(windows, args, run, configuration, calibration, calibration_name
         result = {}
         if args.trajectory_plots:
             result['latent_trajectories'] = plot_latent_trajectories(model, times=windows.times,
-                title=f'Flutter {windows.record.name}: {configuration}; retained-window steps',
+                title=f'Flutter {windows.record.name}: {configuration}; '+(
+                    'global sampling steps' if args.dynamics_clock=='physical-clock' else 'retained-window steps'),
                 trajectories=paths, min_cluster_samples=args.min_cluster_samples,
                 time_label='Recorded window end time (s)', time_unit='s', observation_label='windows')
         figure = plot_autoencoder_calibration(batch, estimate.network, estimate.indices, estimate.losses)

@@ -1,4 +1,9 @@
-# XJTU-SY raw-window PCA and autoencoder clustering
+# XJTU-SY raw-window PCA, autoencoder, Fourier and wavelet clustering
+
+Before inference, each runner prints the emission name, actual component count,
+and explained variance on both the calibration windows and the current bearing's
+scaled raw windows. Fourier/Haar also report the component count per sensor.
+The line is saved in `clustering.log`; resumed runs print the saved values.
 
 ```sh
 python examples/xjtu_sy_autoencoder_clustering.py --download
@@ -42,6 +47,74 @@ The tied linear AE and PCA target similar low-rank reconstruction objectives.
 PCA offers a direct SVD solution; changing to PCA does not remove the acquisition
 phase uncertainty or automatically make the states valid health labels.
 
+## Fourier and Haar variants
+
+```sh
+python examples/xjtu_sy_fourier_clustering.py --records Bearing1_1 Bearing1_4 --components 8 --resume
+python examples/xjtu_sy_wavelet_clustering.py --records Bearing1_1 Bearing1_4 --components 8 --resume
+python examples/xjtu_sy_fourier_clustering.py --records Bearing1_5 --components 16 --sigma-prior 0.1 --gamma-prior 0.5 --configurations independent dynamic --resume
+```
+
+These entry points use the same raw windows, scaling, balanced calibration,
+configuration builder, inference and output schema as PCA/AE. Their experiment
+default is **physical-clock**; select `--dynamics-clock cluster-clock` explicitly
+for a clock comparison. Existing PCA/AE defaults are unchanged. Data download
+uses the same `--download` option and cache.
+
+Each sensor gets a separate native Fourier or Haar basis on its actual sampling
+grid. The interleaved horizontal/vertical vector is never transformed as one
+continuous signal. `--components` is the **total** latent dimension, default 8:
+four coefficients per sensor. Odd budgets allocate one extra coefficient to the
+horizontal channel. At least two components are required.
+
+The basis orientation is fixed. The shared unlabeled calibration windows select
+coordinates by centered coefficient energy, separately for each sensor. Fourier
+sine/cosine pairs are selected together; an exact-rank energy maximization keeps
+each pair intact. DC and Nyquist, when available, each cost one coordinate.
+Some rank/candidate-bin combinations cannot retain whole pairs and are rejected.
+Haar coefficients are selected individually from the native coarse-to-fine basis.
+The chosen coordinates stay fixed across all requested bearings/configurations.
+This selection is retrospective when calibration uses the evaluation lifetimes.
+
+There is **no PCA preprocessing, learned rotation, per-window normalization,
+phase removal, power spectrum or coefficient thresholding per observation**.
+The model still scores and reconstructs raw waveforms with a fixed affine
+Gaussian decoder. Calibration also estimates the waveform offset, diagonal
+residual covariance and regularized latent covariance. Existing `--sigma-prior`,
+`--sigma-mode`, `--gamma-prior` and LDS controls apply through the shared builder.
+AE optimizer arguments are accepted for CLI consistency and do not train a network
+in the basis variants.
+
+Fourier-specific controls:
+
+- `--window-size` / `--fourier-window-size`: non-overlapping Fourier block length
+  **per sensor**, default the entire `--window-samples` raw window.
+- `--harmonics h`: candidate bins 0 through h within each block.
+- `--frequency-bins k ...`: explicit candidate local bins, mutually exclusive
+  with `--harmonics`. Candidates are still subject to the total component budget.
+- With no bin filter, all native bins are candidates. `basis.json` records actual
+  physical frequencies, including shorter tail blocks.
+
+Wavelets currently support `--wavelet haar`; `--window-samples` must be a power
+of two. Full bases are available by requesting `--components 2*window_samples`
+(supply the integer value, e.g. `--window-samples 16 --components 32`). Full bases
+can have more coordinates than calibration acquisitions because their directions
+are fixed, but estimating their dynamics requires enough evidence. At the usual
+512 samples/channel, the full basis would give a 1024-dimensional LDS; the default
+rank budget avoids that cost.
+
+Outputs default to `agents/xjtu_sy_fourier_runs/` and
+`agents/xjtu_sy_wavelet_runs/`. In addition to the usual saved results, each run
+contains `basis.json` with selected channel/coefficient identities, the
+`fourier_calibration.npz` or `wavelet_calibration.npz` decoder and provenance,
+and a matching calibration plot. Noise floors keep a full-basis residual
+covariance positive definite even when reconstruction is exact.
+
+Signed Fourier coefficients retain phase and Haar coefficients retain event
+position. These scripts test raw-waveform basis models; spectral-power/envelope
+features would require a separate preparation path. Exact full-basis
+reconstruction alone does not establish useful clustering or mechanical modes.
+
 ## Two different clocks
 
 Each numbered CSV contains 32,768 samples at 25.6 kHz (1.28 seconds), with
@@ -71,7 +144,7 @@ metadata even when the terminal acquisition is absent from a selected prefix.
 
 ## Representation and dynamics
 
-The existing tied **linear orthonormal autoencoder** learns a shared decoder,
+In the AE variant, the existing tied **linear orthonormal autoencoder** learns a shared decoder,
 which is frozen for exact Gaussian LDS inference. Defaults: eight latent
 components, 250 epochs and at most 400 balanced calibration acquisitions.
 There is no preliminary PCA, spectral transform, envelope extraction,
@@ -95,10 +168,11 @@ Repeat with other offsets, window lengths, ranks and seeds before interpreting
 small clusters as health stages. The implementation limits windows to 2048
 samples/channel because the fixed affine observation covariance is materialized.
 
-A describes evolution between **retained acquisition windows**, not fast
-mechanical oscillation modes. If a cluster skips observations, its clock also
-skips acquisition times. Diagnostics record this and withhold per-second rates
-when the retained clock is irregular. Even with a regular clock, rho(A)>1 is a
+A describes evolution on the selected **acquisition clock**, not fast mechanical
+oscillation modes. In cluster-clock mode a cluster skips acquisition times when
+it skips observations. Physical-clock instead propagates it through all global
+sampling ticks. Diagnostics record the convention and withhold per-second rates
+when the provided clock is irregular. Even with a regular clock, rho(A)>1 is a
 model-conditional acquisition-coordinate property, not a physical failure
 criterion. Variational uncertainty excludes representation/model-selection
 uncertainty. Smoothed trajectories use future observations.
@@ -114,7 +188,8 @@ Full-burst RMS and absolute peak are computed solely for plotting the lifetime
 against inferred states. These summaries **do not enter the autoencoder,
 channel scaling or clustering**. The summary also shows the published terminal
 fault description and conditional transition-radius uncertainty. Latent plots
-use acquisition time and break paths at MAP membership gaps.
+use acquisition time. Cluster-clock paths break at MAP membership gaps;
+physical-clock paths show propagation/smoothing through unobserved ticks.
 
 Outputs default to `agents/xjtu_sy_autoencoder_runs/`:
 
@@ -151,3 +226,11 @@ files are checked against that manifest, and interrupted downloads resume from
 completed members. The creator provides no official per-file SHA manifest:
 these local hashes verify cache integrity, not independent authenticity of the
 third-party mirror.
+
+## Optional physical-clock evolution
+
+Use `--dynamics-clock physical-clock` to propagate each component between all
+global observation ticks, including unassigned observations. Cluster-clock
+remains the PCA/AE default; the new Fourier/Haar runners default to physical-clock.
+See [dynamics clocks](dynamics_clocks.md) for prior/scoring
+semantics, regular-sampling assumptions and compatibility.

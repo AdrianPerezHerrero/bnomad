@@ -1,4 +1,4 @@
-"""XJTU-SY bearing degradation clustering from raw acquisition windows and a shared fixed PCA or linear AE observation."""
+"""XJTU-SY raw-window clustering with shared PCA, linear AE, Fourier or Haar observations."""
 import argparse
 import hashlib
 import json
@@ -16,18 +16,33 @@ from ._affine import make_config
 from ._arguments import add_common_arguments, validate_common, validate_affine, NOISE_MODES
 from ._runs import ExperimentRun, experiment_settings, save_results, append_summary, log_configuration, write_json
 
-DEFAULTS = dict(schedule='offline', offline_strategy='split_merge', iterations=15,
-    split_merge_refine_steps=1, exploration_steps=3, max_clusters=6,
-    hdp_preset='balanced', lds_degrees=3, fit_gp=False, alignment='none',
+DEFAULTS = dict(schedule='offline', offline_strategy='split_merge', iterations=20,
+    split_merge_refine_steps=3, exploration_steps=8, max_clusters=10,
+    hdp_preset='balanced', lds_degrees=5, fit_gp=False, alignment='none',
     hard_assignments=False, projection_plots=True, lds_plots=False,
     lds_dynamics_plots=False, warp_plots=False)
+REPRESENTATIONS = ('autoencoder', 'pca', 'fourier', 'wavelet')
+BASIS_REPRESENTATIONS = ('fourier', 'wavelet')
+
+
+def _log_emission_summary(representation, record, components, calibration_variance,
+                          record_variance, channel_components=None):
+    from ..diagnostics._xjtu_sy import representation_label
+    def percentage(value):
+        return 'n/a' if value is None else f'{value:.2%}'
+    channels = ('' if channel_components is None else
+                f' (horizontal={channel_components[0]}, vertical={channel_components[1]})')
+    print(f'Emission={representation_label(representation)}; components={components}{channels}; '
+          f'variance explained on scaled raw windows: calibration={percentage(calibration_variance)}, '
+          f'{record}={percentage(record_variance)}', flush=True)
 
 
 def build_parser(description=None, defaults=None, *, representation='autoencoder'):
-    if representation not in ('autoencoder', 'pca'):
-        raise ValueError('XJTU-SY representation must be autoencoder or pca')
+    if representation not in REPRESENTATIONS:
+        raise ValueError(f'XJTU-SY representation must be one of {REPRESENTATIONS}')
     parser = argparse.ArgumentParser(description=description or __doc__)
-    add_common_arguments(parser, defaults={**DEFAULTS, **(defaults or {})}, ordered=True)
+    basis_defaults = dict(dynamics_clock='physical-clock') if representation in BASIS_REPRESENTATIONS else {}
+    add_common_arguments(parser, defaults={**DEFAULTS, **basis_defaults, **(defaults or {})}, ordered=True)
     parser.add_argument('--data-dir', type=Path, default=Path.cwd()/'agents/data/xjtu_sy')
     parser.add_argument('--download', action='store_true')
     parser.add_argument('--output-dir', '--plot-dir', type=Path, default=Path.cwd()/f'agents/xjtu_sy_{representation}_runs')
@@ -40,19 +55,29 @@ def build_parser(description=None, defaults=None, *, representation='autoencoder
     parser.add_argument('--step', '--acquisition-step', type=int, default=1,
         help='Advance in numbered acquisitions (minutes), not raw vibration samples.')
     parser.add_argument('--max-series', type=int, help='Chronological acquisition prefix, also used for calibration.')
-    parser.add_argument('--components', '--latent-dim', type=int, default=8)
+    parser.add_argument('--components', '--latent-dim', type=int, default=8,
+        help='Total latent dimension; Fourier/Haar divide the budget between the two channels.')
     parser.add_argument('--calibration-samples', type=int, default=400)
     parser.add_argument('--epochs', '--ae-epochs', type=int, default=250)
     parser.add_argument('--learning-rate', type=float, default=.02)
     parser.add_argument('--noise-floor', type=float, default=1e-6)
     parser.add_argument('--noise-floor-fraction', type=float, default=.05)
-    parser.add_argument('--sigma-prior', type=float, default=1.)
-    parser.add_argument('--gamma-prior', type=float, default=.01)
+    parser.add_argument('--sigma-prior', type=float, default=.1)
+    parser.add_argument('--gamma-prior', type=float, default=.1)
     parser.add_argument('--sigma-mode', choices=NOISE_MODES, default='fixed')
     parser.add_argument('--configurations', nargs='+', choices=('independent','dynamic'), default=['dynamic'])
     parser.add_argument('--hmm-switch', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--trajectory-plots', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--stability-samples', type=int, default=200)
+    if representation == 'fourier':
+        parser.add_argument('--window-size', '--fourier-window-size', type=int,
+            help='Fourier block length per channel; defaults to the full --window-samples window.')
+        bins = parser.add_mutually_exclusive_group()
+        bins.add_argument('--harmonics', type=int, help='Candidate bins 0..h in each Fourier block.')
+        bins.add_argument('--frequency-bins', nargs='+', type=int,
+            help='Candidate local Fourier bins; calibration selects whole sine/cosine pairs.')
+    if representation == 'wavelet':
+        parser.add_argument('--wavelet', choices=('haar',), default='haar')
     parser.set_defaults(dataset='xjtu_sy', representation=representation, **(defaults or {}))
     return parser
 
@@ -63,13 +88,19 @@ def _validate(args):
         raise ValueError('XJTU-SY requires offline inference, preserved amplitudes and no warp/birth plots')
     if args.transition_topology == 'left_to_right' and not args.hmm_switch:
         raise ValueError('left_to_right requires HMM assignments')
+    basis = args.representation in BASIS_REPRESENTATIONS
     if (not 2 <= args.window_samples <= min(2048, XJTU_SAMPLES) or args.window_offset < 0
             or args.window_offset+args.window_samples > XJTU_SAMPLES or args.step < 1
-            or args.components < 1 or args.components >= 2*args.window_samples
-            or args.calibration_samples <= args.components
+            or args.components < 1 or args.calibration_samples < 2
             or args.stability_samples < 0
-            or (args.max_series is not None and args.max_series <= args.components)):
+            or (args.max_series is not None and args.max_series < 2)
+            or (not basis and (args.components >= 2*args.window_samples
+                or args.calibration_samples <= args.components
+                or (args.max_series is not None and args.max_series <= args.components)))):
         raise ValueError('Invalid raw window, acquisition step, rank or budget (affine windows limited to 2048 samples/channel)')
+    if basis:
+        from ._xjtu_basis import validate_basis_options
+        validate_basis_options(args)
     if any(not np.isfinite(value) or value <= 0 for value in
            (args.noise_floor,args.sigma_prior,args.gamma_prior)):
         raise ValueError('Covariance scales must be finite and positive')
@@ -96,7 +127,7 @@ def calibrate_windows(records, names, args):
         batches.append(batch.reshape(len(chosen),-1))
         provenance.extend([name]*len(chosen)); acquisitions.extend(data.acquisition_numbers[chosen])
     batch = np.concatenate(batches)
-    if len(batch) <= args.components:
+    if args.representation not in BASIS_REPRESENTATIONS and len(batch) <= args.components:
         raise ValueError('Too few calibration acquisitions for requested latent dimension')
     grid = np.arange(batch.shape[1],dtype=float)[:,None]
     if args.representation == 'pca':
@@ -105,18 +136,23 @@ def calibrate_windows(records, names, args):
             max_beats=len(batch),random_state=args.seed,noise_floor=floor)
         decoder = AffineGaussianObservation(estimate.components,estimate.residual_covariance,
             grid,estimate.mean,np.diag(estimate.latent_variances))
-    else:
+    elif args.representation == 'autoencoder':
         estimate = estimate_autoencoder_observation(batch,grid,
             components=args.components,max_samples=len(batch),epochs=args.epochs,
             learning_rate=args.learning_rate,random_state=args.seed,noise_floor=args.noise_floor,
             noise_floor_fraction=args.noise_floor_fraction,noise_structure='diagonal')
+        decoder = estimate.model
+    else:
+        from ._xjtu_basis import estimate_basis_observation
+        estimate = estimate_basis_observation(batch, args)
         decoder = estimate.model
     return estimate,decoder,center,scale,batch,np.asarray(provenance),np.asarray(acquisitions)
 
 
 
 def _fit_record(data,args,run,configuration,calibration,calibration_names):
-    from ..diagnostics._xjtu_sy import xjtu_diagnostics, plot_xjtu_summary, plot_xjtu_embedding
+    from ..diagnostics._xjtu_sy import (xjtu_diagnostics, plot_xjtu_summary, plot_xjtu_embedding,
+        plot_xjtu_basis_calibration, representation_label, emission_reconstruction)
     from ..diagnostics._calibration_plots import plot_autoencoder_calibration
     estimate,decoder,center,scale,batch,sample_records,sample_acquisitions = calibration
     values=((data.values.reshape(-1,args.window_samples,2)-center)/scale).reshape(len(data.values),-1)
@@ -132,11 +168,29 @@ def _fit_record(data,args,run,configuration,calibration,calibration_names):
     if args.representation == 'pca':
         state.update(calibration_indices=estimate.beat_indices,latent_variances=estimate.latent_variances,
                      explained_variance_ratio=estimate.explained_variance_ratio)
-    else:
+    elif args.representation == 'autoencoder':
         state.update(losses=estimate.losses,calibration_indices=estimate.indices)
+    else:
+        state.update(calibration_indices=estimate.indices,
+            candidate_energy=estimate.candidate_energy,
+            coefficient_channels=np.asarray([item['channel'] for item in estimate.coefficient_metadata]),
+            coefficient_indices=np.asarray([item['basis_column'] for item in estimate.coefficient_metadata]),
+            explained_variance_ratio=estimate.explained_variance_ratio)
+        write_json(run.path/'basis.json',dict(representation=args.representation,
+            selection='Maximum calibration energy within each channel at the requested rank',
+            fourier_pairs_retained_together=args.representation=='fourier',
+            candidate_columns_per_channel=estimate.candidate_energy.shape[1],
+            retained_columns_per_channel=[len(columns) for columns in estimate.selected_columns],
+            sample_rate_hz=XJTU_SAMPLE_RATE,coefficients=estimate.coefficient_metadata))
     np.savez_compressed(run.path/f'{args.representation}_calibration.npz',**state)
-    label='PCA' if args.representation == 'pca' else 'linear AE'
+    label='linear AE' if args.representation == 'autoencoder' else representation_label(args.representation)
     log_configuration(config,args,source=f'unlabeled raw acquisition-window {label}; common channel scaling')
+    calibration_variance=emission_reconstruction(batch,decoder)[2]
+    record_variance=emission_reconstruction(values,decoder)[2]
+    channel_components=([len(columns) for columns in estimate.selected_columns]
+                        if args.representation in BASIS_REPRESENTATIONS else None)
+    _log_emission_summary(args.representation,data.name,decoder.latent_dim,
+                          calibration_variance,record_variance,channel_components)
     print(f'XJTU-SY {data.name} {configuration}: {len(values)} acquisitions, '
           f'{values.shape[1]} raw features, {decoder.latent_dim} latent dimensions; '
           f'one step advances {args.step:g} acquisition minute(s), not continuous vibration.')
@@ -148,8 +202,8 @@ def _fit_record(data,args,run,configuration,calibration,calibration_names):
         samples=args.stability_samples,seed=args.seed,representation=args.representation)
     write_json(run.path/'dynamics.json',diagnostics)
     complete=bool(np.array_equal(data.acquisition_numbers,np.arange(1,data.published_acquisitions+1)))
-    metadata=dict(configuration=configuration,representation=('pca' if args.representation=='pca'
-        else 'tied_linear_orthonormal_autoencoder'),
+    metadata=dict(configuration=configuration,representation=('tied_linear_orthonormal_autoencoder'
+        if args.representation=='autoencoder' else args.representation),
         source=XJTU_SOURCE,source_fingerprint=data.source_fingerprint,
         reference_scope='Terminal bearing-level fault inspection; no pointwise health states',
         fault_element=data.fault_element,published_acquisitions=data.published_acquisitions,
@@ -161,12 +215,20 @@ def _fit_record(data,args,run,configuration,calibration,calibration_names):
         components=decoder.latent_dim,preliminary_projection=False,per_window_normalization=False,
         observation_layout='One within-burst raw window, time-major with horizontal/vertical interleaved',
         calibration_records=calibration_names,calibration='Balanced unlabeled retrospective acquisitions',
-        calibration_explained_variance_ratio=(estimate.explained_variance_ratio if args.representation=='pca' else None),
+        calibration_explained_variance_ratio=calibration_variance,
         calibration_windows=len(batch),channel_center=center,channel_scale=scale,
         rms_peak_usage='Full-burst display metadata only; never model or calibration inputs',
-        dynamics_clock='Successive retained acquisitions per cluster; regular-clock diagnostics saved',
+        dynamics_clock=args.dynamics_clock,
+        dynamics_clock_description=('Global regular sampling ticks' if args.dynamics_clock=='physical-clock'
+                                    else 'Successive retained observations; gap validity recorded in dynamics.json'),
         interpretation='Phase-unsynchronized acquisition-window evolution, not fast mechanical mode identification or a validated remaining-life predictor',
         diagnostics=diagnostics)
+    if args.representation in BASIS_REPRESENTATIONS:
+        metadata.update(basis_selection='Unlabeled calibration energy; separate sensor bases',
+            components_per_channel=channel_components,
+            basis_specification='basis.json',phase_preserved=True,
+            fourier_window_size=(args.window_size or args.window_samples) if args.representation=='fourier' else None,
+            wavelet=args.wavelet if args.representation=='wavelet' else None)
 
     def summary_plotter(*unused,**kwargs):
         return [plot_xjtu_summary(data,model.labels_,diagnostics,title=f'{data.name}: {configuration}',
@@ -176,7 +238,8 @@ def _fit_record(data,args,run,configuration,calibration,calibration_names):
         result={}
         if args.trajectory_plots:
             result['latent_trajectories']=plot_latent_trajectories(model,times=data.times/60,
-                title=f'XJTU-SY {data.name}: {label} {configuration}; retained-acquisition steps',trajectories=paths,
+                title=f'XJTU-SY {data.name}: {label} {configuration}; '+(
+                    'global sampling steps' if args.dynamics_clock=='physical-clock' else 'retained-acquisition steps'),trajectories=paths,
                 min_cluster_samples=args.min_cluster_samples,time_label='Acquisition time (min)',
                 time_unit='min',observation_label='acquisitions')
         if args.projection_plots:
@@ -185,10 +248,13 @@ def _fit_record(data,args,run,configuration,calibration,calibration_names):
         if args.representation == 'pca':
             from ..diagnostics._xjtu_sy import plot_xjtu_pca_calibration
             result['pca_calibration']=plot_xjtu_pca_calibration(batch,estimate)
-        else:
+        elif args.representation == 'autoencoder':
             figure=plot_autoencoder_calibration(batch,estimate.network,estimate.indices,estimate.losses)
             figure.axes[1].set(xlabel='Flattened raw acquisition-window coordinates',ylabel='Scaled acceleration')
             result['autoencoder_calibration']=figure
+        else:
+            result[f'{args.representation}_calibration']=plot_xjtu_basis_calibration(batch,estimate,
+                representation=args.representation,sample_rate=XJTU_SAMPLE_RATE)
         return result
 
     return save_results(run,model,values[:,:,None],None,decoder.grid,args,ordered=True,metadata=metadata,
@@ -209,7 +275,7 @@ def run_xjtu_sy(args):
             download_xjtu_sy(args.data_dir,name,step=args.step,max_series=args.max_series)
         records[name]=load_xjtu_sy_windows(args.data_dir,name,window_samples=args.window_samples,
             window_offset=args.window_offset,step=args.step,max_series=args.max_series)
-        if len(records[name].values)<=args.components:
+        if args.representation not in BASIS_REPRESENTATIONS and len(records[name].values)<=args.components:
             raise ValueError(f'{name}: too few acquisitions for requested latent rank')
     fingerprint=hashlib.sha256(json.dumps({name:records[name].source_fingerprint
         for name in sorted(records)},sort_keys=True).encode()).hexdigest()
@@ -222,6 +288,11 @@ def run_xjtu_sy(args):
             if args.resume and run.complete():
                 report=json.loads((run.path/'results.json').read_text())
                 print(f'Using saved results from: {run.path.resolve()}')
+                metadata=report['metadata']
+                _log_emission_summary(args.representation,name,metadata['components'],
+                    metadata.get('calibration_explained_variance_ratio'),
+                    metadata.get('diagnostics',{}).get('reconstruction_explained_variance'),
+                    metadata.get('components_per_channel'))
             else:
                 try:
                     with run:

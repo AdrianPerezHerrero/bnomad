@@ -87,6 +87,7 @@ class ModelState:
         self.lds_update = options['lds_update']
         self.lds_scoring = options['lds_scoring']
         self.lds_step_size = options['lds_step_size']
+        self.dynamics_clock = config.dynamics.clock
         self.observation_scope = options['scope']
         self.factor_analysis = config.observation.family == 'factor_analysis'
         self.factor_mean_precision = config.observation.factor_mean_precision
@@ -358,6 +359,12 @@ class ModelState:
     )
 
     def initialize_lds_emission(self, emission, initial):
+        emission.dynamics_clock = self.dynamics_clock
+        if self.dynamics_clock == 'physical-clock':
+            emission._clock_target_index=max(0,getattr(self,'T',0)-1)
+            if not emission.bayesian:
+                emission.internal_params=None
+                emission.observation_params=None
         emission.factor_analysis = self.factor_analysis
         emission.factor_mean_precision = self.factor_mean_precision
         emission.factor_loading_precision = self.factor_loading_precision

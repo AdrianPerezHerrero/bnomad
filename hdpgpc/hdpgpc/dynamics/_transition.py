@@ -65,6 +65,23 @@ class TransitionPolicy:
         cov_cross = torch.zeros_like(self.Gamma)
         mass = 0.0
         for cluster, emission in enumerate(emissions):
+            from . import _clock
+            if _clock.enabled(emission):
+                state=_clock.trajectory(emission)
+                if not state.observations:
+                    continue
+                if online and (current_index not in state.observations
+                               or float(responsibilities[cluster])<=0):
+                    continue
+                statistics=_clock.transition_statistics(emission,
+                    start=max(1,state.shared_parameter_tick+1) if online else 1,
+                    end=current_index+1 if online else None)
+                if statistics is not None:
+                    weight,y,x,yy,xx,yx=statistics
+                    observations.append(y);latents.append(x)
+                    cov_y+=yy;cov_x+=xx;cov_cross+=yx;mass+=weight
+                    if online:state.shared_parameter_tick=int(current_index)
+                continue
             positions = [len(emission.indexes) - 1] if online else range(1, len(emission.indexes))
             for position in positions:
                 if position < 1:

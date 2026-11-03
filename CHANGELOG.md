@@ -1,5 +1,14 @@
 # 0.3.0 ? native implementation migration
 
+- Added XJTU-SY Fourier/Haar example scripts through the shared runner, with
+  channel-wise calibration-energy rank selection, paired Fourier coefficients,
+  basis provenance, and physical-clock experiment defaults.
+
+- Added opt-in physical-clock latent dynamics on a regular shared sampling grid,
+  with prediction-only propagation, gap smoothing, clock-aware statistics and
+  global process-prior scoring. Cluster-clock and the pinned reference recipe
+  remain unchanged by default. All experiment builders expose the clock flag.
+
 - Added XJTU-SY raw-acquisition-window PCA/autoencoder clustering with explicit
   acquisition clocks, bounded per-bearing downloads, terminal-inspection
   references and standard unlabeled artifacts. Shared transition diagnostics

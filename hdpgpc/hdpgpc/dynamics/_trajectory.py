@@ -9,6 +9,7 @@ emission or high-level model class and retain all existing mutation/update gates
 
 import numpy as np
 import torch
+from . import _clock
 from ._distributions import matrix_normal_inv_wishart, inv_wishart
 
 
@@ -154,6 +155,8 @@ def backwards(self, h=1.0):
         model_type = 'static'
     else:
         model_type = 'dynamic'
+    if _clock.enabled(self):
+        return _clock.smooth(self)
     if h > 0.0:
         mean = list(self.f_star[1:])
         covs = list(self.cov_f[1:])
@@ -169,6 +172,8 @@ def backwards(self, h=1.0):
 def backwards_pair(self, h, snr=None):
     """ Fast method to compute the last two backward iterations.
     """
+    if _clock.enabled(self):
+        return _clock.smooth(self)
     if len(self.indexes) > 1:
         if h > 0.0:
             if snr is None:
@@ -191,6 +196,10 @@ def backwards_pair(self, h, snr=None):
 def new_params(self, batch=None, reestimate=True, model_type='dynamic', verbose=True, check_var=False):
     """ Maximum Likelihood computation of the new LDS params.
     """
+    if _clock.enabled(self):
+        _clock.smooth(self)
+        return _clock.update_parameters(self,full_data=True,reestimate=reestimate,
+            observation_window=batch,check_var=check_var)
     if batch is None or batch >= self.N:
         batch = self.N
     if reestimate:
@@ -386,6 +395,8 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
     statistic, like the existing inducing-basis approximation. Projection
     uncertainty is not part of this conjugate surrogate.
     """
+    if _clock.enabled(self):
+        return _clock.update_parameters(self,batch=True)
     if not self.indexes:
         return
     if not self.bayesian:
@@ -519,6 +530,11 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
         Can use full data batch n-step estimation or 1-step estimation.
         Online first_observation updates C/Sigma from one beat without an A/Gamma transition.
     """
+    if _clock.enabled(self):
+        if snr<=.5:return
+        if h>0:_clock.smooth(self)
+        return _clock.update_parameters(self,h,full_data=full_data,
+            first_observation=first_observation,force=force)
     if len(torch.nonzero(self.Gamma[-1]))< 1:
         model_type = 'static'
     first_observation_update = (first_observation and model_type == 'dynamic'

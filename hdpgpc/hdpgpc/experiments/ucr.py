@@ -92,7 +92,7 @@ def make_config(grid, args, decoder=None):
                       transition_topology=getattr(args, 'transition_topology', 'ergodic')),
         emission=GPEmissionConfig(kernels=[kernel], fit_gp=args.fit_gp,
                                   ini_sigma=sigma, bound_sigma=(1e-8, 1e8)),
-        dynamics=DynamicsConfig(
+        dynamics=DynamicsConfig(clock=getattr(args,'dynamics_clock','cluster-clock'),
             ini_gamma=gamma, bound_gamma=(1e-8, 1e8), annealing=False,
             bayesian_params=True, free_deg_MNIV=args.lds_degrees, lds_update=lds_update(args),
             lds_scoring=args.lds_scoring, lds_step_size=args.lds_step_size),

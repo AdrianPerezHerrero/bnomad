@@ -363,6 +363,10 @@ def _refine(state, steps):
     for _ in range(steps):
         potential = (state.static_factor * state.weight_mean(state.q_last, state.snr_last)
                      + state.dynamic_factor * state.weight_mean(state.q_lat_last, state.snr_last))
+        if getattr(state,'dynamics_clock','cluster-clock')=='physical-clock':
+            # Parallel physical chains contribute to the global objective,
+            # while assignments condition only the measurement likelihood.
+            potential=state.static_factor*state.weight_mean(state.q_last,state.snr_last)
         evidence, _ = state.LogLik(potential)
         start = (state.hdp.expected_log_start(state.M, state.startTheta) if state.hmm_switch
                  else state.hdp.expected_log_iid_weights(state.M))

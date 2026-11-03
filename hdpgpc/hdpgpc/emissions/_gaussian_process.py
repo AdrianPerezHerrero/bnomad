@@ -10,7 +10,7 @@ from tqdm import trange
 import math
 from bisect import bisect_right
 from ..dynamics._models import _LINEAR, _STATIC
-from ..dynamics import _trajectory
+from ..dynamics import _trajectory, _clock
 from ..dynamics._distributions import matrix_normal_inv_wishart, inv_wishart
 dtype = torch.float64
 torch.set_default_dtype(dtype)
@@ -332,6 +332,12 @@ class GaussianProcessEmission:
 
     def log_sq_error(self, x_train, y, mean=None, cov=None, C=None, Sigma=None, i=None, proj=False, first=False):
         """Expected Gaussian observation log density at a model iteration."""
+        if _clock.enabled(self):
+            index = (self.indexes[i-1] if i is not None and 0 < i <= len(self.indexes)
+                     else None)
+            return _clock.observation_score(self, x_train, y, index, mean=mean,
+                covariance=cov, C=C, Sigma=Sigma, first=first)
+
         y = self.cond_to_cuda(self.cond_to_torch(y)).to(torch.float64)
         mean = self.cond_to_torch(mean)
         cov = self.cond_to_torch(cov)
@@ -397,6 +403,9 @@ class GaussianProcessEmission:
 
     def log_lat_error(self, i, h_ini):
         """Expected Gaussian state log density plus its chain entropy."""
+        if _clock.enabled(self):
+            return _clock.latent_scores(self)[self.indexes[i]]
+
         mean_cur = self.f_star_sm[i + 1].reshape(-1, 1)
         cov_cur = self.cov_f_sm[i + 1]
         if i == 0:
@@ -487,6 +496,9 @@ class GaussianProcessEmission:
     def include_weighted_sample(self, index, x_train, x_warped, y, h, snr=None):
         """Method to include the sample depending on the responsibility h.
         """
+        if _clock.enabled(self):
+            return _clock.include(self,index,x_train,x_warped,y,h,snr=snr)
+
         y = self.cond_to_cuda(self.cond_to_torch(y))
         x_train = self.cond_to_cuda(self.cond_to_torch(x_train))
         new_x_basis = self.x_basis
@@ -514,6 +526,9 @@ class GaussianProcessEmission:
         state f.  Averaging its precision and linear natural parameter gives
         the optimal Gaussian coordinate update for this observation.
         """
+        if _clock.enabled(self):
+            return _clock.include(self,index,x_train,x_train,y,h,grids=grid_samples)
+
         from ..alignment._gp_flow import _column, _kernel_torch
 
         if h <= 0:
@@ -620,6 +635,10 @@ class GaussianProcessEmission:
         if batch_lds and any(len(samples) != 1 for samples in grid_samples):
             raise ValueError('conjugate_batch requires one deterministic input grid per beat')
         self.deterministic_input_warp = bool(deterministic_warp)
+        if _clock.enabled(self):
+            return _clock.full_pass(self,x_trains,y_trains,resp,samples=grid_samples,
+                                    deterministic=deterministic_warp)
+
         active = self._active_weighted_indices(resp)
         if active.numel() == 0:
             return q, q_lat
@@ -645,6 +664,9 @@ class GaussianProcessEmission:
 
     def full_pass_weighted(self, x_trains, y_trains, resp, q=None, q_lat=None, snr=None):
         """Full forward pass method used in the offline scheme."""
+        if _clock.enabled(self):
+            return _clock.full_pass(self,x_trains,y_trains,resp)
+
         self.deterministic_input_warp = False
         if len(torch.nonzero(self.Gamma[-1])) < 1:
             model_type = 'static'
@@ -693,6 +715,9 @@ class GaussianProcessEmission:
     def reinit_GP(self, save_last=False, save_index=False):
         """ Method to reinitiate GP parameters. Can save some of them.
         """
+        if _clock.enabled(self):
+            self._sampling_trajectory=None
+
         if save_last:
             self.y_var = [self.y_var[0],self.y_var[-1]]
             self.var = [self.var[0],self.var[-1]]
@@ -752,6 +777,10 @@ class GaussianProcessEmission:
     def compute_sq_err_all(self, x_trains, y_trains, no_first=False):
         """Method to compute the squared error over all provided examples y_trains."""
         n_samps = x_trains.shape[0]
+        if _clock.enabled(self):
+            return torch.stack([_clock.observation_score(self,x_trains[t],y_trains[t],t)
+                                for t in range(n_samps)])
+
         device = x_trains.device if torch.is_tensor(x_trains) else x_trains[0].device
         sq_err = torch.zeros(n_samps, device=device, dtype=torch.float64)
 
@@ -870,6 +899,12 @@ class GaussianProcessEmission:
     def compute_q_lat_all(self, x_trains, h_ini=1.0):
         """Compute each included state's Gaussian prior and entropy contribution.
         """
+        if _clock.enabled(self):
+            result=self.cov_f_sm[0].new_zeros(len(x_trains))
+            scores=_clock.latent_scores(self,len(x_trains))
+            result[:len(scores)]=scores
+            return result
+
         sq_err = torch.zeros(x_trains.shape[0], device=x_trains[0].device)
         if self.N == 0:
             return sq_err
@@ -896,6 +931,13 @@ class GaussianProcessEmission:
     def posterior_weighted(self, x_train, y, h, t=None):
         """ Method to compute the posterior depending on the responsibility h.
         """
+        if _clock.enabled(self):
+            mean,covariance=_clock.state_at(self)
+            if h<=0:return mean.clone(),covariance.clone()
+            identity=torch.eye(len(mean),device=mean.device,dtype=mean.dtype)
+            return self.gp.posterior(mean,covariance,self.cond_to_torch(y),identity,
+                torch.zeros_like(identity),self.C[-1],self.Sigma[-1],x_train=x_train,h=h)
+
         y = self.cond_to_torch(y)
         x_train = self.cond_to_torch(x_train)
         if h > 0.0:
@@ -935,6 +977,9 @@ class GaussianProcessEmission:
     def step_forward_last(self, x_post, params=None):
         """ Compute the observation over new x_post.
         """
+        if _clock.enabled(self) and params is None:
+            mean,covariance=_clock.state_at(self)
+            return self._observation_distribution(x_post,self.x_basis,self.C[-1] @ mean,self.Sigma[-1])
         if params is None:
             C = self.C[-1]
             A = self.A[-1]
@@ -985,6 +1030,12 @@ class GaussianProcessEmission:
         """
         C = self.C[-1]
         Sigma = self.Sigma[-1]
+        if _clock.enabled(self):
+            state=_clock.trajectory(self)
+            mean,covariance=_clock.state_at(self,len(state.means)-1)
+            fixed=getattr(self,'fixed_observation_model',None)
+            if fixed is not None:return fixed.predictive_moments(mean,covariance,noise=Sigma)
+            return self._observation_distribution(x_post,self.x_basis,C @ mean,Sigma)
         fixed_model = getattr(self, 'fixed_observation_model', None)
         if fixed_model is not None:
             if not torch.equal(self.cond_to_torch(x_post).reshape(-1, 1),
@@ -1057,6 +1108,9 @@ class GaussianProcessEmission:
     def resample_latent_mean(self, x_post, t=None, params=None):
         """Method to resample the latent process on a specific iteration of the model
         """
+        if _clock.enabled(self) and params is None and t is None:
+            mean,covariance=_clock.state_at(self)
+            return self.gp.pred_latent_dist(x_post,self.x_basis,mean,covariance)
         if params is None:
             if t is None or t> len(self.indexes):
                 mean = self.f_star_sm[-1]
@@ -1290,6 +1344,8 @@ class GaussianProcessEmission:
                 x = x
             return x
 
+        if getattr(self,'dynamics_clock','cluster-clock')=='physical-clock':
+            _clock.convert(self,'numpy')
         self.x_basis = recursive_numpy(self.x_basis)
         self.x_train = recursive_numpy(self.x_train)
         self.y_train = recursive_numpy(self.y_train)
@@ -1306,9 +1362,11 @@ class GaussianProcessEmission:
         self.likelihood = recursive_numpy(self.likelihood)
         self.K = recursive_numpy(self.K)
         if getattr(self, 'transition_policy', None) is None:
-            self.internal_params.to_numpy()
+            if self.internal_params is not None:
+                self.internal_params.to_numpy()
         if getattr(self, 'observation_policy', None) is None:
-            self.observation_params.to_numpy()
+            if self.observation_params is not None:
+                self.observation_params.to_numpy()
 
     def model_to_torch(self):
         def recursive_torch(x):
@@ -1323,6 +1381,8 @@ class GaussianProcessEmission:
                 x = x
             return x
 
+        if getattr(self,'dynamics_clock','cluster-clock')=='physical-clock':
+            _clock.convert(self,'torch')
         self.x_basis = recursive_torch(self.x_basis)
         self.x_train = recursive_torch(self.x_train)
         self.y_train = recursive_torch(self.y_train)
@@ -1339,9 +1399,11 @@ class GaussianProcessEmission:
         self.likelihood = recursive_torch(self.likelihood)
         self.K = recursive_torch(self.K)
         if getattr(self, 'transition_policy', None) is None:
-            self.internal_params.to_torch()
+            if self.internal_params is not None:
+                self.internal_params.to_torch()
         if getattr(self, 'observation_policy', None) is None:
-            self.observation_params.to_torch()
+            if self.observation_params is not None:
+                self.observation_params.to_torch()
 
     def model_to_cuda(self):
         if torch.cuda.is_available() and self.cuda:
@@ -1375,9 +1437,13 @@ class GaussianProcessEmission:
             self.likelihood = recursive_cuda(self.likelihood)
             self.K = recursive_cuda(self.K)
             if getattr(self, 'transition_policy', None) is None:
-                self.internal_params.to_cuda()
+                if self.internal_params is not None:
+                    self.internal_params.to_cuda()
             if getattr(self, 'observation_policy', None) is None:
-                self.observation_params.to_cuda()
+                if self.observation_params is not None:
+                    self.observation_params.to_cuda()
+            if getattr(self,'dynamics_clock','cluster-clock')=='physical-clock':
+                _clock.convert(self,'cuda')
             self.cuda = True
             self.gp.cuda = True
 
@@ -1394,6 +1460,8 @@ class GaussianProcessEmission:
                 x = x
             return x
 
+        if getattr(self,'dynamics_clock','cluster-clock')=='physical-clock':
+            _clock.convert(self,'cpu')
         self.x_basis = recursive_cpu(self.x_basis)
         self.x_train = recursive_cpu(self.x_train)
         self.y_train = recursive_cpu(self.y_train)
@@ -1410,8 +1478,10 @@ class GaussianProcessEmission:
         self.likelihood = recursive_cpu(self.likelihood)
         self.K = recursive_cpu(self.K)
         if getattr(self, 'transition_policy', None) is None:
-            self.internal_params.to_cpu()
+            if self.internal_params is not None:
+                self.internal_params.to_cpu()
         if getattr(self, 'observation_policy', None) is None:
-            self.observation_params.to_cpu()
+            if self.observation_params is not None:
+                self.observation_params.to_cpu()
         self.cuda = False
         self.gp.cuda = False

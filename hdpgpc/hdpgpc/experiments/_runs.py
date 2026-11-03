@@ -161,6 +161,7 @@ def log_configuration(config, args, *, source='configured'):
         if config.inference.offline_strategy == 'split_merge':
             print(f'Split/merge stopping: score rtol={config.inference.split_merge_score_rtol:g}; '
                   f'stable iterations={config.inference.split_merge_stability_patience}')
+    print(f'Dynamics clock={config.dynamics.clock}')
     print(f'LDS update={config.dynamics.lds_update}; scoring={config.dynamics.lds_scoring}; '
           f'hard assignments={config.inference.hard_assignments}; seed={args.seed}')
     print(format_lds_priors(dimension=len(config.x_basis), model_type=config.dynamics.model_type,

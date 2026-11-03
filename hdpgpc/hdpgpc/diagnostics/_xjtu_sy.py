@@ -5,22 +5,34 @@ import numpy as np
 from ._affine_dynamics import affine_dynamics_diagnostics
 
 
+def representation_label(representation):
+    return {'pca':'PCA', 'autoencoder':'AE', 'tied_linear_orthonormal_autoencoder':'AE',
+            'fourier':'Fourier', 'wavelet':'Haar wavelet'}[representation]
+
+
 def bearing_colors(labels):
     palette = plt.get_cmap('tab20')
     order = list(range(0, 20, 2))+list(range(1, 20, 2))
     return {int(cluster): palette(order[i % 20]) for i, cluster in enumerate(np.unique(labels))}
 
 
-def xjtu_diagnostics(model, data, values, decoder, center, scale, paths, *, samples, seed, representation='autoencoder'):
+def emission_reconstruction(values, decoder):
+    """Read-only decoder reconstruction and centered-variance score on supplied rows."""
     codes = (values-decoder.offset) @ np.linalg.pinv(decoder.C).T
     reconstruction = decoder.offset+codes @ decoder.C.T
     variance = float(np.sum((values-values.mean(0))**2))
+    explained = 1-float(np.sum((values-reconstruction)**2))/variance if variance else None
+    return codes, reconstruction, explained
+
+
+def xjtu_diagnostics(model, data, values, decoder, center, scale, paths, *, samples, seed, representation='autoencoder'):
+    codes, reconstruction, explained = emission_reconstruction(values, decoder)
     errors = np.mean((values-reconstruction)**2, axis=1)
     full = reconstruction.reshape(-1, data.window_samples, 2)*scale+center
     original = data.values.reshape(-1, data.window_samples, 2)
     result = dict(reference_scope='Terminal fault inspection only; no acquisition-level health labels',
         reconstruction_scope=f'In-sample retrospective {representation}, not held-out reconstruction or causal prediction',
-        reconstruction_explained_variance=1-float(np.sum((values-reconstruction)**2))/variance if variance else None,
+        reconstruction_explained_variance=explained,
         reconstruction_scaled_mse=float(errors.mean()),
         raw_window_channel_rmse=np.sqrt(np.mean((original-full)**2, axis=(0, 1))),
         first_quarter_scaled_mse=float(errors[:max(1,len(errors)//4)].mean()),
@@ -66,7 +78,7 @@ def plot_xjtu_summary(data, labels, diagnostics, *, title, representation='autoe
     axes[4].axhline(1,color='.4',linestyle='--')
     axes[4].set(xticks=list(colors),xlabel='Local state ID',ylabel='Acquisition-clock spectral radius',
         title='× mean A; ● variational median and 95% interval; not fast mechanical stability')
-    label='PCA' if representation=='pca' else 'linear AE'
+    label='linear AE' if representation=='autoencoder' else representation_label(representation)
     figure.suptitle(f'XJTU-SY {title}: {data.rpm} rpm, {data.radial_load_kn:g} kN\n'
         f'Raw window per burst → shared {label} → separate bearing fit; RMS/peak are display only')
     return figure
@@ -81,7 +93,7 @@ def plot_xjtu_embedding(codes, labels, times, *, title, representation='autoenco
     axes[0].legend(title='Local states',fontsize=8)
     points=axes[1].scatter(*xy.T,s=12,c=times/60,cmap='viridis')
     figure.colorbar(points,ax=axes[1],label='Acquisition time (min)')
-    label='PCA' if representation=='pca' else 'AE'
+    label=representation_label(representation)
     for axis in axes:
         axis.set(xlabel=f'{label} coordinate 1',ylabel=f'{label} coordinate 2 (0 if r=1)')
         axis.grid(alpha=.2)
@@ -110,9 +122,37 @@ def plot_xjtu_overview(reports):
         pair[0].set(title=f"{report['dataset']}: {info['configuration']}; terminal {info['fault_element']}",
             xlabel='Acquisition time (min)',ylabel='Horizontal burst RMS\n(display only)')
         pair[1].set(title=f"Inferred K={report['clusters']}; local IDs",xlabel='Acquisition time (min)',ylabel='State')
-    label='PCA' if all(report['metadata']['representation']=='pca' for report in reports) else 'AE'
+    kinds={report['metadata']['representation'] for report in reports}
+    label=representation_label(next(iter(kinds))) if len(kinds)==1 else 'mixed representation'
     figure.suptitle(f'XJTU-SY raw-window {label} comparison; separate bearing sequences\n'
         'Full-burst RMS is display metadata, not a training input; no intermediate health labels')
+    return figure
+
+
+def plot_xjtu_basis_calibration(batch, estimate, *, representation, sample_rate):
+    """Calibration energy and one raw-window reconstruction, separately per sensor."""
+    values=np.asarray(batch)
+    decoder=estimate.model
+    reconstruction=decoder.offset+(values-decoder.offset) @ decoder.C @ decoder.C.T
+    figure,axes=plt.subplots(2,2,figsize=(12,6),constrained_layout=True)
+    time=np.arange(values.shape[1]//2)/sample_rate*1000
+    for channel,name in enumerate(('Horizontal','Vertical')):
+        energy=estimate.candidate_energy[channel]
+        chosen=estimate.selected_columns[channel]
+        axes[channel,0].plot(np.arange(len(energy)),energy,color='.6',lw=.8)
+        axes[channel,0].scatter(chosen,energy[chosen],s=16,color='tab:orange',label='Retained')
+        axes[channel,0].set(xlabel='Native basis column',ylabel=f'{name} calibration energy',
+                            title=f'{len(chosen)} / {len(energy)} coefficients')
+        axes[channel,0].legend(fontsize=8)
+        axes[channel,1].plot(time,values[-1,channel::2],lw=.8,label='Raw window')
+        axes[channel,1].plot(time,reconstruction[-1,channel::2],lw=.8,label='Basis reconstruction')
+        axes[channel,1].set(xlabel='Within-burst time (ms)',ylabel=f'{name} scaled acceleration',
+                            title='Last calibration window')
+        axes[channel,1].legend(fontsize=8)
+        for axis in axes[channel]:axis.grid(alpha=.2)
+    figure.suptitle(f'{representation_label(representation)}: {decoder.latent_dim} total coefficients; '
+                   f'{estimate.explained_variance_ratio:.1%} calibration variance explained\n'
+                   'Shared channel-wise basis; raw waveform likelihood; no PCA preprocessing')
     return figure
 
 

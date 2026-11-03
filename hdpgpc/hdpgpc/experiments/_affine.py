@@ -15,7 +15,7 @@ def make_config(args, initialization, *, dynamic):
         x_basis=np.arange(initialization.latent_dim, dtype=float)[:, None],
         verbose=args.verbose,
         emission=GPEmissionConfig(kernels=[RBF(1.)], fit_gp=False, ini_sigma=args.sigma_prior),
-        dynamics=DynamicsConfig(ini_gamma=args.gamma_prior, annealing=False,
+        dynamics=DynamicsConfig(clock=getattr(args,'dynamics_clock','cluster-clock'), ini_gamma=args.gamma_prior, annealing=False,
             bayesian_params=True, free_deg_MNIV=args.lds_degrees,
             lds_update=lds_update(args), lds_scoring='final', lds_step_size=args.lds_step_size),
         alignment=AlignmentConfig(policy='none'),

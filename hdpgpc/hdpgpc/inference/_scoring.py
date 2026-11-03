@@ -46,6 +46,22 @@ def compute_q_elbo(self, resp, respPair, q, q_lat, gpmodels, M, new_indexes=None
         q_bas = torch.where(weights > 0, weights * q, torch.zeros_like(q)).sum() * self.static_factor
         elbo_latent = torch.where(weights > 0, weights * q_lat,
                                   torch.zeros_like(q_lat)).sum() * self.dynamic_factor
+    if getattr(self,'dynamics_clock','cluster-clock')=='physical-clock':
+        from ..dynamics import _clock
+        # Each active component has its own continuously evolving latent chain.
+        # Its prior/entropy is counted once, rather than weighted by assignment.
+        active=resp.sum(0)>0
+        physical_columns=torch.tensor([any(_clock.enabled(output[k]) for output in gpmodels)
+            for k in range(len(active))],device=resp.device)
+        selected=(resp==1.) if self.hard_assignments else resp
+        assigned_physical=torch.where(selected[:,physical_columns]>0,
+            selected[:,physical_columns]*q_lat[:,physical_columns],
+            torch.zeros_like(q_lat[:,physical_columns])).sum()
+        elbo_latent=elbo_latent-assigned_physical*self.dynamic_factor
+        for output in gpmodels:
+            for cluster,emission in enumerate(output[:len(active)]):
+                if bool(active[cluster]) and _clock.enabled(emission):
+                    elbo_latent=elbo_latent+_clock.latent_scores(emission,len(resp)).sum()*self.dynamic_factor
     if not self.hmm_switch:
         elbo_bas = self.hdp.iid_linear_elbo(resp)
     elif post:

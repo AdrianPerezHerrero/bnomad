@@ -283,6 +283,18 @@ class HDPGPC:
         result = []
         for ld, output in enumerate(self._backend.gpmodels):
             gp = output[cluster]
+            from ..dynamics import _clock
+            if _clock.enabled(gp):
+                state=_clock.trajectory(gp)
+                tick=len(state.means)-1
+                filtered,filtered_covariance=_clock.state_at(gp,tick,smoothed=False)
+                smoothed,smoothed_covariance=_clock.state_at(gp,tick)
+                result.append(LatentState(output=ld,observation_index=tick,
+                    grid=_snapshot(gp.x_basis),filtered_mean=_snapshot(filtered).reshape(-1),
+                    filtered_covariance=_snapshot(filtered_covariance),
+                    smoothed_mean=_snapshot(smoothed).reshape(-1),
+                    smoothed_covariance=_snapshot(smoothed_covariance)))
+                continue
             result.append(LatentState(
                 output=ld, observation_index=int(gp.indexes[-1]) if gp.indexes else -1,
                 grid=_snapshot(gp.x_basis), filtered_mean=_snapshot(gp.f_star[-1]).reshape(-1),

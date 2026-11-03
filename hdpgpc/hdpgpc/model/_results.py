@@ -38,7 +38,8 @@ class LatentState:
     """One output's latest stored filtered/smoothed state on its native basis.
 
     Means have shape (basis_points,), covariances (basis_points, basis_points).
-    observation_index is the last global sample index included in this component.
+    observation_index is the last retained sample in cluster-clock mode, or the
+    latest propagated global sample index in physical-clock mode.
     """
     output: int
     observation_index: int

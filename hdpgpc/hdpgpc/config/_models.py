@@ -131,6 +131,8 @@ class DynamicsConfig:
     # Fraction of each new batch's sufficient statistics in natural_gradient mode.
     lds_step_size: float = 0.2
     reest_conditions: list[int] = field(default_factory=lambda: [1, 20, 5])
+    # Physical mode advances all component states on the shared observation grid.
+    clock: Literal['cluster-clock', 'physical-clock'] = 'cluster-clock'
 
 
 @dataclass(frozen=True)
@@ -326,7 +328,9 @@ class HDPGPCConfig:
         self.validate()
         memo = {}
         return {'schema_version': 1, 'x_basis': encode(self.x_basis, memo), 'verbose': encode(self.verbose, memo),
-                **{name: {f.name: encode(getattr(getattr(self, name), f.name), memo) for f in fields(typ)}
+                **{name: {f.name: encode(getattr(getattr(self, name), f.name), memo) for f in fields(typ)
+                       if not (name == 'dynamics' and f.name == 'clock'
+                               and self.dynamics.clock == 'cluster-clock')}
                    for name, typ in SECTIONS.items()}}
 
     @classmethod

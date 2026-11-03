@@ -135,3 +135,10 @@ Outputs default to `agents/flutter_autoencoder_runs/`:
 Complete resumed runs skip both AE training and inference. Logs print absolute
 result folders. Runtime errors use the existing error report schema. Calibration
 and LDS files are diagnostic artifacts rather than restart checkpoints.
+
+## Optional physical-clock evolution
+
+Use `--dynamics-clock physical-clock` to propagate each component between all
+global observation ticks, including unassigned observations. Cluster-clock
+remains the default. See [dynamics clocks](dynamics_clocks.md) for prior/scoring
+semantics, regular-sampling assumptions and compatibility.

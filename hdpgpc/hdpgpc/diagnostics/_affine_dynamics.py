@@ -57,11 +57,15 @@ def affine_dynamics_diagnostics(model, paths, times, *, samples, seed, interpret
         rows = np.flatnonzero(labels == cluster)
         blocks = int(1+np.sum(np.diff(rows) != 1)) if len(rows) else 0
         record = dict(cluster=int(cluster), map_windows=int(owned.sum()), map_blocks=blocks,
-            retained_windows=len(indices), regular_retained_clock=regular, step_seconds=step,
+            retained_windows=len(gp.indexes), trajectory_windows=len(indices),
+            dynamics_clock=getattr(gp,'dynamics_clock','cluster-clock'),
+            propagation_only_windows=len(indices)-len(gp.indexes),
+            regular_retained_clock=regular, step_seconds=step,
             latent_spectral_radius=radius,
             point_growth_per_second=float(np.log(radius)/step) if step and radius > 0 else None,
             eigenvalues_real=eigenvalues.real, eigenvalues_imag=eigenvalues.imag,
-            interpretation=interpretation)
+            interpretation=('Global regular sampling-clock evolution; not continuous-time ODE or failure identification'
+                if getattr(gp,'dynamics_clock','cluster-clock')=='physical-clock' else interpretation))
         posterior = gp.internal_params
         record['transition_posterior'] = dict(family=type(posterior).__name__,
             mean=_array(posterior.m_mean), column_precision=_array(posterior.m_r_cov),

@@ -264,6 +264,8 @@ def validate(c, *, for_build=False):
     if d.lds_update not in ('conjugate_sequential', 'conjugate_batch',
                             'natural_gradient', 'legacy'):
         raise ValueError('lds_update must be conjugate_sequential, conjugate_batch, natural_gradient, or legacy')
+    if d.clock not in ('cluster-clock', 'physical-clock'):
+        raise ValueError('dynamics.clock must be cluster-clock or physical-clock')
     if d.lds_scoring not in ('final', 'historical'):
         raise ValueError('lds_scoring must be final or historical')
     if d.lds_update == 'conjugate_batch' and not d.bayesian_params:
