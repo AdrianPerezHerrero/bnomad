@@ -89,7 +89,7 @@ def make_config(args, decoder, gamma):
         # fit_gp=False and the observation likelihood uses the fixed decoder.
         emission=GPEmissionConfig(fit_gp=False, ini_lengthscale=1., bound_lengthscale=(.1, 10.),
             ini_outputscale=1., ini_sigma=sigma, bound_sigma=(1e-12, 1e8)),
-        dynamics=DynamicsConfig(ini_gamma=gamma, bound_gamma=(1e-12, 1e8), annealing=False,
+        dynamics=DynamicsConfig(clock=getattr(args,'dynamics_clock','cluster-clock'), ini_gamma=gamma, bound_gamma=(1e-12, 1e8), annealing=False,
             bayesian_params=True, free_deg_MNIV=args.lds_degrees, lds_update=lds_update(args),
             lds_scoring=args.lds_scoring, lds_step_size=args.lds_step_size),
         alignment=AlignmentConfig(policy='none'),

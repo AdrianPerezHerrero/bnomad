@@ -34,6 +34,8 @@ def assert_snapshot(test, actual, expected, path='state'):
         test.assertEqual(len(actual),len(expected),path)
         for index,(a,e) in enumerate(zip(actual,expected)):
             assert_snapshot(test,a,e,f'{path}[{index}]')
+    elif isinstance(expected, float):
+        np.testing.assert_allclose(actual, expected, rtol=1e-7, atol=1e-9, err_msg=path)
     else:
         test.assertEqual(actual,expected,path)
 
@@ -83,22 +85,22 @@ class HDPComponentTests(unittest.TestCase):
             component.M = 99  # Lifecycle belongs to its caller.
 
     def test_concentration_profiles_and_unknown_profile_noop(self):
-        context = SimpleNamespace()
+        context = SimpleNamespace(hmm_switch=True)
         component = HDPVariational(context)
         component.set_hyperparameters('unrecognized')
-        self.assertEqual(vars(context),{})
-        for name,expected in (('less',(.01,.01,.01,0.)),('balanced',(1.,1.,.1,0.)),('more',(10.,10.,1.,0.))):
+        self.assertEqual(vars(context),{'hmm_switch': True})
+        for name,expected in (('less',(1000.,1000.,1.,0.)),('balanced',(1000.,100.,1.,0.)),('more',(10.,100.,1.,0.))):
             component.set_hyperparameters(name)
             self.assertEqual(tuple(getattr(context,key) for key in ('gamma','transAlpha','startAlpha','kappa')),expected)
         component.set_hyperparameters('unrecognized')
         self.assertEqual(context.gamma,10.)
 
-    def test_expected_log_variants_against_pre_extraction_values(self):
+    def test_all_schedules_use_dirichlet_expected_log_probabilities(self):
         assert_snapshot(self,expected_logs(HDPVariational),REFERENCE['expected_logs'])
         values=expected_logs(HDPVariational)
-        self.assertNotEqual(values['online_t']['values'],values['batch_t']['values'])
-        self.assertNotEqual(values['online_t']['values'],values['classify_t']['values'])
-        self.assertNotEqual(values['batch_t']['values'],values['stored_t']['values'])
+        self.assertEqual(values['online_t']['values'],values['batch_t']['values'])
+        self.assertEqual(values['online_t']['values'],values['classify_t']['values'])
+        self.assertEqual(values['batch_t']['values'],values['stored_t']['values'])
 
     def test_growth_preserves_old_prefix_without_committing_or_creating_models(self):
         model=owner(2)

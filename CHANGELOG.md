@@ -1,5 +1,31 @@
 # 0.3.0 ? native implementation migration
 
+- Added XJTU-SY Fourier/Haar example scripts through the shared runner, with
+  channel-wise calibration-energy rank selection, paired Fourier coefficients,
+  basis provenance, and physical-clock experiment defaults.
+
+- Added opt-in physical-clock latent dynamics on a regular shared sampling grid,
+  with prediction-only propagation, gap smoothing, clock-aware statistics and
+  global process-prior scoring. Cluster-clock and the pinned reference recipe
+  remain unchanged by default. All experiment builders expose the clock flag.
+
+- Added XJTU-SY raw-acquisition-window PCA/autoencoder clustering with explicit
+  acquisition clocks, bounded per-bearing downloads, terminal-inspection
+  references and standard unlabeled artifacts. Shared transition diagnostics
+  are reused by flutter and bearing experiments.
+- Added checksum-pinned flutter motion loading and a raw-window autoencoder
+  experiment with shared calibration, unlabeled clustering reports and
+  variational transition-stability diagnostics. Shared affine configuration is
+  reused by flutter and expression experiments.
+- Added zebrafish and Xenopus PCA/autoencoder entry scripts using the shared
+  expression workflow, fixed calibrated decoders, and standard artifacts.
+- Added dense Xenopus GSE65785 expression experiments with separate clutches,
+  unsmoothed all-gene inputs, published sample QC and explicit reference-label
+  provenance. Zebrafish and Xenopus share expression configuration/execution.
+- Added an all-gene zebrafish temporal expression-state experiment with
+  versioned/checksummed count loading, shared experiment arguments/results,
+  and paired independent-factor/HMM versus dynamic-factor/HMM configurations.
+  See docs/zebrafish_workflow.md.
 - Added opt-in left-to-right transition topology for CPU offline split/merge:
   reduced-simplex hierarchical priors/ELBO, ordered messages and joint decoding,
   temporal boundary splits and adjacent merges. See docs/transition_topology.md.

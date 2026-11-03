@@ -6,6 +6,10 @@ from hdpgpc.config._models import SECTIONS, NON_CONSTRUCTOR
 
 def recipe_from_options(x_basis=None, **kwargs):
     remaining=dict(kwargs)
+    for key, value in dict(gamma=1., trans_alpha=1., start_alpha=.1, kappa=0.,
+                           lds_update='conjugate_sequential', lds_scoring='final',
+                           birth_lds_kl_per_dimension=False).items():
+        remaining.setdefault(key, value)
     root={'x_basis':x_basis, 'verbose':remaining.pop('verbose',False)}
     policy=remaining.pop('alignment',None)
     from hdpgpc.alignment import NoAlignment

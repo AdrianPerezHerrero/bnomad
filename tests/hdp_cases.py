@@ -54,6 +54,7 @@ def owner(M=3, sticky=0.):
     """Only the original HDP fields/conversion context; no GP/warp objects."""
     reset()
     model = ModelState.__new__(ModelState)
+    model.hmm_switch, model.verbose = True, False
     model.M, model.T, model.n_outputs = M, 4, 2
     model.cuda, model.device = False, torch.device("cpu")
     model.gamma, model.transAlpha, model.startAlpha, model.kappa = 1., 1., .1, sticky
@@ -108,7 +109,7 @@ def reinitialization():
 
 
 def expected_logs(component=None):
-    """The separate literal formulas in the original main-model call sites."""
+    """Independent Dirichlet expected-log formulas for every inference schedule."""
     model = owner()
     model.transTheta = torch.tensor([[.02, .3, .7, .04], [.8, .06, .5, .12], [1.1, .2, .4, .01], [.2, .2, .2, .4]])
     model.startTheta = torch.tensor([.03, .5, .15, .02])
@@ -116,11 +117,10 @@ def expected_logs(component=None):
     if component is None:
         online_t = digamma(model.cond_cpu(transTheta[:M, :M])) - digamma(torch.sum(model.cond_cpu(transTheta[:M, :M+1]), axis=1))[:, None]
         online_s = digamma(model.cond_cpu(startTheta[:M])) - digamma(torch.sum(model.cond_cpu(startTheta[:M+1])))
-        batch_t = digamma(model.cond_cpu(transTheta[:M, :M])) - torch.log(torch.sum(torch.exp(digamma(model.cond_cpu(transTheta[:M, :M+1]))), axis=1)+1e-5)[:, np.newaxis]
-        batch_s = digamma(model.cond_cpu(startTheta[:M])) - torch.log(torch.sum(torch.exp(digamma(model.cond_cpu(startTheta[:M+1]))))+1e-5)
-        stored_t = digamma(model.cond_cpu(transTheta[:M, :M])) - torch.log(torch.sum(torch.exp(digamma(model.cond_cpu(transTheta[:M, :M+1]))), axis=1))[:, np.newaxis]
-        classify_t = digamma(model.cond_cpu(transTheta[:M, :M])) - digamma(torch.sum(model.cond_cpu(transTheta[:M, :M+1]), axis=1)+1e-5)[:, None]
-        classify_s = digamma(model.cond_cpu(startTheta[:M])) - digamma(torch.sum(model.cond_cpu(startTheta[:M+1]))+1e-5)
+        # All schedules now use E[log p] from the same Dirichlet posterior.
+        # log(E[p]) and row-normalized digamma values are different quantities.
+        batch_t, stored_t, classify_t = online_t, online_t, online_t
+        batch_s, classify_s = online_s, online_s
     else:
         hdp = component(model)
         online_t = hdp.expected_log_transitions(M, transTheta)

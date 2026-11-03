@@ -166,7 +166,8 @@ def waveform_data(outputs=1):
 
 
 def source_hashes():
-    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(SOURCE.glob("*.py"))}
+    return {p.relative_to(SOURCE).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in sorted(SOURCE.rglob("*.py"))}
 
 
 def environment():

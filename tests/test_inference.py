@@ -90,7 +90,7 @@ class InferenceEngineTests(unittest.TestCase):
 
     def test_divergence_reports_first_field_and_bypasses_broad_fallbacks(self):
         self.assertEqual(first_difference({'rho': [0.5, 0.4]}, {'rho': [0.5, 0.3]}),
-                         'boundary.rho[1]: 0.4 != 0.3')
+                         'boundary.rho[1]: 0.4 != 0.3 (rtol=1e-7, atol=1e-9)')
         self.assertFalse(issubclass(InferenceDivergence, Exception))
         with self.assertRaisesRegex(InferenceDivergence, 'extra event 0'):
             with trace_calls(expected=[]):

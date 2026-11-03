@@ -259,3 +259,14 @@ The six YAML examples cover static, dynamic, dynamic plus warping, online, offli
 and multi-output. Their tiny-data values are examples, not new defaults. Tests
 round-trip recipes and compare serialized construction against all frozen
 inference scenarios without changing the expected numbers.
+
+
+### Explicit HDP concentrations
+
+`HDPConfig.gamma`, `trans_alpha`, `start_alpha` and `kappa` optionally override
+individual values resolved by `hdp_hyp`. `None` retains the selected preset.
+The first three must be finite and positive; `kappa` must be finite and
+nonnegative. Overrides also apply to the independent mixture's gamma when
+`hmm_switch=False`; transition/start/sticky values are inactive in that mode.
+Bundled synthetic recipes pin these values so changing a research preset does
+not silently change their reference workload.

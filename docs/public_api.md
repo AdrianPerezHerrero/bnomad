@@ -54,11 +54,14 @@ properties on `HDPGPC` are:
 | Name | Contract |
 | --- | --- |
 | `HDPGPC(config)` | Copy and validate the recipe; backend construction is deferred until fit/update |
-| `fit(X, *, grid=None)` | Start a fresh model, run the selected schedule, return `self` |
+| `fit(X, *, grid=None, birth_diagnostic_limit=0)` | Start a fresh model, run the selected schedule, return `self` |
 | `update(x, *, grid=None, include_prediction=False, include_posterior=False)` | Commit one observation; return an independent `UpdateResult` |
 | `labels_` | Read-only copy of the latest committed hard-label vector |
 | `cluster_ids_` | Sorted unique indices represented in `labels_` |
 | `n_clusters_` | Number of represented clusters, excluding empty reserved slots |
+| `observation_parameters_` | Fitted C/Sigma snapshots; MFA additionally reports cluster offsets and observation-posterior snapshots |
+| `split_merge_history_`, `split_merge_convergence_` | Offline proposal and stopping diagnostics; empty for the legacy strategy |
+| `birth_diagnostics_` | Captured offline proposal diagnostics when requested |
 | `predictive(cluster, *, grid=None)` | Read a component's current observation distribution |
 | `posterior(cluster)` | Copy its latest stored latent state for each output |
 | `warp_posterior(x, *, grid=None, cluster=None)` | Fit candidate-conditioned warp posteriors from the current model state without committing `x`; requires `gp_flow` |
@@ -189,6 +192,35 @@ prediction errors happen **after** a successful update has committed: a retry of
 `update` would add another observation. Query with `predictive` separately when
 that distinction matters.
 
+## Hard and soft assignments
+
+The inference configuration supports both modes. `hard_assignments=True` is
+the default; set `InferenceConfig.hard_assignments=False` to retain normalized
+soft state/transition responsibilities in the native online or offline engine.
+Filtering and Bayesian parameter sufficient statistics use fractional weights.
+Soft mode requires Bayesian parameter updates; cluster creation and reported
+labels still use a discrete choice. With ordered topology, the reported path
+obeys the configured transitions.
+
+```python
+from dataclasses import replace
+from hdpgpc import HDPGPC
+from hdpgpc.examples import configuration, waveforms
+
+config = configuration('offline')
+config = replace(config, inference=replace(config.inference, hard_assignments=False))
+model = HDPGPC(config).fit(waveforms())
+```
+
+The current public result interface exposes discrete summaries: `labels_`
+remains a discrete vector, and `update()` constructs a one-hot
+`UpdateResult.responsibilities` vector from its committed assignment even when
+soft inference is configured. `assignment_probabilities` is currently `None`.
+There is no public full-responsibility-matrix accessor on this facade. These
+result-access limits do not disable soft inference; they should not be read as
+a claim that only hard assignments are supported. Native mutable arrays are
+internal and are not a stable substitute for a public result accessor.
+
 ## Streaming result: assignments and uncertainty
 
 `UpdateResult` fields are frozen; its array fields are independent, read-only
@@ -200,15 +232,16 @@ NumPy snapshots:
 | `assigned_cluster` | Latest committed cluster index, consistent with `labels_[-1]` |
 | `cluster_ids` | Allocated indices for this result's responsibility columns, including any empty slots |
 | `responsibilities` | One-hot vector for the retained hard assignment |
-| `assignment_probabilities` | `None`: calibrated soft probabilities are unavailable from the retained state |
+| `assignment_probabilities` | `None`: soft probabilities are not exposed by this streaming result |
 | `new_cluster` | Whether the update increased the backend's allocated cluster count |
 | `prediction` | Optional `Prediction` for the assigned cluster, after committing the observation |
 | `posterior` | Optional tuple of `LatentState`, one per output, after the update |
 
-The existing `_safe_exp` performs argmax hardening. Neither softmaxing raw emission
-scores nor describing the hard vector as calibrated uncertainty would faithfully
-report that implementation. Hence hard responsibilities and unavailable soft
-probabilities are explicit, separate concepts in this result.
+The native `_safe_exp` respects `hard_assignments`: it hardens log marginals in
+hard mode and normalizes them in soft mode. The facade's streaming result is a
+separate one-hot summary, not the native responsibility tensor. Neither that
+one-hot vector nor an ad hoc softmax of raw emission scores should be presented
+as calibrated assignment uncertainty.
 
 The constructor creates the first cluster before any update, so the first
 observation normally has `new_cluster=False`. Cluster indices are **current model

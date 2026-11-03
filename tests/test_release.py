@@ -24,14 +24,29 @@ class ReleaseTests(unittest.TestCase):
                 second = run_experiment(mode)
                 self.assertEqual(first['scientific_result'], second['scientific_result'])
                 result = first['scientific_result']
-                # This dynamic tutorial retains one cluster online; the static
-                # growth case is separately protected by the original baselines.
-                self.assertEqual(result['labels'], [0, 0, 0, 0] if mode == 'online' else [0, 0, 1, 1, 0, 1])
-                self.assertEqual(result['n_clusters'], 1 if mode == 'online' else 2)
+                # The explicitly pinned toy recipe separates both waveform families.
+                self.assertEqual(result['labels'], [0, 0, 1, 1] if mode == 'online' else [0, 0, 1, 1, 0, 1])
+                self.assertEqual(result['n_clusters'], 2)
                 if mode == 'offline':
                     check_reference(first)
                 if mode == 'warping':
                     self.assertGreater(max(abs(x[0]) for x in result['alignment_demo']['offsets']), 1e-3)
+
+    def test_reference_rejects_recipe_data_and_scientific_changes(self):
+        import copy
+        report = run_experiment('offline')
+        for field in ('recipe', 'data', 'labels', 'mean'):
+            changed = copy.deepcopy(report)
+            if field == 'recipe':
+                changed['config']['schema_version'] += 1
+            elif field == 'data':
+                changed['data_sha256'] = 'changed'
+            elif field == 'labels':
+                changed['scientific_result']['labels'][0] = 1
+            else:
+                changed['scientific_result']['clusters'][0]['mean'][0][0] += .1
+            with self.subTest(field=field), self.assertRaises(AssertionError):
+                check_reference(changed)
 
     @unittest.skipUnless(os.environ.get('HDPGPC_TEST_INSTALLED'), 'installed-artifact gate')
     def test_installed_distribution(self):

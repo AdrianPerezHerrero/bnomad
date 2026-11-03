@@ -37,10 +37,28 @@ def recipe(**overrides):
 
 class ConfigurationTests(unittest.TestCase):
     def test_native_construction_requires_a_typed_recipe(self):
-        self.assertEqual(tuple(inspect.signature(ModelState).parameters), ('config',))
+        self.assertEqual(tuple(inspect.signature(ModelState).parameters), ('config', 'schedule'))
         self.assertFalse(hasattr(HDPGPCConfig, 'from_legacy_args'))
         self.assertFalse(hasattr(HDPGPCConfig, 'from_legacy_kwargs'))
         self.assertFalse(hasattr(HDPGPCConfig, 'to_legacy_kwargs'))
+
+    def test_explicit_hdp_concentrations_override_presets_and_round_trip(self):
+        config = replace(recipe(), hdp=HDPConfig(hdp_hyp='balanced', gamma=2.,
+                          trans_alpha=3., start_alpha=.4, kappa=.5))
+        restored = HDPGPCConfig.from_yaml(config.to_yaml())
+        state = ModelState(restored)
+        self.assertEqual((state.gamma, state.transAlpha, state.startAlpha, state.kappa),
+                         (2., 3., .4, .5))
+        preset = ModelState(replace(config, hdp=HDPConfig(hdp_hyp='balanced')))
+        self.assertEqual((preset.gamma, preset.transAlpha, preset.startAlpha, preset.kappa),
+                         (1000., 100., 1., 0.))
+        for name in ('gamma', 'trans_alpha', 'start_alpha', 'kappa'):
+            for value in (-1., float('nan'), float('inf'), True):
+                with self.subTest(name=name, value=value), self.assertRaises(ValueError):
+                    replace(config, hdp=replace(config.hdp, **{name: value})).validate()
+        for name in ('gamma', 'trans_alpha', 'start_alpha'):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                replace(config, hdp=replace(config.hdp, **{name: 0.})).validate()
 
     def test_dict_and_yaml_roundtrips(self):
         for config in (HDPGPCConfig(), recipe(), recipe(M=2, model_type=['static', 'dynamic'],

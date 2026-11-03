@@ -1,6 +1,54 @@
-"""Small, dataset-independent preparation helpers for waveform sequences."""
+"""Dataset-independent preparation of waveforms and high-dimensional observations."""
 
 import numpy as np
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class PCAProjection:
+    """Compact all-feature projection without a feature-by-feature covariance.
+
+    Scores use one global scale, preserving relative principal variances.
+    Constant/zero columns remain in mean/loadings and are never selected out.
+    """
+    mean: np.ndarray
+    loadings: np.ndarray
+    scale: float
+    explained_variance_ratio: np.ndarray
+    numerical_rank: int
+
+    def transform(self, values):
+        values = np.asarray(values, dtype=np.float64)
+        if (values.ndim != 2 or values.shape[1] != len(self.mean)
+                or not np.isfinite(values).all()):
+            raise ValueError('Projection requires finite rows with the original feature count')
+        return (values - self.mean) @ self.loadings / self.scale
+
+
+def fit_pca_projection(values, *, components):
+    """Fit thin-SVD PCA over every column; no feature selection or whitening.
+
+    Calibration is retrospective on all supplied rows. Reduced rank is capped
+    at the numerical rank. This captures variance, which can include technical
+    effects; it does not identify biological relevance or remove all noise.
+    """
+    values = np.asarray(values, dtype=np.float64)
+    if (values.ndim != 2 or min(values.shape) < 2 or not np.isfinite(values).all()
+            or isinstance(components, bool) or not isinstance(components, (int, np.integer))
+            or components < 1):
+        raise ValueError('PCA projection requires finite (samples, features) and positive components')
+    mean = values.mean(axis=0)
+    _, singular, right = np.linalg.svd(values - mean, full_matrices=False)
+    tolerance = np.finfo(np.float64).eps * max(values.shape) * singular[0]
+    rank = int(np.count_nonzero(singular > tolerance))
+    if not rank:
+        raise ValueError('PCA projection requires nonzero between-observation variance')
+    count = min(int(components), rank)
+    loadings = right[:count].T.copy()
+    signs = np.sign(loadings[np.abs(loadings).argmax(axis=0), np.arange(count)])
+    loadings *= signs
+    scale = float(np.sqrt(np.mean(singular[:count] ** 2) / (len(values) - 1)))
+    return PCAProjection(mean, loadings, scale, singular[:count] ** 2 / np.sum(singular ** 2), rank)
 
 
 def normalize_samples(signal):

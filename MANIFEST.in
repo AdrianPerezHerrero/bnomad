@@ -1,6 +1,7 @@
 include LICENSE NOTICE.md CITATION.cff CHANGELOG.md
 recursive-include licenses *.txt
 recursive-include docs *.md
+recursive-include docs/assets *.svg
 recursive-include docs/release_evidence *.json *.txt
 recursive-include examples *.py *.yaml *.md
 recursive-include tutorials *.ipynb *.md *.json

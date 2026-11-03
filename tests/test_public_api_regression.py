@@ -22,7 +22,7 @@ from inference_cases import reference, trace_calls, InferenceDivergence, first_d
 from hdpgpc import HDPGPC, HDPGPCConfig
 
 REFERENCE = reference()['cases'] | reference(supplemental=True)['cases']
-NAMES = tuple(n for n in REFERENCE if n not in ('reload_labels', 'known_failure_forced_reuse'))
+NAMES = tuple(n for n in REFERENCE if n not in ('reload_labels', 'forced_reuse'))
 
 
 def run_public(name):

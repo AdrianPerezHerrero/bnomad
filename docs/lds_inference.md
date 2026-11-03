@@ -264,3 +264,10 @@ is `Q A Q.T`, while the projected process covariance is
 `scale^2 * Q Gamma Q.T`. These are diagnostic transforms, not extra fitted
 parameters. For warped records, the requested grid is the model's aligned
 coordinate system; the diagnostic does not invert per-beat warps.
+
+## Component evolution clock
+
+Cluster-clock remains the default. Set `DynamicsConfig(clock="physical-clock")`
+or `--dynamics-clock physical-clock` to propagate component states on every
+global sampling tick, including unassigned observations. See
+[clock semantics, assumptions and compatibility](dynamics_clocks.md).

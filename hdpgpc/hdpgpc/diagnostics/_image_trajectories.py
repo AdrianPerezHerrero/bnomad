@@ -16,8 +16,9 @@ def model_latent_trajectories(model, *, output=0):
 
     Indices identify included observations, not necessarily MAP members in soft
     mode. State zero is returned separately as the initial prior. A trajectory
-    step is between consecutive observations included in that cluster: elapsed
-    time outside the cluster is not automatically propagated. This diagnostic
+    step in cluster-clock mode is between consecutive retained observations.
+    Physical-clock mode instead returns every global sampling tick, marking
+    retained observations separately. This diagnostic
     requires retained full histories, as in ordinary offline inference.
     """
     backend = getattr(model, '_backend', model)
@@ -27,6 +28,21 @@ def model_latent_trajectories(model, *, output=0):
     result = {}
     for cluster in cluster_ids:
         gp = backend.gpmodels[output][int(cluster)]
+        from ..dynamics import _clock
+        if _clock.enabled(gp):
+            state=_clock.trajectory(gp)
+            if not state.means:
+                continue
+            indices=np.arange(len(state.means),dtype=np.int64)
+            means=np.stack([_array(mean).reshape(-1) for mean in state.means])
+            result[int(cluster)]={'indices':indices,'means':means,
+                'covariances':np.stack([_array(cov) for cov in state.covariances]),
+                'forecast_means':means @ _array(gp.A[-1]).T,
+                'prior_mean':_array(state.prior_mean).reshape(-1),
+                'prior_covariance':_array(state.prior_covariance),
+                'observation_indices':np.asarray(gp.indexes,dtype=np.int64),
+                'observed':np.isin(indices,gp.indexes),'clock':'physical-clock'}
+            continue
         indices = np.asarray(gp.indexes, dtype=np.int64)
         if (not len(indices) or np.any(indices < 0) or len(gp.f_star_sm) != len(indices) + 1
                 or len(gp.cov_f_sm) != len(indices) + 1 or np.any(np.diff(indices) <= 0)):
@@ -67,7 +83,8 @@ def _times(times, count):
 
 
 def plot_latent_trajectories(model, *, times=None, output=0, title='', trajectories=None,
-                             min_cluster_samples=1, time_label='Video time (s)', time_unit='s'):
+                             min_cluster_samples=1, time_label='Video time (s)', time_unit='s',
+                             observation_label='frames'):
     """Per cluster: state path, component uncertainty and final-A changes.
 
     Uses the first two common latent coordinates (one-dimensional states get a
@@ -94,12 +111,13 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
     for row, cluster in enumerate(ids):
         state = paths[cluster]
         indices = state['indices']
-        owned = labels[indices] == cluster
+        owned = (np.ones(len(indices),dtype=bool) if state.get('clock')=='physical-clock'
+                 else labels[indices] == cluster)
         indices = indices[owned]
         means, covariances = state['means'][owned], state['covariances'][owned]
         forecasts = state['forecast_means'][owned]
         color = colors[cluster]
-        axes[row, 0].set(title=f'Cluster {cluster}: {len(indices)} MAP frames (color = time)',
+        axes[row, 0].set(title=f'Cluster {cluster}: {len(indices)} '+('clock steps' if state.get('clock')=='physical-clock' else f'MAP {observation_label}')+' (color = time)',
                          xlabel='Latent component 1', ylabel='Latent component 2')
         axes[row, 1].set(title='Smoothed components +/- 2 posterior SD',
                          xlabel=time_label, ylabel='Latent coefficient')
@@ -118,6 +136,12 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
                 axes[row, 1].plot(t, m, color=component_color, linewidth=1)
                 axes[row, 1].fill_between(t, m - 2 * sd, m + 2 * sd, color=component_color, alpha=.15)
         axes[row, 0].scatter(xy[:, 0], xy[:, 1], c=times[indices], cmap='viridis', s=10)
+        if state.get('clock')=='physical-clock':
+            missing=~state['observed'][owned]
+            axes[row,0].scatter(xy[missing,0],xy[missing,1],marker='x',color='.45',s=12,
+                                label='Unobserved: propagated/smoothed')
+            axes[row,0].legend(fontsize=7)
+
         for position, marker in ((0, 'o'), (-1, 'X')):
             axes[row, 0].scatter(*xy[position], s=50, marker=marker, color=color, edgecolor='k')
             axes[row, 0].annotate(f'{times[indices[position]]:g}{time_unit}', xy[position], fontsize=8,

@@ -104,7 +104,7 @@ class PublicUsageTests(unittest.TestCase):
             result = model.update(sample)
             self.assertEqual(result.observation_index, index)
             self.assertEqual(len(model.labels_), index + 1)
-        self.assertEqual(model.n_clusters_, 1)
+        self.assertEqual(model.n_clusters_, 2)
 
     def test_warping_and_multi_output_use_public_surface(self):
         for name, outputs in (('dynamic_warping', 1), ('multi_output', 2)):

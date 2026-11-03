@@ -122,6 +122,8 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
     -------
     self : returns an instance of self.
     """
+    _prepare_sampling_clock(self,self.T)
+
 
     # Adding one sample
     one_sample = True
@@ -606,6 +608,8 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
       - past resp/respPair are reused; only last step is appended (hard).
       - q_lat is patched only at tail indices (t and maybe t-1).
     """
+    _prepare_sampling_clock(self,self.T)
+
 
     one_sample = True
     t = self.T
@@ -1017,3 +1021,10 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         _alignment.configured(self).update_selected(self, ld, model, x_train, warp)
     _report_assignment(self, t, model, birth)
 
+
+
+def _prepare_sampling_clock(state,index):
+    if getattr(state,'dynamics_clock','cluster-clock')=='physical-clock':
+        for output in state.gpmodels:
+            for emission in output:
+                emission._clock_target_index=int(index)

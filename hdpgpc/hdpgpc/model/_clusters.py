@@ -27,6 +27,9 @@ def keep_last_all(self):
     """
     for ld in range(self.n_outputs):
         for gp in self.gpmodels[ld]:
+            if getattr(gp,'dynamics_clock','cluster-clock')=='physical-clock':
+                # Preserve the physical origin/history when making a legacy checkpoint.
+                continue
             if getattr(gp, 'factor_analysis', False):
                 # Compaction is not a new parameter prior or a new M-step.
                 # Retain the learned intercept/loading/noise posterior for
@@ -335,6 +338,11 @@ def gpmodel_deepcopy(self, gpmodel):
                        lds_update=getattr(gpmodel, 'lds_update', 'conjugate_sequential'),
                        lds_scoring=getattr(gpmodel, 'lds_scoring', 'final'),
                        lds_step_size=getattr(gpmodel, 'lds_step_size', 0.2))
+    gp_.dynamics_clock = getattr(gpmodel, 'dynamics_clock', 'cluster-clock')
+    if hasattr(gpmodel, '_sampling_trajectory'):
+        gp_._sampling_trajectory = deepcopy(gpmodel._sampling_trajectory)
+    if hasattr(gpmodel, '_clock_target_index'):
+        gp_._clock_target_index = gpmodel._clock_target_index
     gp_.y_train = gpmodel.y_train.copy()
     gp_.x_train = gpmodel.x_train.copy()
     gp_.f_star = gpmodel.f_star.copy()

@@ -1,7 +1,7 @@
 """Repeat complete captures in fresh interpreters and compare exact JSON bytes.
 
-One capture reverses case order. Numerical tolerances are deliberately NOT used
-here: variability is reported rather than hidden by the regression tolerance.
+One capture reverses case order. Repeated captures must match one another exactly.
+Each also meets the reviewed scientific baseline tolerance across CPU/BLAS builds.
 """
 
 from __future__ import annotations
@@ -14,6 +14,9 @@ import subprocess
 import sys
 import tempfile
 import time
+import unittest
+
+from ._support import assert_snapshot
 
 
 def main():
@@ -32,25 +35,43 @@ def main():
     if not reference:
         raise RuntimeError("No reviewed baselines exist")
     runs = []
+    first_hashes = None
+    test = unittest.TestCase()
     with tempfile.TemporaryDirectory(prefix="hdpgpc-characterization-") as temporary:
         for number in range(args.runs):
             output = Path(temporary) / f"run-{number + 1}"
             reverse = number % 2 == 1
-            cmd = [sys.executable, "-B", "-m", "tests.characterization.record_baseline", "--output", str(output)]
+            cmd = [sys.executable, "-B", "-m", "tests.characterization.record_baseline", "--output", str(output),
+                   "--reference-commit", "determinism verification"]
             if reverse:
                 cmd.append("--reverse")
             start = time.perf_counter()
             subprocess.run(cmd, cwd=workspace, check=True)
             hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                       for p in output.glob("*.json") if p.name != "manifest.json"}
-            changed = sorted(name for name in reference.keys() | hashes.keys() if reference.get(name) != hashes.get(name))
+            outside_tolerance = []
+            for name in reference.keys() | hashes.keys():
+                if name not in reference or name not in hashes:
+                    outside_tolerance.append(name)
+                    continue
+                try:
+                    assert_snapshot(test, json.loads((output/name).read_text()),
+                                    json.loads((baseline/name).read_text()), name)
+                except AssertionError:
+                    outside_tolerance.append(name)
+            if first_hashes is None:
+                first_hashes = hashes
+            changed = sorted(name for name in first_hashes.keys() | hashes.keys()
+                             if first_hashes.get(name) != hashes.get(name))
             runs.append({"run": number + 1, "reverse_order": reverse,
                          "seconds": round(time.perf_counter() - start, 3),
-                         "different_from_baseline": changed, "sha256": hashes})
-            print(f"Run {number + 1}: {len(changed)} exact differences", flush=True)
-        report = {"comparison": "byte-for-byte snapshots, no numerical tolerance",
+                         "different_from_first_run": changed,
+                         "outside_baseline_tolerance": sorted(outside_tolerance), "sha256": hashes})
+            print(f"Run {number + 1}: {len(changed)} exact repeat differences; "
+                  f"{len(outside_tolerance)} baseline regressions", flush=True)
+        report = {"comparison": "byte-for-byte repeated snapshots; reviewed baseline rtol=1e-7, atol=1e-9",
                   "python_executable": sys.executable, "runs": runs,
-                  "all_identical": all(not run["different_from_baseline"] for run in runs)}
+                  "all_identical": all(not run["different_from_first_run"] and not run["outside_baseline_tolerance"] for run in runs)}
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")

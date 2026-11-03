@@ -29,6 +29,8 @@ def add_common_arguments(parser, *, defaults=None, ordered=False):
                                                'natural_gradient', 'legacy'), default=None)
     parser.add_argument('--lds-scoring', choices=('final', 'historical'), default='final')
     parser.add_argument('--lds-step-size', type=float, default=.2)
+    parser.add_argument('--dynamics-clock', choices=('cluster-clock','physical-clock'),
+                        default='cluster-clock', help='Retained observations or a shared regular sampling clock.')
     parser.add_argument('--exploration-steps', type=int, default=10)
     parser.add_argument('--hard-assignments', action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument('--birth-lds-kl-per-dimension', action=argparse.BooleanOptionalAction, default=True)

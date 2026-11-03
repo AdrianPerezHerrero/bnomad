@@ -120,6 +120,11 @@ The singular `--dataset` remains an alias for one UCR dataset.
 | ECG PCA | Chronological; fixed calibrated PCA C | Gamma per cluster; Sigma fixed (selectable) |
 | ECG autoencoder | Chronological; fixed trained affine C | Gamma per cluster; Sigma fixed |
 | CAS-Colon PCA / autoencoder / SFA / linear prediction | Chronological images; HMM on; fixed calibrated affine C | A/Gamma per cluster; Sigma fixed (selectable) |
+| Zebrafish all-gene MFA | Chronological stage means; HMM on; same all-gene PCA and MFA priors in both arms | Shared C/diagonal Sigma; fixed A=0/Gamma=I versus learned A/Gamma |
+| Xenopus all-gene MFA | Chronological measured polyA+ gene TPMs; each clutch fitted separately; shared expression runner | Same independent/dynamic factor comparison as zebrafish |
+| Zebrafish / Xenopus PCA and autoencoder | Same expression preparation and HMM; fixed calibrated affine decoder | Gamma learned per cluster; A fixed at zero or learned; Sigma fixed by default |
+| Flutter autoencoder | Causal raw two-channel delay windows; common unlabeled linear AE; each recording fitted separately; no preliminary PCA | Fixed C/Sigma; cluster A/Gamma or independent A=0; record-level references only |
+| XJTU-SY raw-window PCA / AE / Fourier / Haar | One raw window inside each numbered burst; common unlabeled fixed decoder; channel-wise Fourier/Haar rank selection; separate bearing sequences | Fixed C and selectable Sigma; learned A/Gamma versus independent A=0; terminal inspection only |
 | UCR waveform | HMM off; A=0, C=I; DTW-GP enabled | Sigma full per cluster; Gamma fixed |
 | UCR PCA | HMM off; A=0; fixed PCA C | Gamma full and Sigma diagonal per cluster |
 | UCR autoencoder | HMM off; A=0; fixed trained affine C | Gamma full per cluster; Sigma fixed |
@@ -298,3 +303,11 @@ scored in sample, just as the model's majority-label mapping is. It provides a
 matched-K temporal comparison, not a separately trained anatomical classifier.
 Existing completed run folders are not modified; subsequent runs include the
 baseline under their updated code-derived run ID.
+
+## Dynamics clock
+
+All standard runners accept `--dynamics-clock cluster-clock` (default) or
+`--dynamics-clock physical-clock`. The latter advances component trajectories
+on the shared regular sampling grid even without a component observation.
+The XJTU-SY Fourier/Haar entry scripts default to physical-clock explicitly.
+See [clock semantics and limitations](dynamics_clocks.md).

@@ -29,7 +29,7 @@ class HDPVariational:
     __slots__ = ("_state",)
     _FIELDS = frozenset(("rho", "omega", "transTheta", "startTheta", "gamma",
                          "transAlpha", "startAlpha", "kappa", "OptimizerInfo"))
-    _CONTEXT = frozenset(("M", "device", "cond_cpu", "cond_cuda", "cond_to_numpy", "cond_to_torch"))
+    _CONTEXT = frozenset(("M", "device", "verbose", "cond_cpu", "cond_cuda", "cond_to_numpy", "cond_to_torch"))
 
     def __init__(self, state):
         object.__setattr__(self, "_state", state)
@@ -84,6 +84,8 @@ class HDPVariational:
                           'balanced': 0.1, 'balanced_sticky': 0.1,
                           'more': 1.0, 'more_sticky': 1.0, 'more_extra_sticky': 1.0,
                           'max': 100.0}[hdp_hyp]
+        for name, value in getattr(self._state, 'hdp_concentrations', {}).items():
+            setattr(self, name, float(value))
 
 
     def init_global_params(self, d_dim, M):

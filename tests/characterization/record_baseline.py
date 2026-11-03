@@ -19,6 +19,7 @@ from ._support import encode, environment, reset_runtime, source_hashes
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--reference-commit", required=True, help="Source revision or reviewed working-tree identifier.")
     parser.add_argument("--reverse", action="store_true", help="Reverse case order to check global-state leakage.")
     args = parser.parse_args()
     if args.output.exists():
@@ -37,7 +38,7 @@ def main():
         print(f"Captured {name}", flush=True)
     if source_hashes() != before:
         raise AssertionError("Production source changed during capture")
-    manifest = {"schema_version": 1, "reference_commit": "615109a9e474d37626abaff6c51f1c159b26124a",
+    manifest = {"schema_version": 1, "reference_commit": args.reference_commit,
                 "cases": sorted(CASES), "environment": environment(),
                 "comparison": {"discrete": "exact", "float_rtol": 1e-7, "float_atol": 1e-9}}
     (args.output / "manifest.json").write_text(

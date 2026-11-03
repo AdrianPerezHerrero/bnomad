@@ -102,6 +102,13 @@ def compute_snr(self, y_trains, gp):
         snr = torch.zeros(y_trains.shape[0])
         snr_comp = SignalNoiseRatio()
         for t in range(y_trains.shape[0]):
+            from ..dynamics import _clock
+            if _clock.enabled(gp):
+                mean,covariance=_clock.state_at(gp,t)
+                if self.inducing_points:
+                    mean=gp.gp.pred_latent_dist(self.x_train[-1],gp.x_basis,mean,covariance)[0]
+                snr[t]=snr_comp(y_trains[t],mean.reshape(-1))
+                continue
             j = np.min([np.max([gp.find_closest_lower(t), 1]), len(gp.f_star_sm) - 1])
             if self.inducing_points:
                 snr[t] = snr_comp(y_trains[t], gp.resample_latent_mean(self.x_train[-1], t=j)[0].T[0])

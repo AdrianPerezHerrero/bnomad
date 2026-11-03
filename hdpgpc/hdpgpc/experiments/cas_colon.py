@@ -18,7 +18,8 @@ from ..emissions import (AffineGaussianObservation, estimate_pca_observation,
                          estimate_linear_prediction_observation, estimate_mfa_observation)
 from . import records
 from ._arguments import validate_common, validate_affine
-from ._runs import ExperimentRun, experiment_settings, save_results, append_summary, log_configuration
+from ._runs import (ExperimentRun, experiment_settings, save_results, append_summary,
+                    log_configuration, save_mfa_posteriors)
 
 
 def build_parser(description=None, defaults=None, *, representation='pca'):
@@ -284,26 +285,7 @@ def run_sequence(sequence, args, run, *, segment):
               f'factors={"native LDS" if args.dynamic else "independent N(0,I)"}')
     model = HDPGPC(config).fit(values, grid=grid)
     if args.representation == 'mfa':
-        # The usual LDS artifact keeps A/C/Gamma/Sigma; also retain learned
-        # intercepts and joint conjugate posterior parameters for MFA analysis.
-        np.savez_compressed(run.path / 'mfa_posteriors.npz', **{
-            f'cluster_{cluster}_{name}': value.detach().cpu().numpy()
-                if hasattr(value, 'detach') else np.asarray(value)
-            for cluster, gp in enumerate(model._backend.gpmodels[0])
-            for name, value in dict(
-                offset=gp.fixed_observation_model.offset,
-                joint_mean=gp.observation_params.m_mean,
-                column_precision=gp.observation_params.m_r_cov,
-                noise_scale=gp.observation_params.scale,
-                degrees=gp.observation_params.n0).items()})
-    if args.representation == 'mfa' and args.c_mode == 'shared':
-        owner = model._backend.observation_policies[0]
-        posterior = owner.posterior
-        np.savez_compressed(run.path / 'mfa_shared_posterior.npz',
-            joint_mean=posterior.m_mean.detach().cpu().numpy(),
-            column_precision=posterior.m_r_cov.detach().cpu().numpy(),
-            noise_scale=posterior.scale.detach().cpu().numpy(), degrees=posterior.n0,
-            intercept_count=owner.intercepts)
+        save_mfa_posteriors(model, run.path)
     trajectories = model_latent_trajectories(model)
     np.savez_compressed(run.path / 'latent_trajectories.npz', times=sequence.seconds,
         **{f'cluster_{cluster}_{name}': array for cluster, path in trajectories.items()

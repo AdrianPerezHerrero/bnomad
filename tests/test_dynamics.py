@@ -123,5 +123,32 @@ class DynamicsComponentTests(unittest.TestCase):
         self.assertTrue(all(value.grad is not None and torch.isfinite(value.grad).all() for value in leaves))
 
 
+
+
+class ConjugatePosteriorTests(unittest.TestCase):
+    def test_mniw_matches_closed_form_sufficient_statistics(self):
+        from hdpgpc.dynamics._distributions import matrix_normal_inv_wishart
+        reset()
+        M0 = torch.tensor([[.8, .1], [-.1, .7]])
+        L0 = torch.diag(torch.tensor([2., 3.]))
+        S0 = torch.diag(torch.tensor([.4, .6]))
+        X = torch.tensor([[1., -.5, .3], [.2, .6, -.7]])
+        Y = torch.tensor([[.5, -.4, .8], [.1, .9, -.2]])
+        zero = torch.zeros(2, 2)
+        prior = matrix_normal_inv_wishart(M0, L0, 5., S0)
+        for weight in (1., .25):
+            with self.subTest(weight=weight):
+                post = prior.posterior_natural_gradient(3., Y, X, zero, zero, zero,
+                                                        step_size=weight)
+                precision = L0 + weight * X @ X.T
+                mean = (M0 @ L0 + weight * Y @ X.T) @ torch.linalg.inv(precision)
+                scale = (5.*S0 + weight*Y@Y.T + M0@L0@M0.T
+                         - mean@precision@mean.T) / (5.+3.*weight)
+                torch.testing.assert_close(post.m_mean, mean, rtol=1e-12, atol=1e-12)
+                torch.testing.assert_close(post.m_r_cov, precision, rtol=1e-12, atol=1e-12)
+                torch.testing.assert_close(post.scale, scale, rtol=1e-12, atol=1e-12)
+                self.assertEqual(post.n0, 5.+3.*weight)
+
+
 if __name__ == "__main__":
     unittest.main()
