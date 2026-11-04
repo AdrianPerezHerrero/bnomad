@@ -18,7 +18,7 @@ model = HDPGPC(restored).fit(waveforms())
 | `hdp` | `HDPConfig` | `M`, concentration preset, HMM dependence, maximum models |
 | `emission` | `GPEmissionConfig` | kernels, first-beat fitting policy, lengthscale/output/noise initialization and bounds, inducing points |
 | `observation` | `ObservationConfig` | independent C/Sigma policies; optional fixed affine decoder, including PCA |
-| `dynamics` | `DynamicsConfig` | static/dynamic mode, process noise, ML/Bayesian updates, annealing, estimation limits |
+| `dynamics` | `DynamicsConfig` | static/dynamic mode, component clock, process noise, ML/Bayesian updates, annealing, estimation limits |
 | `alignment` | `AlignmentConfig` | `gp`/`dtw_gp`/`gp_flow`/`none`, basis, noise/bounds, recursion, warp mode |
 | `inference` | `InferenceConfig` | online/fast/offline schedule and separate call controls |
 | `multi_output` | `MultiOutputConfig` | output count, GP fitting sharing, SNR, output reduction |
@@ -30,6 +30,13 @@ Bare `HDPGPCConfig()` is an incomplete serializable recipe. Construction require
 a basis, initial observation/process noise and lengthscale initialization/bounds
 for automatic kernels. Static construction also still requires process noise;
 this preserved assumption is not silently corrected.
+
+`DynamicsConfig.clock` defaults to `'cluster-clock'`, advancing a component
+between its retained observations. `'physical-clock'` advances every component
+at every global input row and conditions it only when it receives an observation.
+This is a discrete regular sampling clock; `grid` remains the coordinate within
+an observation, rather than physical timestamps. Existing recipes without this
+field retain cluster-clock behavior. See [dynamics clocks](dynamics_clocks.md).
 
 `GPEmissionConfig.fit_gp=True` fits a GP kernel on the first included beat.
 For this path, supply a `ConstantKernel * RBF + WhiteKernel` kernel; its

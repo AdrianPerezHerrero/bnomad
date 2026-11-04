@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 import unittest
 
 from dynamics_cases import CASES, TASKS, capture, core, setup
@@ -12,7 +13,17 @@ from hdpgpc.dynamics import DynamicsModel, LinearDynamics, StaticDynamics
 REFERENCE = json.loads((Path(__file__).parent / "fixtures/dynamics_reference.json").read_text())["cases"]
 
 
-def assert_snapshot(test, actual, expected, path="state"):
+def _unbound_local_message(message):
+    """Identify the same interpreter error across Python 3.10 and 3.11+."""
+    for pattern in (r"local variable '([^']+)' referenced before assignment",
+                    r"cannot access local variable '([^']+)' where it is not associated with a value"):
+        match = re.fullmatch(pattern, message)
+        if match:
+            return ('unbound-local', match[1])
+    return ('verbatim', message)
+
+
+def assert_snapshot(test, actual, expected, path="state", *, trace_atol=None):
     if isinstance(expected, dict):
         test.assertEqual(set(actual), set(expected), path)
         if set(expected) == {"dtype", "shape", "values"}:
@@ -22,11 +33,22 @@ def assert_snapshot(test, actual, expected, path="state"):
                                        rtol=1e-7, atol=1e-9, err_msg=path)
         else:
             for key in expected:
-                assert_snapshot(test, actual[key], expected[key], path + "." + key)
+                if (key == 'message' and expected.get('exception_type') == 'UnboundLocalError'
+                        and actual.get('exception_type') == 'UnboundLocalError'):
+                    test.assertEqual(_unbound_local_message(actual[key]),
+                                     _unbound_local_message(expected[key]), path + '.message')
+                else:
+                    assert_snapshot(test, actual[key], expected[key], path + "." + key,
+                                    trace_atol=trace_atol)
     elif isinstance(expected, list):
         test.assertEqual(len(actual), len(expected), path)
         for index, (a, e) in enumerate(zip(actual, expected)):
-            assert_snapshot(test, a, e, f"{path}[{index}]")
+            assert_snapshot(test, a, e, f"{path}[{index}]", trace_atol=trace_atol)
+    elif (isinstance(expected, float) and trace_atol is not None
+          and re.search(r'\.result\[3\]\.(?:loss|data|smooth|amp)\[\d+\]$', path)):
+        # Windows BLAS changes float64 optimizer loss traces by ~1e-14.
+        # This opt-in bound applies only to recorded objective/penalty traces.
+        np.testing.assert_allclose(actual, expected, rtol=0, atol=trace_atol, err_msg=path)
     else:
         test.assertEqual(actual, expected, path)
 

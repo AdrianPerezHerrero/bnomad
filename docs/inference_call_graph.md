@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 The inference schedules now live behind explicit engines. Legacy
 `GPI_HDP.include_sample`/`include_sample_fast` delegate to `OnlineInference`, then
@@ -15,7 +19,7 @@ These graphs describe source-level control flow. They do not certify that every 
 
 ## Online inference
 
-Entry: [GPI_HDP.include_sample:1906](/C:/Users/Adrian/Projects/Thesis/gpexplore/HDP-GPC/hdpgpc/hdpgpc/GPI_HDP.py:1906).
+Entry: `GPI_HDP.include_sample:1906`.
 
 ```text
 Experiment loop
@@ -136,7 +140,7 @@ No normal full forward/backward pass over past observations occurs in this metho
 
 ## Offline inference
 
-Entry: [GPI_HDP.include_batch:805](/C:/Users/Adrian/Projects/Thesis/gpexplore/HDP-GPC/hdpgpc/hdpgpc/GPI_HDP.py:805).
+Entry: `GPI_HDP.include_batch:805`.
 
 ```text
 H.include_batch(x_trains, y_trains, it_limit, warp)

@@ -45,7 +45,7 @@ moment in that space and selects the smallest eigenvalues. Differences are
 **not centered**: a constant nonzero drift must still incur a temporal cost.
 This is linear SFA without nonlinear expansion. The general slowness objective
 and normalization are described by
-[Wiskott and Sejnowski (2002)](https://www.ini.rub.de/PEOPLE/wiskott/Reprints/WiskottSejnowski-2002-NeurComp-LearningInvariances.pdf).
+[Wiskott and Sejnowski (2002)](https://doi.org/10.1162/089976602317318938).
 
 The CAS-Colon pilot whitening rank defaults to 64 (`--sfa-whitening-components`).
 It must be at least the requested feature count. Increase it to expose weaker

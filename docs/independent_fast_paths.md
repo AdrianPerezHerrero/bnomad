@@ -28,6 +28,10 @@ pair storage remains. Independent entropy and weight ELBO formulas are unchanged
 
 ## Independent states: fixed `A=0` with affine observations
 
+These batch trajectory optimizations concern the default cluster-clock.
+Physical-clock uses its clock-aware trajectory owner (and retains applicable
+independent MFA dispatch); see [dynamics clocks](dynamics_clocks.md).
+
 `conjugate_batch` holds parameters fixed during the filtering E-step. With
 fixed zero A, independent Gaussian states can be conditioned in parallel:
 

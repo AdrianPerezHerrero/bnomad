@@ -1,3 +1,6 @@
+> Historical September 2026 migration record. See the
+> [current architecture](../architecture.md) and [validation audit](../documentation_audit.md).
+
 # 0.3 migration inventory
 
 Inventory completed before changes to executable files. `inventory.json` contains every definition and every Python/notebook textual use with file/line and source. It distinguishes occurrences (including comments) without treating each as an executable import. All root model methods have an assigned owner.

@@ -1,7 +1,8 @@
 # Installation and supported environments
 
-Use CPython 3.10, 3.11 or 3.12 and a virtual environment. The CPU reference
-environment is Windows, Python 3.11. Python 3.13+, PyPy and CUDA reproducibility
+Use CPython 3.10, 3.11 or 3.12 and a virtual environment. Historical release
+evidence used Windows/Python 3.11; the [current audit](documentation_audit.md)
+records Linux/Python 3.12 checks separately. Python 3.13+, PyPy and CUDA reproducibility
 are not supported by this release. CI declares Linux and Windows coverage for
 all three Python versions; see the release checklist for actual validation status.
 
@@ -79,3 +80,13 @@ development snapshot; it is not included or required in this release.
 For source development, editable installation remains available with
 `python -m pip install -e '.[dev]'`. Release verification always uses a noneditable
 installation in a fresh virtual environment.
+
+The repository is [bnomad](https://github.com/AdrianPerezHerrero/bnomad); the
+distribution and import remain `hdpgpc`. The source version is 0.3.0. Check out
+the intended commit before installing, and save its SHA with results. A GitHub
+source version does not imply that the same version has been published to PyPI.
+
+An Actions failure during `Running tests` can follow a successful wheel build,
+installation and reference run. Read every `FAIL:`/`ERROR:` block in the evidence
+artifact's `tests.log`; do not infer an installation failure or change model
+priors from the job's final exit code. See the [CI diagnosis](documentation_audit.md).

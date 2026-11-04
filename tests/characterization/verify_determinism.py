@@ -16,7 +16,7 @@ import tempfile
 import time
 import unittest
 
-from ._support import assert_snapshot
+from ._support import assert_snapshot, snapshot_tolerances, RTOL, ATOL
 
 
 def main():
@@ -69,7 +69,11 @@ def main():
                          "outside_baseline_tolerance": sorted(outside_tolerance), "sha256": hashes})
             print(f"Run {number + 1}: {len(changed)} exact repeat differences; "
                   f"{len(outside_tolerance)} baseline regressions", flush=True)
-        report = {"comparison": "byte-for-byte repeated snapshots; reviewed baseline rtol=1e-7, atol=1e-9",
+        report = {"comparison": f"byte-for-byte repeated snapshots; default baseline rtol={RTOL:g}, atol={ATOL:g}",
+                  "baseline_precision_exceptions": {
+                      "warper_scalar/batch.calls[*].warm_start.values[*]": {
+                          "rtol": RTOL,
+                          "atol": snapshot_tolerances('warper_scalar.calls[0].warm_start.values[0]')[1]}},
                   "python_executable": sys.executable, "runs": runs,
                   "all_identical": all(not run["different_from_first_run"] and not run["outside_baseline_tolerance"] for run in runs)}
     if args.report:

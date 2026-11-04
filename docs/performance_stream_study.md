@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 # Post-startup online study and P02 optimization
 
@@ -119,9 +123,9 @@ memory improvement. Tensor views themselves report zero payload allocation in
 the operator trace. No native/GPU peak-memory reduction is claimed; all persistent
 captured model values/shapes are identical.
 
-Evidence: [paired samples and diagnostics](../benchmarks/performance_p02_paired.json),
-[validation summary](../benchmarks/performance_p02_validation.json), and
-[complete test log](../benchmarks/performance_p02_tests.log).
+Evidence: `paired samples and diagnostics`,
+`validation summary`, and
+`complete test log`.
 `benchmark_message_rows.py --output NEW.json` reproduces the comparison; `--resume`
 reuses complete cases only when source/environment metadata match. This P02
 study is complete and should not be repeated merely to resume work. GP startup

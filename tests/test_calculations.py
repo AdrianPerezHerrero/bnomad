@@ -136,7 +136,7 @@ class EntropyTests(unittest.TestCase):
 
 
 class WarpCovarianceTests(unittest.TestCase):
-    def test_original_covariance_and_gradients_exactly(self):
+    def test_original_covariance_and_gradients_with_dtype_precision(self):
         for dtype in (torch.float32, torch.float64):
             for normalized in (False, True):
                 name = 'cov_' + str(dtype).split('.')[-1] + '_' + str(normalized)
@@ -148,9 +148,14 @@ class WarpCovarianceTests(unittest.TestCase):
                     actual = warp_prior_rbf_covariance(x, case['rho'], case['omega'], noise,
                                                        normalized, case['jitter'])
                     gx, gn = torch.autograd.grad(actual.sum(), (x, noise))
-                    torch.testing.assert_close(actual, x.new_tensor(case['result']), rtol=0, atol=0)
-                    torch.testing.assert_close(gx, x.new_tensor(case['gradient_x']), rtol=0, atol=0)
-                    torch.testing.assert_close(gn, noise.new_tensor(case['gradient_noise']), rtol=0, atol=0)
+                    # CPU exp/reduction implementations can differ by a float32
+                    # rounding step (5.96e-8 in the normalized CI fixture).
+                    # Keep float64 goldens and input immutability exact.
+                    eps = torch.finfo(dtype).eps if dtype == torch.float32 else 0.
+                    tolerance = dict(rtol=2*eps, atol=eps/4)
+                    torch.testing.assert_close(actual, x.new_tensor(case['result']), **tolerance)
+                    torch.testing.assert_close(gx, x.new_tensor(case['gradient_x']), **tolerance)
+                    torch.testing.assert_close(gn, noise.new_tensor(case['gradient_noise']), **tolerance)
                     torch.testing.assert_close(x, original, rtol=0, atol=0)
                     self.assertEqual(actual.dtype, dtype)
                     self.assertEqual(actual.device, x.device)

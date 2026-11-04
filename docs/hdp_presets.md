@@ -54,11 +54,17 @@ constant discrepancies. The original presets retain kappa=0 and their values.
 `gamma` controls the global stick concentration, `transAlpha` controls
 transition-row concentration around those weights, `startAlpha` affects the
 initial-state distribution, and `kappa` favors self transitions. These have
-different roles in the [hierarchical Dirichlet process](https://web4.cs.columbia.edu/~blei/papers/TehJordanBealBlei2006.pdf)
-and the [sticky HDP-HMM](https://people.eecs.berkeley.edu/~jordan/papers/AOAS395.pdf).
+different roles in the [hierarchical Dirichlet process](https://doi.org/10.1198/016214506000000302)
+and the [sticky HDP-HMM](https://doi.org/10.1214/10-AOAS395).
 Changing one does not imply a monotonic change in this implementation's birth
 score. The older preset comparisons in `agents/` used earlier preset values;
 their numerical ordering does not characterize the current table.
+
+The HDP concentration `HDPConfig.gamma` is separate from dataset runners'
+`--gamma-prior`, which initializes/scales the LDS process covariance `Gamma`.
+Likewise, `--sigma-prior` concerns observation covariance `Sigma`; calibrated
+representations may interpret the supplied value as a covariance multiplier.
+Check the dataset workflow when comparing those scales across representations.
 
 ## Independent assignments (`hmm_switch=False`)
 

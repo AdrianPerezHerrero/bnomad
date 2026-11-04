@@ -12,6 +12,7 @@ ECG dataset. An observation has shape `(points, outputs)` and a batch has shape
 | Inference schedule | `offline` when the record is available; `online` for arriving observations | You need sequential updates or cannot hold the whole record |
 | LDS maps and noise | `all_free` (the original cluster-specific approach) | You want to constrain how much a cluster's observation map or dynamics can adapt |
 | Latent dimension | Full observation grid | Full LDS matrices are too large, or a lower-dimensional state is scientifically appropriate |
+| Component clock | `cluster-clock` | Use `physical-clock` when components evolve at every regular global sampling tick, including without measurements |
 | Warp | `warp=False` | Timing variation is obscuring shape differences |
 | Birth prior | `balanced` HDP preset | Birth proposals are too frequent or too rare *after inspecting all score terms* |
 
@@ -19,6 +20,9 @@ The LDS is `f_t = A_k f_(t-1) + eta_t` and `y_t = C_k f_t + epsilon_t`,
 with process covariance `Gamma_k` and observation covariance `Sigma_k`.
 Cluster labels normally form a Markov chain. The `static_mixture` preset
 instead makes labels independent and removes the LDS transition process.
+The time index in this equation follows the selected [component clock](dynamics_clocks.md).
+Physical-clock retains parallel component states; it does not introduce one
+common mechanical state whose transition matrix switches with its label.
 
 ## LDS presets
 

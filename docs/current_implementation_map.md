@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 The implementation combines an HDP/HMM switching model with a separate GP/LDS emission model for each cluster and output. Its operational behavior includes hard assignments, heuristic objective scaling, different online and offline update schedules, and two substantially different warping implementations.
 
@@ -12,14 +16,14 @@ Paths below are relative to the repository root. Package sources reside in `hdpg
 
 | Class | Location | Responsibility |
 |---|---|---|
-| `GPI_HDP` | [GPI_HDP.py:30](/C:/Users/Adrian/Projects/Thesis/gpexplore/HDP-GPC/hdpgpc/hdpgpc/GPI_HDP.py:30) | Owns clusters, output-specific models, HDP parameters, inference schedules, proposals, warping, histories, and persistence. |
-| `GPI_model` | [GPI_model.py:16](/C:/Users/Adrian/Projects/Thesis/gpexplore/HDP-GPC/hdpgpc/hdpgpc/GPI_model.py:16) | One cluster/output GP/LDS trajectory, observation membership, parameter learning, emission scoring, filtering, and smoothing orchestration. |
-| `IterativeGaussianProcess` | [GPI.py:26](/C:/Users/Adrian/Projects/Thesis/gpexplore/HDP-GPC/hdpgpc/hdpgpc/GPI.py:26) | Kernel evaluation, GP fitting/interpolation, Kalman calculations, smoothing recurrences, ML LDS updates, likelihoods, and sampling. |
+| `GPI_HDP` | `GPI_HDP.py:30` | Owns clusters, output-specific models, HDP parameters, inference schedules, proposals, warping, histories, and persistence. |
+| `GPI_model` | `GPI_model.py:16` | One cluster/output GP/LDS trajectory, observation membership, parameter learning, emission scoring, filtering, and smoothing orchestration. |
+| `IterativeGaussianProcess` | `GPI.py:26` | Kernel evaluation, GP fitting/interpolation, Kalman calculations, smoothing recurrences, ML LDS updates, likelihoods, and sampling. |
 | `matrix_normal_inv_wishart` | `GPI_model.py:1280` | Custom distribution-like container and updates for `(A, Gamma)` and `(C, Sigma)`. Its implemented updates and score are specialized. |
 | `inv_wishart` | `GPI_model.py:1417` | Covariance updates with a fixed observation matrix, used during static-model initialization. |
-| AMTGP `Warping_system` | [amtgp_warping_system.py:266](/C:/Users/Adrian/Projects/Thesis/gpexplore/HDP-GPC/hdpgpc/hdpgpc/amtgp_warping_system.py:266) | **Currently selected warper.** Optimizes monotone interpolation grids with a penalized data-fitting objective. |
+| AMTGP `Warping_system` | `amtgp_warping_system.py:266` | **Currently selected warper.** Optimizes monotone interpolation grids with a penalized data-fitting objective. |
 | `WarpPriorAMTGP` | `amtgp_warping_system.py:106` | Fixed RBF GP prior score for displacement vectors, including quadratic, log-determinant, and normalization terms. |
-| Legacy `Warping_system` | [warping_system.py:20](/C:/Users/Adrian/Projects/Thesis/gpexplore/HDP-GPC/hdpgpc/hdpgpc/warping_system.py:20) | Older GP-based alignment, with a learnable GP/LDS warp model and Pyro initialization. The main model’s import is commented out. |
+| Legacy `Warping_system` | `warping_system.py:20` | Older GP-based alignment, with a learnable GP/LDS warp model and Pyro initialization. The main model’s import is commented out. |
 
 `GPI_models_pytorch.py` additionally defines:
 
@@ -130,7 +134,7 @@ These are separate behaviors to preserve, not interchangeable formulations.
 
 ### A4. State inference and responsibilities
 
-The message-passing core is [GPI_HDP.py:3546](/C:/Users/Adrian/Projects/Thesis/gpexplore/HDP-GPC/hdpgpc/hdpgpc/GPI_HDP.py:3546).
+The message-passing core is `GPI_HDP.py:3546`.
 
 - `LogLik` subtracts a maximum; it does not implement log-sum-exp normalization.
 - `forward` exponentiates shifted emissions and transitions, applies probability floors, and normalizes each forward row.
@@ -170,7 +174,7 @@ Removal is distributed across branches. `self.M`, warpers, representatives, conf
 
 ### A6. GP emissions
 
-Primary implementation: [GPI_model.py:250](/C:/Users/Adrian/Projects/Thesis/gpexplore/HDP-GPC/hdpgpc/hdpgpc/GPI_model.py:250).
+Primary implementation: `GPI_model.py:250`.
 
 `log_sq_error` computes, after covariance stabilization,
 \[

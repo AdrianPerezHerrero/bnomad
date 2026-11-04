@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 # Explicit inference engines
 
@@ -83,7 +87,7 @@ are relocated unchanged, not copied into a second implementation.
   remain observable; they are not silently repaired.
 
 See the pseudocode for each nested loop and the workspace
-[implementation specification](../../docs/implementation_specification.md) for
+[implementation specification](implementation_specification.md) for
 the mathematical and numerical contracts.
 
 ## Validation and first-divergence gate
@@ -170,7 +174,7 @@ emit a traced helper event. Construction emits none; the test now explicitly
 invokes the factory under observation. No posterior mismatch occurred, and neither
 production calculations nor frozen expected values were changed to fix that test.
 
-The [source audit](../benchmarks/inference_source_audit.json) records method hashes
+The `source audit` records method hashes
 and the unchanged-file inventory. The numerical benchmark used five measured
 runs after one warm-up per workload, sequentially in separate old/new processes.
 Model construction and final-state serialization were outside the timed region;
@@ -190,11 +194,11 @@ within each timing process. These small timing differences do not establish a
 speedup; no numerical optimization was performed. Engine binding/delegation adds
 Python call overhead but no persistent matrices or caches. Peak memory and GPU
 runtime were not measured. Raw timings and metadata:
-[before](../benchmarks/inference_before.json),
-[after](../benchmarks/inference_after.json),
-[comparison](../benchmarks/inference_timing_comparison.json).
+`before`,
+`after`,
+`comparison`.
 
-The [fresh-process determinism report](../benchmarks/inference_characterization_determinism.json)
+The `fresh-process determinism report`
 records zero differences in both complete captures. The implementation and all
 original characterization baselines remain unchanged apart from the documented
 schedule relocation and compatibility delegates.

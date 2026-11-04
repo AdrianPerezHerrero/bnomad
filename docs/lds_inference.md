@@ -161,9 +161,10 @@ rectangular `C` has `points * components` entries; `A,Gamma` are only
 in the waveform dimension. A diagonal `Sigma` avoids that full noise
 matrix, though the rest of the GP and filtering work still remains. The
 PCA preset requires one output, a fixed observation grid, CPU, no warp, no
-GP hyperparameter fitting, and final LDS scoring. Its `A,Gamma` remain
-cluster-learned. Fixed or shared `A,Gamma` are mathematically possible but
-are not currently implemented for this PCA preset.
+GP hyperparameter fitting, and final LDS scoring. Its `A,Gamma` are
+cluster-learned by default. Fixed and shared transition/noise policies are
+also supported; choose compatible ownership as described in
+[model choices](model_choices.md) and [configuration](configuration.md).
 The same fixed affine observation path also accepts a supplied pretrained
 linear decoder; see [fixed observation models](fixed_observation_models.md).
 

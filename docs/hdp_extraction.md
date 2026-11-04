@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 # HDP variational component: preservation record
 
@@ -204,7 +208,7 @@ Snapshots use exact shape/dtype/discrete comparisons. Floating arrays use
 component tolerances; scalar diagnostics remain exact. Independently, two fresh
 HDP captures in forward/reverse order matched all nineteen snapshots **exactly**,
 including the newly extracted expected-log methods. See the
-[component determinism report](../benchmarks/hdp_component_determinism.json).
+`component determinism report`.
 
 The first full-suite run exposed that routing owner-free entropy calls through a
 model property broke their existing contract. Those delegates were corrected;
@@ -213,10 +217,10 @@ values or numerical implementations were changed. The final repository suite
 passed **118 tests, with one CUDA-only skip** (119 total). Two final fresh full
 characterization captures matched original snapshots **byte for byte**, including
 reversed case order; see the
-[final full-inference report](../benchmarks/hdp_characterization_determinism_final.json).
+`final full-inference report`.
 The earlier capture report remains available as a record of the prior step.
 
-The [final source audit](../benchmarks/hdp_source_audit_final.json) confirms the entire adapted
+The `final source audit` confirms the entire adapted
 optimizer text is unchanged (apart from filesystem newline representation), all
 twenty relocated methods are AST-identical, and the complete original model class
 is AST-identical after inlining the delegates and concentration/expected-log
@@ -276,10 +280,10 @@ cache or initialization was changed to offset that cost. This is a measured
 limitation of the extraction; it is not a claim of unchanged microbenchmark speed
 or an end-to-end throughput estimate.
 
-Raw evidence: [before](../benchmarks/hdp_before.json),
-[after](../benchmarks/hdp_after.json),
+Raw evidence: `before`,
+`after`,
 `benchmarks/hdp_investigation_{1_old,2_new,3_new,4_old}.json`, and
-[dispatch call counts](../benchmarks/hdp_dispatch_profile.json).
+`dispatch call counts`.
 `benchmark_hdp.py --compare` reports changes; `HDPGPC_HDP_REFERENCE_SOURCE` can
 select an isolated reference source tree. Reports refuse existing output paths.
 

@@ -1,3 +1,7 @@
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
+
 # 0.3 characterization coverage
 
 All existing numerical fixtures remain byte-identical. The native engines replay
@@ -11,8 +15,9 @@ warps, caches, dtypes and known failures. Public examples cover the supported mo
 New tests in test_native_architecture.py enforce absent legacy modules, direct
 component ownership, no retired runtime imports and immutable fixture hashes.
 Old pickle/alias tests were replaced by native serialization and absent-interface
-checks because those compatibility contracts intentionally end in 0.3. Numerical
-comparisons and tolerances were not weakened. See migration_0_3/report.md.
+checks because those compatibility contracts intentionally end in 0.3. That migration retained numerical
+comparisons and tolerances. The current audit separately documents narrowly
+scoped platform precision and interpreter-wording checks; see [reproducibility](reproducibility.md).
 
 The remainder documents historical fixture capture and the earlier extractions.
 Old source paths/API advice below apply only to 0.2, not current usage.
@@ -241,7 +246,7 @@ second run reverses fixture order. It compares all case snapshots byte-for-byte
 to the recorded baseline and exits unsuccessfully if any differ. Temporary
 capture directories are removed afterwards.
 
-The saved [determinism report](../tests/characterization/determinism_report.json)
+The saved `determinism report`
 records per-case hashes and the result of the repeated audit. Environment and
 baseline provenance are in `baselines/manifest.json`. A numerical change is not
 handled by automatically widening tolerances or replacing the baseline.
@@ -378,8 +383,8 @@ orders. Normal component comparisons retain `rtol=1e-7`, `atol=1e-9` for floatin
 tensors; shape, dtype and discrete metadata remain exact. Exact comparisons
 establish no observed numerical drift within that tolerance in this environment.
 
-Reports are [full inference determinism](../benchmarks/alignment_characterization_determinism.json)
-and [alignment determinism](../benchmarks/alignment_component_determinism.json).
+Reports are `full inference determinism`
+and `alignment determinism`.
 The [alignment extraction record](../docs/alignment_extraction.md) describes
 the complete pre-edit path and sequential runtime measurements, including both
 threshold crossings over 5% and their alternating old/new investigations.
@@ -420,8 +425,8 @@ extracted calls also reproduces all other original model-method ASTs, including
 cluster lifecycle and update ordering.
 
 See the [HDP extraction record](../docs/hdp_extraction.md),
-[final full determinism report](../benchmarks/hdp_characterization_determinism_final.json)
-and [component report](../benchmarks/hdp_component_determinism.json).
+`final full determinism report`
+and `component report`.
 The record reports reproducible Python dispatch overhead in tiny helpers and
 unchanged numerical workloads, rather than claiming zero runtime change.
 Every data-dependent offline pruning branch and GPU execution remain outside the

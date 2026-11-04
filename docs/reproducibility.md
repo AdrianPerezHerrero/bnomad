@@ -11,7 +11,7 @@ construction. The reference runner also limits BLAS thread pools and records the
 serialized configuration, dataset SHA-256 and software versions. Some legacy
 modules set seeds and the default torch dtype on import; import order and fresh
 processes therefore matter. Do not assume a library import preserves global RNG
-state. See [implementation specification](implementation_specification.md).
+state. See the [current architecture](architecture.md).
 
 ```sh
 hdpgpc-reference --check --output run-1.json
@@ -30,7 +30,8 @@ larger internal characterization suite; it does not replace it.
 The command compares discrete values exactly, and floating values at
 `rtol=1e-7, atol=1e-9`, matching the existing characterization tolerance to permit
 small floating-point platform differences. Call-order traces retain exact event order, shapes and discrete state; their
-finite floats use the same tolerance. Fresh repeated captures must still match
+finite floats use the same tolerance. Narrowly scoped portability exceptions
+are documented below. Fresh repeated captures must still match
 one another byte for byte, including a run with reversed case order. Never regenerate a
 reference merely because a test fails. Investigate the first changed quantity.
 
@@ -54,11 +55,34 @@ thread settings, full dependency versions and the exact configuration for a
 publication. The small runner records the principal scientific versions;
 `pip freeze` supplies the remaining transitive versions.
 
-In clean-install validation, changing only torch 2.9.1 back to 2.9.0 restored the
+In historical clean-install validation, changing only torch 2.9.1 back to 2.9.0 restored the
 first failing exact trace. The Windows wheels report MKL 2025.3 and 2025.2,
-respectively. See [release validation](release_validation.md) for the final full
-suite and environment evidence. This is dependency/build variability, not
-stochastic variation hidden by a newly widened tolerance.
+respectively. See [release validation](release_validation.md) for that revision's
+suite and environment evidence.
+
+The November 2026 Linux CI log exposed two cross-CPU rounding differences:
+float32 warp covariance differed by 5.96e-8, and fitted GP log-kernel parameters
+by 3.71e-7. The covariance/gradient fixture permits `rtol=2*eps, atol=eps/4`
+only for float32 (float64 remains exact). Only optimized `kernel_theta` snapshot
+leaves permit an absolute 1e-6 difference in log space, approximately one part
+per million in the positive parameters. Other scientific outputs retain their
+existing bounds. A regression test rejects larger parameter changes and altered
+covariance predictions. No fixture or model prior was changed for these checks.
+
+The remaining jobs in that hosted run also exposed Windows optimizer
+rounding and Python-version differences. Alignment objective/penalty trace
+scalars (`loss`, `data`, `smooth`, `amp`) permit an absolute 1e-12 difference;
+the observed first differences were around 1e-14. The scalar/batch warper
+characterization permits absolute 5e-8 differences only in saved warm-start
+control leaves (observed maximum 3.36e-8). Returned offsets, aligned curves,
+scores and other scientific outputs retain their existing bounds. Exact
+fresh-process repeat hashes remain mandatory, including warm-start controls.
+
+For a captured `UnboundLocalError`, Python 3.10 and 3.11+ use different English
+messages for the same uninitialized local variable. The component test accepts
+those two forms while checking the exception type and variable name. Other
+exception messages remain exact. Portability guard tests reject changed warp
+outputs, configuration scalars, larger control/loss drift and different failures.
 
 The lightweight performance check uses alternating paired scalar warp calls,
 one warmup, seven repetitions and a same-process preserved calculation as its
