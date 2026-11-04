@@ -9,6 +9,7 @@ import numpy as np
 from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
 
 from .. import HDPGPC
+from .._defaults import DEFAULT_SIGMA_PRIOR, DEFAULT_GAMMA_PRIOR
 from ..config import (HDPGPCConfig, HDPConfig, GPEmissionConfig, DynamicsConfig,
     MatrixPolicyConfig, NoisePolicyConfig, AlignmentConfig,
     InferenceConfig, MultiOutputConfig, NumericalConfig, LDS_PRESETS, with_lds_preset,
@@ -51,9 +52,9 @@ def build_parser(dataset='mitbih', representation='waveform', description=None, 
     parser.add_argument('--shrink-strength', type=float, default=10.)
     parser.add_argument('--lds-inducing-points', type=int, default=0)
     parser.add_argument('--sigma-prior', type=float,
-                        default=(.1 if dataset == 'daphnet' else 50.) if representation == 'waveform' else 1.,
+                        default=DEFAULT_SIGMA_PRIOR,
                         help='Waveform noise variance; for PCA/autoencoder, multiplier of calibrated Sigma (1 preserves calibration).')
-    parser.add_argument('--gamma-prior', type=float, default=.1 if dataset == 'daphnet' else 10.,
+    parser.add_argument('--gamma-prior', type=float, default=DEFAULT_GAMMA_PRIOR,
                         help='Process covariance prior center is this variance times identity, including PCA/autoencoder.')
     parser.add_argument('--lengthscale', type=float, default=.15 if dataset == 'daphnet' else 1.)
     parser.add_argument('--gp-noise', type=float, default=.01 if dataset == 'daphnet' else 1.)

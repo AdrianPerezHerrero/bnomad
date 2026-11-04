@@ -167,9 +167,9 @@ grid = np.linspace(0.0, 1.0, X.shape[1])[:, None]
 config = HDPGPCConfig(
     x_basis=grid,
     emission=GPEmissionConfig(
-        kernels=[RBF(length_scale=0.15)], fit_gp=False, ini_sigma=0.01,
+        kernels=[RBF(length_scale=0.15)], fit_gp=False, ini_sigma=0.1,
     ),
-    dynamics=DynamicsConfig(ini_gamma=0.01, lds_update='conjugate_batch'),
+    dynamics=DynamicsConfig(ini_gamma=0.1, lds_update='conjugate_batch'),
     alignment=AlignmentConfig(policy='none'),
     hdp=HDPConfig(max_models=12),
     inference=InferenceConfig(

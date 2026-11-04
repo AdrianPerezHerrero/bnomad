@@ -9,6 +9,7 @@ import numpy as np
 from sklearn.gaussian_process.kernels import ConstantKernel, RBF, WhiteKernel
 
 from .. import HDPGPC
+from .._defaults import DEFAULT_SIGMA_PRIOR, DEFAULT_GAMMA_PRIOR
 from ..config import (HDPGPCConfig, HDPConfig, GPEmissionConfig, DynamicsConfig,
     ObservationConfig, MatrixPolicyConfig, NoisePolicyConfig, InferenceConfig,
     AlignmentConfig, MultiOutputConfig, NumericalConfig, with_fixed_observation_model)
@@ -45,9 +46,9 @@ def build_parser(representation, description=None, defaults=None):
                         default='fixed' if representation == 'waveform' else 'cluster')
     parser.add_argument('--process-noise', '--latent-covariance-scale', type=float, default=1.)
     parser.add_argument('--observation-noise-scale', type=float, default=1.)
-    parser.add_argument('--sigma-prior', type=float, default=.001,
+    parser.add_argument('--sigma-prior', type=float, default=DEFAULT_SIGMA_PRIOR,
                         help='Waveform noise variance, or multiplier of calibrated decoder Sigma (1 preserves calibration).')
-    parser.add_argument('--gamma-prior', '--gamma', type=float, default=.001,
+    parser.add_argument('--gamma-prior', '--gamma', type=float, default=DEFAULT_GAMMA_PRIOR,
                         help='Waveform process variance, or multiplier of calibrated decoder latent covariance (1 preserves calibration).')
     if representation in ('pca', 'autoencoder'):
         parser.add_argument('--components', '--latent-dim', type=int, default=12)

@@ -1,5 +1,9 @@
 # Documentation and CI audit: 0.3.0
 
+This report records validation before the subsequent 2026-11-04
+[noise-default update](noise_priors.md). Its statements about unchanged
+production defaults and its test counts apply to that audit revision.
+
 This audit concerns the current bnomad source tree, whose Python distribution
 and import are `hdpgpc`. Historical 0.2 and initial 0.3 migration reports remain
 records of their own revisions. Their archived machine paths and unbundled

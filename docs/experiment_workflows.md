@@ -58,6 +58,10 @@ normalized affine objective combining reconstruction and latent prediction.
 
 ## Common arguments
 
+Every runner defaults `--sigma-prior` and `--gamma-prior` to 0.1. Explicit
+CLI values override them. Their variance/multiplier interpretation depends
+on the representation; see [noise prior defaults](noise_priors.md).
+
 | Purpose | Arguments |
 | --- | --- |
 | Inference | `--schedule offline/online/online_fast`, `--iterations`, `--hard-assignments` / `--no-hard-assignments` |

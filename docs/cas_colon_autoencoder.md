@@ -50,10 +50,11 @@ than an additional nonlinear representation capability.
 - **Sigma:** diagonal sample variance of autoencoder reconstruction residuals.
   Each variance is floored at the larger of `--noise-floor` (default 1e-6) and
   `--noise-floor-fraction` times the calibration pixel variance (default 0.05).
-  `--sigma-prior` multiplies this covariance once; default 1 preserves it.
+  `--sigma-prior` multiplies this covariance once; default 0.1 scales it down.
+  Use 1 to preserve the calibrated covariance.
   Sigma stays fixed by default. For example, `--sigma-mode cluster_diagonal`
   learns per-cluster diagonal observation noise with this prior center.
-- **Gamma:** prior mean `--gamma-prior * I`, default 0.01, learned per cluster.
+- **Gamma:** prior mean `--gamma-prior * I`, default 0.1, learned per cluster.
   It is not estimated from temporal differences of encoded frames.
 - **Initial state covariance P0:** covariance of calibration encoder outputs,
   with a small ridge. This is separate from Gamma.

@@ -24,12 +24,14 @@ model = HDPGPC(restored).fit(waveforms())
 | `multi_output` | `MultiOutputConfig` | output count, GP fitting sharing, SNR, output reduction |
 | `numerics` | `NumericalConfig` | device and opt-in seed/thread/dtype/determinism |
 
-Root fields are `x_basis` and `verbose`. Scientific defaults retain the characterized
-values: `M=None`, dynamic mode, Bayesian updates, annealing, SNR and balanced HDP.
-Bare `HDPGPCConfig()` is an incomplete serializable recipe. Construction requires
-a basis, initial observation/process noise and lengthscale initialization/bounds
-for automatic kernels. Static construction also still requires process noise;
-this preserved assumption is not silently corrected.
+Root fields are `x_basis` and `verbose`. Defaults include `M=None`, dynamic mode,
+Bayesian updates, annealing, SNR and balanced HDP. Observation noise `ini_sigma`
+and process noise `ini_gamma` both default to **0.1**, matching every dataset
+runner's sigma-prior/gamma-prior defaults. See [noise priors](noise_priors.md)
+for previous values, calibrated multiplier semantics and fixed-policy exceptions.
+Bare `HDPGPCConfig()` remains an incomplete serializable recipe: construction
+requires a basis and either a supplied kernel or lengthscale initialization/bounds.
+Explicitly passing `None` for either initial noise value is rejected.
 
 `DynamicsConfig.clock` defaults to `'cluster-clock'`, advancing a component
 between its retained observations. `'physical-clock'` advances every component

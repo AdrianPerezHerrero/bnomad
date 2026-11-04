@@ -59,8 +59,8 @@ Defaults:
 - Split/merge search, one refinement pass and three exploration slots per
   iteration. Common iteration/stopping controls remain available.
 
-`--sigma-prior` multiplies calibrated Sigma; 1 preserves it. `--gamma-prior`
-sets the process covariance center to that scalar times identity (default 0.01
+`--sigma-prior` defaults to 0.1 and multiplies calibrated Sigma; 1 preserves it.
+`--gamma-prior` sets the process covariance center to that scalar times identity (default 0.1
 for [0,1] pixels). Other supported Sigma policies can be selected. Full learned
 pixel Sigma costs much more and can absorb morphology as correlated noise;
 start with fixed or diagonal observation noise when interpreting state dynamics.

@@ -13,10 +13,10 @@ This shares the waveform runner's data loading, annotation alignment and reports
 It calibrates PCA once, then learns cluster dynamics in the reduced latent space.
 Select `--sigma-mode cluster_diagonal` or `--sigma-mode cluster` to learn the
 observation covariance, or leave it at the calibrated fixed covariance.
-`--sigma-prior` multiplies the calibrated PCA/autoencoder covariance (default 1
+`--sigma-prior` multiplies the calibrated PCA/autoencoder covariance (default 0.1
 in their dedicated runners). It affects the fixed Sigma or the learned Sigma
-prior center. `--gamma-prior` sets Gamma's prior center to that scalar times
-identity. The calibrated initial state covariance is separate.
+prior center. `--gamma-prior` also defaults to 0.1 and sets Gamma's prior center
+to that scalar times identity. The calibrated initial state covariance is separate.
 
 ```python
 from hdpgpc import HDPGPC

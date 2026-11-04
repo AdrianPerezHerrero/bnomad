@@ -30,7 +30,7 @@ under matching dimensions/scales.
 
 The UCR `--sigma-prior` and `--gamma-prior` arguments also apply to the decoder:
 they multiply calibrated Sigma and latent covariance respectively, after the
-existing observation/process noise-scale controls. Both default to 0.001 in the
+existing observation/process noise-scale controls. Both default to 0.1 in the
 shared runner. To retain the previous calibrated values, explicitly use
 `--sigma-prior 1 --gamma-prior 1`. The gamma multiplier affects both initial
 latent-state covariance and the Gamma noise prior. These factors multiply

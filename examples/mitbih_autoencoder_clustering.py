@@ -7,7 +7,7 @@ python examples/mitbih_autoencoder_clustering.py --records all --resume
 Set defaults below or use --help. Shared stages: prepare, calibrate, configure,
 fit, report. Chronological records retain HMM transitions. Each run saves its
 configuration, log, assignments, metrics and selected plots in its own folder.
---sigma-prior multiplies the calibrated decoder covariance (default 1), while
+--sigma-prior multiplies the calibrated decoder covariance (default 0.1), while
 --gamma-prior sets the process covariance prior variance times identity.
 See docs/experiment_workflows.md for controls and approximation constraints.
 """

@@ -236,13 +236,13 @@ assignments, eight-cluster cap, balanced HDP, final LDS scoring and conjugate
 batch updates. The three true regime labels are never passed to fitting or used
 to initialize proposals. The known A matrices are **not** used as A priors.
 
-The `oracle` representation supplies true C, offset and observation covariance.
-`--sigma-prior` multiplies that covariance (or the PCA-calibrated covariance).
+The `oracle` representation supplies true C, offset and base observation covariance.
+`--sigma-prior` defaults to 0.1 and multiplies that covariance (or the PCA-calibrated covariance).
 `--sigma-mode` accepts the existing fixed/full/diagonal, cluster/shared policies.
-Without `--gamma-prior`, the process prior uses the true mean variance expressed
-in decoder coordinates; that is an explicit truth-informed calibration control,
-including for PCA. Set `--gamma-prior` to an absolute variance to use a chosen
-isotropic process prior instead. Gamma remains learned by default. The oracle
+`--gamma-prior` defaults to an absolute per-coordinate variance of 0.1 in
+decoder coordinates. The optional programmatic `gamma_prior=None`
+truth-informed calibration control remains available for earlier studies.
+Gamma remains learned by default. The oracle
 initial state covariance is the saved common initialization (pooled appearance
 and fluctuation covariance for fields/tissue, I for dynamics_only); PCA uses its
 calibration score covariance. True regime-specific initial means are not passed

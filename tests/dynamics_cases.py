@@ -37,11 +37,15 @@ def core(mode, task, component=None):
     A, Gamma, C, Sigma = params
     backend = model.gp
     if task == "initial":
+        # Preserve the pre-migration initializer workload with its historical
+        # .25/.01 values explicitly. Current defaults are covered separately in
+        # test_noise_defaults; these fixtures protect the underlying equations.
         if component is None:
-            default = model.GPR_static() if mode == "static" else model.GPR_dynamic()
+            default = model.GPR_static(.25) if mode == "static" else model.GPR_dynamic(.01, .25)
             explicit = model.GPR_static(.08) if mode == "static" else model.GPR_dynamic(.015, .08)
         else:
-            default = component.initial_parameters(x)
+            kwargs = {} if mode == "static" else {"gamma": .01}
+            default = component.initial_parameters(x, sigma=.25, **kwargs)
             kwargs = {} if mode == "static" else {"gamma": .015}
             explicit = component.initial_parameters(x, sigma=.08, **kwargs)
         return encode({"default": default, "explicit": explicit})

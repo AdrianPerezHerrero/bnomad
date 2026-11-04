@@ -9,6 +9,7 @@ from time import perf_counter
 import numpy as np
 
 from .. import HDPGPC
+from .._defaults import DEFAULT_SIGMA_PRIOR, DEFAULT_GAMMA_PRIOR
 from ..config import MatrixPolicyConfig, NoisePolicyConfig, with_mfa_emission
 from ..datasets.cas_colon import cas_colon_annotations, load_cas_colon_frames
 from ..diagnostics import (model_latent_trajectories, plot_latent_trajectories,
@@ -26,7 +27,7 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
     if representation not in ('pca', 'autoencoder', 'sfa', 'linear_prediction', 'mfa'):
         raise ValueError('Unknown CAS-Colon observation representation')
     selected = dict(records=['1'], components=10, calibration_samples=400,
-                    sigma_prior=1., gamma_prior=.01, sigma_mode='fixed',
+                    sigma_prior=DEFAULT_SIGMA_PRIOR, gamma_prior=DEFAULT_GAMMA_PRIOR, sigma_mode='fixed',
                     offline_strategy='split_merge', split_merge_refine_steps=1,
                     exploration_steps=5, hdp_preset='balanced',
                     fit_gp=False, alignment='none', lds_plots=False,

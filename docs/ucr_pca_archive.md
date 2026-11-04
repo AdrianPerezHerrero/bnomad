@@ -33,7 +33,7 @@ variances. The pilot floors both types of variance at `--noise-floor` (1e-6).
 `--process-noise` multiplies the latent prior variances; its default is 1.
 `--observation-noise-scale` multiplies the residual Sigma prior, also default 1.
 `--sigma-prior` and `--gamma-prior` additionally multiply these calibrated
-covariances (both runner defaults are 0.001):
+covariances (both runner defaults are 0.1):
 
 ```text
 Sigma_initial = sigma_prior * observation_noise_scale * calibrated_residual_covariance

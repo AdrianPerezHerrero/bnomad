@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import HDPGPC
+from .._defaults import DEFAULT_SIGMA_PRIOR, DEFAULT_GAMMA_PRIOR
 from ..config import (HDPGPCConfig, HDPConfig, GPEmissionConfig, DynamicsConfig,
                       MatrixPolicyConfig, NoisePolicyConfig, AlignmentConfig,
                       InferenceConfig, MultiOutputConfig, NumericalConfig,
@@ -48,9 +49,9 @@ def build_parser(description=None):
     parser.add_argument('--calibration-samples', type=int, default=400)
     parser.add_argument('--calibration-sampling', choices=('uniform', 'prefix'), default='uniform')
     parser.add_argument('--noise-floor', type=float, default=1e-8, help='PCA residual variance floor.')
-    parser.add_argument('--sigma-prior', type=float, default=1., help='Multiplier of known/calibrated observation covariance.')
-    parser.add_argument('--gamma-prior', type=float,
-                        help='Initial process variance; default is the true average variance in the decoder coordinates.')
+    parser.add_argument('--sigma-prior', type=float, default=DEFAULT_SIGMA_PRIOR, help='Multiplier of known/calibrated observation covariance.')
+    parser.add_argument('--gamma-prior', type=float, default=DEFAULT_GAMMA_PRIOR,
+                        help='Initial per-coordinate process variance (default: 0.1).')
     parser.add_argument('--sigma-mode', choices=NOISE_MODES, default='fixed')
     parser.add_argument('--a-mode', choices=('cluster', 'fixed'), default='cluster',
                         help='Learn cluster A, or fix A=0 for an independence control.')

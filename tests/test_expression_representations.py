@@ -21,7 +21,7 @@ class ExpressionRepresentationTests(unittest.TestCase):
         for representation in ('pca', 'autoencoder'):
             with self.subTest(representation=representation):
                 args = zebrafish_parser(representation=representation).parse_args([])
-                self.assertEqual(args.sigma_prior, 1.)
+                self.assertEqual(args.sigma_prior, .1)
                 for dynamic in (False, True):
                     config = make_config(args, decoder, dynamic=dynamic)
                     config.validate(for_build=True)
