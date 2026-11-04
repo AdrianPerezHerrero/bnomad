@@ -1,3 +1,6 @@
+> Historical September 2026 migration record. See the
+> [current architecture](../architecture.md) and [validation audit](../documentation_audit.md).
+
 # Remaining historical references
 
 Static text inspection after migration finds no runtime imports of the retired

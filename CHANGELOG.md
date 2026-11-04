@@ -1,4 +1,13 @@
-# 0.3.0 ? native implementation migration
+# 0.3.0 — native implementation migration
+
+- Audited current documentation, tutorials, repository URLs and bibliography;
+  added an offline link/metadata check to installed-package validation.
+- Scoped float32 covariance and optimized GP log-kernel fixture tolerances to
+  observed cross-CPU rounding; model priors and frozen reference data are unchanged.
+- Improved CI failure visibility and upgraded GitHub actions to Node 24.
+- Accounted for Python 3.10 exception wording and Windows alignment optimizer
+  trace/control precision while retaining scientific output checks and exact
+  repeated-capture requirements.
 
 - Added XJTU-SY Fourier/Haar example scripts through the shared runner, with
   channel-wise calibration-energy rank selection, paired Fourier coefficients,
@@ -39,7 +48,8 @@
 - Engine entry points are `OnlineInference.update/update_fast` and `OfflineInference.fit/classify_batch/fit_labels`.
 - Removed flat configuration adapters. Alignment policy `gp` replaces the serialized default token `legacy`; scientific defaults are unchanged.
 - Kept the numerical fixtures, tolerances, algorithm order, optimizer settings and known failure cases unchanged.
-- See docs/migration_0_3/report.md for validation, compatibility breaks and measurements.
+- See docs/documentation_audit.md for current validation and
+  docs/migration_0_3/report.md for the initial migration measurements.
 
 # Changelog
 

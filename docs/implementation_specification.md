@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 # HDP-GPC: current implementation specification
 
@@ -56,7 +60,7 @@ the reference revision; method names remain the navigation anchors.
 See the [implementation map](current_implementation_map.md),
 [inference call graph](inference_call_graph.md), and
 [characterization documentation](characterization_tests.md) for complementary
-inventories and run instructions. This document follows [AGENTS.md](AGENTS.md).
+inventories and run instructions. This document follows `AGENTS.md`.
 
 Each numbered behavior has the five requested fields. **Likely purpose** is an
 inference, not verified author intent. **Safe to change?** refers to a structural
@@ -73,7 +77,7 @@ some consequences; **none** marks a coverage gap. The suite does not assert obje
 identity, autograd graphs, memory use, or GPU equivalence.
 
 All 15 tests passed again during this review (30.131 seconds). The earlier
-[determinism audit](../tests/characterization/determinism_report.json) reproduced
+`determinism audit` reproduced
 all snapshots byte-for-byte in three fresh processes, including reversed case
 order. The [manifest](../tests/characterization/baselines/manifest.json) records
 source hashes and the numerical environment. Discrete values, shapes, dtypes and
@@ -115,9 +119,9 @@ The first online sample skips actual alignment and fits the emission kernel at
 its first exact-unit-responsibility inclusion. No online global stick optimization
 runs while `M=1`.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `__init__:100`, `include_sample:1906`;
-[GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py),
+`GPI_model.py`,
 `initial_conditions:115`, `GPR_static:178`, `GPR_dynamic:191`, `include_weighted_sample:353`.
 
 **Likely purpose:** Establish a GP prior, then calibrate its kernel using the first assigned waveform.
@@ -138,7 +142,7 @@ temporary models; its append branch adds sigma bound entries twice. The online
 caller also appends a basis separately. Its loop over older observations uses
 `posterior=False` without `include_index`, so it does not train the newborn on them.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `set_default_options:468`, `create_gp_default:496`, `create_wp_sys_default:579`,
 `include_sample:1990-2123`, `include_sample_fast:2440-2574`.
 
@@ -165,7 +169,7 @@ fitted model. Split acceptance requires strict objective improvement, occupied
 groups, and an additional last-group population gate. Accepted representatives
 are selected from assigned samples, attempting to avoid duplicate representatives.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `include_batch:805`, `estimate_q_first:1243`, `new_group:1112`.
 
 **Likely purpose:** Fit one population, then explore a small data-driven set of partitions.
@@ -186,7 +190,7 @@ appends the remainder. `_calcThetaFull` adds counts and stickiness only to the
 leading `dimension-1` block/start entries. Its last position remains prior-only
 even when a caller passes a dimension equal to existing model count.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `__init__:270`, `init_global_params:353`, `create_initrho:377`,
 `_calcThetaFull:400`, `rho2beta:431`.
 
@@ -211,7 +215,7 @@ without optimizing sticks. Offline `post=True` uses prior plus `.8*old transThet
 and `.2*new transition counts`; starting theta uses unweighted old-plus-new terms.
 Online `one_sample=True` uses `_calcThetaFull` instead.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `reinit_global_params:360`, `temp_reinit_global_params:365`, `_calcThetaPost:383`,
 `include_batch:864-911`, `elbo_Linears:1025`, `include_sample:2112-2149`.
 
@@ -232,7 +236,7 @@ not match transitions between consecutive hard states. The first pair table is
 zero before logarithms; its all-negative-infinity tie chooses the first pair.
 Pair hardening explicitly creates float32 arrays.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `_safe_exp:338`, `variational_local_terms:586`, `coupled_state_coef:3651`.
 
 **Likely purpose:** Hard clustering from message-informed scores. Responsibility
@@ -268,7 +272,7 @@ Warp scores can enter twice: newest `q_aux`/proposal scores already include
 `liks[m]`, and calls passing `liks` to `variational_local_terms` add them again
 to its cloned final score row. Not all local calls pass that argument.
 
-**Where implemented:** [GPI_HDP.include_sample](../hdpgpc/hdpgpc/GPI_HDP.py#L1906),
+**Where implemented:** `GPI_HDP.include_sample`,
 `estimate_new:2830`; `GPI_model.smoother_weighted:726`.
 
 **Likely purpose:** Compare incremental absorption/birth while reusing past work.
@@ -298,7 +302,7 @@ them for actual updates afterward without the standard method's re-read.
 Its cap fallback uses logs of floored hard assignments rather than the standard
 method's pre-hardening log scores, so these cap choices are not equivalent.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `_init_resp_cache_cold_start:2214`, `_ensure_fast_cache_online:2228`,
 `_update_q_lat_tail:2273`, `_append_hard_step:2287`, `include_sample_fast:2312`.
 
@@ -326,9 +330,9 @@ rescores the supplied batch. Static execution skips that dynamic update block.
 The helper does not forward its `snr` argument to inclusion, and explicitly uses
 Bayesian dynamic updates rather than implementing a general alternative offline ML schedule.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `include_batch:805`, `variational_local_terms_batch:1170`, `estimate_q_first:1243`,
-`estimate_q_all:2844`; [GPI_model.full_pass_weighted](../hdpgpc/hdpgpc/GPI_model.py#L377).
+`estimate_q_all:2844`; `GPI_model.full_pass_weighted`.
 
 **Likely purpose:** Refit trajectories to changed assignments while reusing unchanged groups.
 
@@ -349,7 +353,7 @@ and scales latest `Gamma` by `h_ini`. GP resets can preserve first/last entries 
 indices independently while resetting `N=0`. `keep_last_all` is explicit, not
 automatic bounded-memory processing.
 
-**Where implemented:** [GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py),
+**Where implemented:** `GPI_model.py`,
 `log_lat_error:288`, `reinit_GP:408`, `compute_sq_err_all:488`,
 `compute_q_lat_all:549`, `find_closest_lower:584`; `GPI_HDP.keep_last_all:460`.
 
@@ -372,8 +376,8 @@ remove the last group when objective gates pass. Removal is distributed across
 branches with differing updates to warpers/representatives; there is no common
 operation synchronizing every list, tensor and `M`, or general low-mass merge rule.
 
-**Where implemented:** [GPI_model.include_weighted_sample](../hdpgpc/hdpgpc/GPI_model.py#L353),
-`full_pass_weighted:377`; [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_model.include_weighted_sample`,
+`full_pass_weighted:377`; `GPI_HDP.py`,
 `refill:1076`, `refill_resp:1141`, `remove_last_group:1133`,
 `estimate_q_first:1438,1674`, `estimate_q_all:2953`.
 
@@ -397,7 +401,7 @@ pair entries, including a self-pair; branches skipping reorder can later use an
 unset `reorder` variable. `estimation_limit` limits parameter learning rather than
 all filtering, history growth or model dimensions.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `include_batch:927`, `reorder:1091`, `new_group:1112`, `include_sample:2088-2187`;
 `GPI_model.bayesian_new_params:966`.
 
@@ -420,7 +424,7 @@ small-cluster branch still calls `first=False`. Entropy is added separately by
 batch drivers. `hmm_switch=False` retains only the latent contribution in the
 auxiliary returned objective, but does not globally bypass message passing.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `__init__:179`, `compute_q_elbo:1796`, `full_LDS_elbo:1838`,
 `calcELBO_NonlinearTerms:2682`; `GPI_model.return_LDS_param_likelihood:459`.
 
@@ -447,7 +451,7 @@ sums. `redefine_default` uses output zero and its first ten coordinates with
 variance factors `.02` for sigma and `.025` for gamma; bounds become
 `[1e-5*initial,2*initial]`.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `weight_mean:685`, `reduce_num_outputs:703`, `compute_snr_ini:715`,
 `compute_snr:732`, `normalize_snr:750`, `redefine_default:1866`.
 
@@ -467,7 +471,7 @@ returns labels. It does not refit emissions or activate alignment via `warp` in
 that branch. Incremental learning and the two online `classify` branches follow
 different control flows; they are not interchangeable read-only interfaces.
 
-**Where implemented:** [GPI_HDP.cluster_new_batch](../hdpgpc/hdpgpc/GPI_HDP.py#L2975),
+**Where implemented:** `GPI_HDP.cluster_new_batch`,
 `include_sample:2078`, `include_sample_fast:2312`.
 
 **Likely purpose:** Label a sequence using existing emissions and transitions.
@@ -493,7 +497,7 @@ whole input unchanged. Forward normalizes each message row by its sum. Backward
 normalizes by the sum excluding the final state and ignores supplied forward
 normalizers. Pair tables normalize over both state axes before taking logarithms.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `compute_Pi:424`, `LogLik:632`, `variational_local_terms_batch:1170`,
 `find_optimum_rhoOmega:2752`, `compute_trans_A:3527`, `forward:3546`,
 `backward:3612`, `coupled_state_coef:3651`.
@@ -515,7 +519,7 @@ These are additions, not minimum-value clamps. Zero pair denominators become
 `1e-10`; entropy helpers use `1e-30`. Impossible state scores and the first
 log-pair table can retain negative infinity, which the snapshots encode explicitly.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `calc_Hstart:2690`, `calc_Htable:2694`, `forward:3576`, `backward:3633`,
 `coupled_state_coef:3677`.
 
@@ -546,10 +550,10 @@ keeps zero prior mean. `fit_kernel_params` reads learned noise then overwrites i
 with `alpha_ini[0][0]` for LDS `Sigma`, resets `A,C` to identity and refreshes the
 kernel prior covariance. Kernel noise and LDS observation noise can differ.
 
-**Where implemented:** [GPI_HDP.__init__](../hdpgpc/hdpgpc/GPI_HDP.py#L159);
-[GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py), `fit_kernel_params:207`,
-`include_weighted_sample:353`; [GPI.fit_torch](../hdpgpc/hdpgpc/GPI.py#L610);
-[GPI_models_pytorch.py](../hdpgpc/hdpgpc/GPI_models_pytorch.py#L10).
+**Where implemented:** `GPI_HDP.__init__`;
+`GPI_model.py`, `fit_kernel_params:207`,
+`include_weighted_sample:353`; `GPI.fit_torch`;
+`GPI_models_pytorch.py`.
 
 **Likely purpose:** Fit the spatial kernel while retaining separately specified
 LDS noise. The fixed transferred lengthscale has no verified rationale.
@@ -572,7 +576,7 @@ every difference to be small. Legacy `fit` uses SciPy L-BFGS-B on sklearn log-th
 up to 50000 iterations, optional random restarts in bounded log space, or explicitly
 selected CG/custom optimization.
 
-**Where implemented:** [GPI.py](../hdpgpc/hdpgpc/GPI.py),
+**Where implemented:** `GPI.py`,
 `fit_torch:610`, `fit:772`, `_constrained_optimization:1114`.
 
 **Likely purpose:** Initial hyperparameter learning with a practical plateau test.
@@ -597,10 +601,10 @@ interpolation plus projected `Sigma`. `observe` selects a filtered state;
 generally use `C*P*C'+Sigma`. Latent scoring includes a quadratic residual and
 trace term but likewise omits the covariance log determinant.
 
-**Where implemented:** [GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py),
+**Where implemented:** `GPI_model.py`,
 `_gaussian_score_shared_cov:92`, `log_sq_error:250`, `log_lat_error:288`,
 `step_forward_last:595`, `observe_last:617`, `observe:626`;
-[GPI.pred_dist](../hdpgpc/hdpgpc/GPI.py#L457).
+`GPI.pred_dist`.
 
 **Likely purpose:** Covariance-scaled matching and inexpensive prediction. Replacing
 these expressions with normalized Gaussian densities changes covariance preferences.
@@ -624,9 +628,9 @@ inverse for its gain; pair smoothing uses a solve on the last two states.
 `smoother_weighted` constructs hypothetical posterior/history values rather than
 executing a full backward recursion.
 
-**Where implemented:** [GPI.py](../hdpgpc/hdpgpc/GPI.py),
+**Where implemented:** `GPI.py`,
 `posterior:72`, `backward:240`, `backward_notrange:272`;
-[GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py), `backwards:687`,
+`GPI_model.py`, `backwards:687`,
 `backwards_pair:705`, `smoother_weighted:726`.
 
 **Likely purpose:** GP-conditioned initialization followed by sequential LDS inference.
@@ -649,7 +653,7 @@ initial covariance divided by `N^2` (static process covariance uses its initial
 value). The parameter limit does not stop filtering. Updated Bayesian `var/y_var`
 histories store square-root diagonals, while initialization and ML store diagonals.
 
-**Where implemented:** [GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py),
+**Where implemented:** `GPI_model.py`,
 `bayesian_new_params:966`, `initial_conditions:115`, `new_params:747`.
 
 **Likely purpose:** Stabilize sequential learning and taper initial noise. Zeroing
@@ -673,7 +677,7 @@ quadratic/trace terms without full normalization/determinants. `reinit_LDS`
 reconstructs MNIW observation parameters even for a previously static inverse-Wishart
 model. No explicit validation prevents `n0<=2`.
 
-**Where implemented:** [GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py),
+**Where implemented:** `GPI_model.py`,
 `reinit_LDS:437`, `matrix_normal_inv_wishart:1280`, `inv_wishart:1417`.
 
 **Likely purpose:** Specialized sequential regularization. A similarly named
@@ -705,9 +709,9 @@ static-reset equivalence are not separately tested.
 back to an unscaled solve. `log_det` similarly rescales before Cholesky, with a
 determinant-plus-`1e-6` fallback. There is no universal PSD projection.
 
-**Where implemented:** [GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py),
+**Where implemented:** `GPI_model.py`,
 `_chol_spd:83`, `log_sq_error:250`, `posterior:1300`, `log_likelihood_MNIW:1346`;
-[GPI.py](../hdpgpc/hdpgpc/GPI.py), `posterior:72`, `projection_matrix:153`,
+`GPI.py`, `posterior:72`, `projection_matrix:153`,
 `new_params_LDS:302`, `pred_dist:457`, `pred_latent_dist:505`,
 `log_det:1167`, `inv_r:1201`; `WarpPriorAMTGP._rbf_cov:160`.
 
@@ -730,7 +734,7 @@ length matches `self.M`, otherwise substitutes concentration-based priors.
 `beta2rho` floors its denominator at `1e-100`. This NumPy/SciPy boundary does not
 carry PyTorch autograd.
 
-**Where implemented:** [OptimizerRhoOmega.py](../hdpgpc/hdpgpc/OptimizerRhoOmega.py),
+**Where implemented:** `OptimizerRhoOmega.py`,
 `find_optimum_multiple_tries:29`, `find_optimum:103`, `c2rhoomega:196`,
 `rhoomega2c:217`, bound helpers; `GPI_HDP.find_optimum_rhoOmega:2752`, `beta2rho:441`.
 
@@ -765,7 +769,7 @@ initializations/increments mean these counters are not identical requested budge
 Iteration/cap exits precede the common refresh of `q_last`, responsibilities,
 counts and `elbo_last`, so fields may be absent or stale on those exits.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `include_batch:860-947`, `variational_local_terms_batch:1215-1241`,
 `estimate_q_first:1374,1724`.
 
@@ -791,7 +795,7 @@ Optional sigma checking clips diagonals to squared exponentiated bounds of the
 first kernel parameter, not a general SPD or explicit LDS constraint. ML annealing
 uses `initial/(2*N)`.
 
-**Where implemented:** [GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py),
+**Where implemented:** `GPI_model.py`,
 `new_params:747`, `check_bound_sigma:863`, `new_params_weighted:874`;
 `GPI.new_params_LDS:302`.
 
@@ -815,7 +819,7 @@ warp/prior results are produced without gradient tracking. Main inference is not
 end-to-end differentiable. Projected fitting sorts basis points and can remove
 points using distance compared with the **log** learned lengthscale.
 
-**Where implemented:** [GPI.py](../hdpgpc/hdpgpc/GPI.py),
+**Where implemented:** `GPI.py`,
 `fit_torch:610`, `cond_to_numpy:1228`; `GPI_HDP.include_sample:2188`,
 `include_sample_fast:2620`, `gpmodel_deepcopy:4037`, conversion helpers at 4085;
 `amtgp_warping_system.compute_warp:444,489`, `compute_warp_batch:636,719`.
@@ -840,7 +844,7 @@ with `random_state=None` consume global RNG; sampling helpers typically default
 to zero. CPU/sklearn/SciPy boundaries and partial CUDA conversions preclude an
 assumption of CPU/GPU equivalence.
 
-**Where implemented:** [GPI_HDP.py:15](../hdpgpc/hdpgpc/GPI_HDP.py#L15),
+**Where implemented:** `GPI_HDP.py:15`,
 `_safe_exp:338`; headers in `GPI.py`, `GPI_model.py`, `GPI_models_pytorch.py`;
 `GPI.fit:772`, sampling helpers; `Warping_system.__init__:284`.
 
@@ -867,8 +871,8 @@ samples by historical state/first flag and shares a covariance factorization.
 kernel matrices: there is no single authoritative kernel cache used everywhere.
 The stick optimizer caches triangular/diagonal index arrays globally by dimension.
 
-**Where implemented:** [GPI_HDP.forward](../hdpgpc/hdpgpc/GPI_HDP.py#L3546),
-online drivers; [GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py),
+**Where implemented:** `GPI_HDP.forward`,
+online drivers; `GPI_model.py`,
 `_eye_cached:75`, `compute_sq_err_all:488`; `GPI.__init__:45`, `fit_torch:610`;
 `OptimizerRhoOmega.flatlowTriIDsDict`, `diagIDsDict`.
 
@@ -892,7 +896,7 @@ the same result. `reset_warp_cache` clears different fields
 dictionary. Reuse after changing data/settings can be stale or shape-incompatible.
 This is deterministic dependence on prior calls rather than random variability.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `reset_warp_cache:326`, `warp_batch_by_resp_amtgp_cached:3412`.
 
 **Likely purpose:** Avoid optimizing every representative's full batch repeatedly.
@@ -914,7 +918,7 @@ and jitter. A new irregular grid with the same length/endpoints can reuse an old
 factor. Prior scores include quadratic, logdet and Gaussian normalization terms,
 unlike emission scores.
 
-**Where implemented:** [WarpPriorAMTGP](../hdpgpc/hdpgpc/amtgp_warping_system.py#L106),
+**Where implemented:** `WarpPriorAMTGP`,
 `_rbf_cov:160`, `_ensure_cache:175`, `log_sq_error:197`, `log_sq_error_batch:224`.
 
 **Likely purpose:** Cheap repeated displacement scoring under a fixed GP prior.
@@ -938,7 +942,7 @@ grid, so zero controls need not mean identity on irregular coordinates. Changing
 coordinates without changing length does not refresh the scalar stored grid.
 `mode` does not select the legacy mode-specific optimization budgets here.
 
-**Where implemented:** [amtgp_warping_system.py](../hdpgpc/hdpgpc/amtgp_warping_system.py),
+**Where implemented:** `amtgp_warping_system.py`,
 `Warping_system.__init__:284`, `_expand_ctrl_to_T:328`, `_monotonic_grid:341`,
 `compute_warp:401`, `compute_warp_batch:548`; `GPI_HDP.py:10`.
 
@@ -964,7 +968,7 @@ final results use post-step controls. Public default budget is 50; scalar HDP
 callers request 250; cached batch uses 50 and chunks of 128. The cached HDP caller
 supplies `sqrt(ini_sigma_def)` as data noise, rather than `ini_sigma_def`.
 
-**Where implemented:** [amtgp_warping_system.py](../hdpgpc/hdpgpc/amtgp_warping_system.py),
+**Where implemented:** `amtgp_warping_system.py`,
 `_safe_noise:44`, `_theta_to_lambdas:367`, `compute_warp:401`, `compute_warp_batch:548`;
 `GPI_HDP.compute_warp_y:3153`, `warp_batch_by_resp_amtgp_cached:3412`.
 
@@ -989,7 +993,7 @@ replicates it as the next batch's starting vector. `update_warp` only records th
 last displacement when recursive, without learning a new warp GP. `reset` clears
 warm memory, not the outer full warp cache.
 
-**Where implemented:** [amtgp_warping_system.py](../hdpgpc/hdpgpc/amtgp_warping_system.py),
+**Where implemented:** `amtgp_warping_system.py`,
 `compute_warp:489`, `update_warp:525`, `reset:542`, `compute_warp_batch:719`;
 `GPI_HDP.warp_batch_by_resp_amtgp_cached:3495-3509`.
 
@@ -1012,7 +1016,7 @@ from the normal displacement convention. The first online warped sample instead
 records zero displacement. Online greedy ranking uses output zero and separate
 early-exit/score-adjustment heuristics; it is not batch warping one sample at a time.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `include_sample:1941`, `compute_warp_y:3153`,
 `warp_batch_by_resp_amtgp_cached:3437`, `select_assigned_warp:3519`.
 
@@ -1038,8 +1042,8 @@ estimation-limit settings. Reset methods replace selected histories/distribution
 but do not guarantee independent candidates. Default factories also mutate outer
 configuration lists. Rejected proposals cannot be assumed side-effect-free.
 
-**Where implemented:** [GPI_HDP.gpmodel_deepcopy](../hdpgpc/hdpgpc/GPI_HDP.py#L4037),
-`create_gp_default:496`; [GPI_model.py](../hdpgpc/hdpgpc/GPI_model.py),
+**Where implemented:** `GPI_HDP.gpmodel_deepcopy`,
+`create_gp_default:496`; `GPI_model.py`,
 `__init__:31`, `reinit_GP:408`, `reinit_LDS:437`.
 
 **Likely purpose:** Cheap candidate construction; omitted settings and sharing may
@@ -1061,7 +1065,7 @@ counts exceed the responsibility dimension used by `full_LDS_elbo`, producing
 `IndexError`. Both paths have already partially mutated state. These fixtures
 demonstrate reproducible failures, not successful support for these configurations.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `compute_warp_y:3153`, `reorder:1091`, `full_LDS_elbo:1838`.
 
 **Likely purpose:** None established for the failures; they expose reserved-state
@@ -1086,7 +1090,7 @@ constructor does not initialize `rho_xy` and normal drivers do not call it.
 `selected_gpmodels` returns a contiguous prefix based on occupied count, assuming
 occupied groups are packed first.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `include_sample_fast:2312`, `cluster_new_batch:2975`, `compute_joint_xy_q:758`,
 `selected_gpmodels:3939`, `full_model_to_*:4123-4246`.
 
@@ -1107,7 +1111,7 @@ rough/balanced/fine limits 700/1500/5000 and loss-change tolerances `.05/.01/1e-
 Recursive failure handling reduces requested training budget. Its `update_warp`
 actually updates a GP/LDS warp model, unlike AMTGP's compatibility hook.
 
-**Where implemented:** [warping_system.py](../hdpgpc/hdpgpc/warping_system.py),
+**Where implemented:** `warping_system.py`,
 `Warping_system:20`, `update_warp:144`, `compute_warp:174`.
 
 **Likely purpose:** Earlier GP-based alignment with learned warp dynamics.
@@ -1126,7 +1130,7 @@ not a private copy. `elbo_Linears` normally protects its own count tensor with a
 clone before conversion and calling the objective, but direct callers must not
 assume input immutability. The pure-function extraction leaves this code in place.
 
-**Where implemented:** [GPI_HDP.py](../hdpgpc/hdpgpc/GPI_HDP.py),
+**Where implemented:** `GPI_HDP.py`,
 `calcELBO_LinearTerms` and `elbo_Linears` (reference lines 2651 and 1025).
 
 **Likely purpose:** Reuse the count buffer to assemble the slack term. Whether
@@ -1152,7 +1156,7 @@ does not rebind the relocated implementation's globals.
 [`emissions/__init__.py`](../hdpgpc/hdpgpc/emissions/__init__.py),
 [`emissions/_interface.py`](../hdpgpc/hdpgpc/emissions/_interface.py),
 [`emissions/_gaussian_process.py`](../hdpgpc/hdpgpc/emissions/_gaussian_process.py),
-and [`GPI_model.py`](../hdpgpc/hdpgpc/GPI_model.py).
+and `GPI_model.py`.
 
 **Likely purpose:** Introduce an explicit emission boundary without changing
 scientific calculations, saved-object resolution, or experiment imports.
@@ -1242,7 +1246,7 @@ warper retains its original class identity and pickle module through a shim.
 **Where implemented:** `GPI_HDP.__init__`, online and batch entry points;
 [`alignment/_components.py`](../hdpgpc/hdpgpc/alignment/_components.py),
 [`_integration.py`](../hdpgpc/hdpgpc/alignment/_integration.py), and
-[`amtgp_warping_system.py`](../hdpgpc/hdpgpc/amtgp_warping_system.py).
+`amtgp_warping_system.py`.
 
 **Likely purpose:** Provide an explicit scientific choice between temporal
 alignment and unaligned observations while retaining existing experiment APIs.
@@ -1310,7 +1314,7 @@ callable without a model instance.
 **Where implemented:** `GPI_HDP.hdp` and legacy method delegates;
 [`hdp/_variational.py`](../hdpgpc/hdpgpc/hdp/_variational.py),
 [`_optimizer.py`](../hdpgpc/hdpgpc/hdp/_optimizer.py), and the legacy
-[`OptimizerRhoOmega.py`](../hdpgpc/hdpgpc/OptimizerRhoOmega.py) shim.
+`OptimizerRhoOmega.py` shim.
 
 **Likely purpose:** Isolate the implemented variational calculation while preserving
 the ownership, aliasing, serialization and scheduling contracts of existing runs.

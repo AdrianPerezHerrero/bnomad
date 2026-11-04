@@ -64,7 +64,7 @@ normalized affine objective combining reconstruction and latent prediction.
 | Offline optimizer | `--offline-strategy legacy/split_merge`, `--split-merge-refine-steps`, `--offline-representer-selection sorted/fixed` |
 | Split/merge stopping | `--split-merge-stability-patience` (3), `--split-merge-score-rtol` (0.001) |
 | Exploration | `--hdp-preset`, `--max-clusters`, `--exploration-steps` |
-| LDS | `--lds-update`, `--lds-scoring`, `--lds-degrees`, `--lds-step-size`, `--birth-lds-kl-per-dimension` |
+| LDS | `--dynamics-clock cluster-clock/physical-clock`, `--lds-update`, `--lds-scoring`, `--lds-degrees`, `--lds-step-size`, `--birth-lds-kl-per-dimension` |
 | GP/alignment | `--fit-gp` / `--no-fit-gp`, `--alignment`, `--warp` / `--no-warp` |
 | Resolution/subset | `--max-points`, `--max-series` |
 | Calibration | `--components`, `--calibration-samples`; AE also `--epochs`, `--learning-rate` |
@@ -99,7 +99,8 @@ affine observations require CPU, one output, final scoring, no warp, no GP
 kernel fitting and a non-legacy LDS update. They use the exact existing affine
 Gaussian likelihood; encoder coordinates are not treated as noiseless states.
 
-The default offline optimizer remains `legacy`. Select `--offline-strategy
+The core/common parser default offline optimizer remains `legacy`; individual
+dataset runners can select `split_merge` in their documented defaults. Select `--offline-strategy
 split_merge` for group split/merge search with the same GP/LDS and HDP tools.
 `--split-merge-refine-steps` controls local refinement and `--exploration-steps`
 limits candidate fits per outer iteration. See [offline split–merge inference](offline_split_merge.md)

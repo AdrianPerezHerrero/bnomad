@@ -1,4 +1,4 @@
-> Historical tutorial preparation record for 0.2. Current verification is in [the 0.3 report](../docs/migration_0_3/report.md).
+> Historical tutorial preparation record for 0.2. Current verification is in [the current audit](../docs/documentation_audit.md).
 
 # Tutorial inventory (before notebook creation)
 

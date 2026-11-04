@@ -1,27 +1,28 @@
-# Independent 0.3 repository
+# Repository and GitHub validation
 
-`npdc-0.3.0` is the separate native release workspace. The package/distribution
-name remains `hdpgpc`. The original `npdc` and its ZIP are preserved as 0.2 references.
-This working folder has local migration commits. No remote was configured or pushed.
+The repository is [AdrianPerezHerrero/bnomad](https://github.com/AdrianPerezHerrero/bnomad).
+The distribution/import remains `hdpgpc`, version 0.3.0. Install with CPython
+3.10–3.12 as described in the [installation guide](docs/installation.md).
 
-Install with Python 3.10-3.12 (3.11 is the locally validated reference):
+The [Installed package workflow](https://github.com/AdrianPerezHerrero/bnomad/actions/workflows/tests.yml) builds a wheel
+and source archive, checks their contents and metadata, then installs the wheel
+with dependency resolution in a fresh virtual environment. CPU-only PyTorch is
+installed first to avoid unnecessary CUDA downloads. The source archive is
+unpacked outside the checkout; isolated examples and provenance checks verify
+that imports come from the installed wheel.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install .
-.\.venv\Scripts\hdpgpc-reference.exe --check --output reference.json
-```
+`tools/verify_installed.py` runs the console reference, provenance, dependencies,
+documentation links, five standalone examples, the full regression suite,
+repeated deterministic captures and a paired performance check. On failure,
+the uploaded evidence artifact retains the complete stage log and `status.json`.
+Read every failure block; an error in the test stage does not mean installation
+failed. See the [current CI diagnosis](docs/documentation_audit.md).
 
-For notebook infrastructure, install `.[tutorials]`; see tutorials/README.md.
-Build artifacts use `python -m build`. `python tools/build_colab_bundle.py` creates
-an uploadable wheel/helper/record-100 bundle after building one wheel under dist.
-No manual Python import-path changes are required.
+Use the [release checklist](docs/release_checklist.md) for local reproduction and
+remaining publication steps. The [initial migration report](docs/migration_0_3/report.md)
+is historical evidence, not the current repository or validation status.
 
-Before publishing, review repository URLs while retaining original attribution,
-licenses and citation. Add an empty repository URL with `git remote add origin URL`
-and push the reviewed branch yourself. No publication was performed by this task.
-See docs/release_checklist.md and docs/migration_0_3/report.md for release status.
-
-The installable wheel stays minimal. The source repository also keeps tests and
-reproducibility evidence; only the optional small record 100 remains for tutorials.
-Final installed/tutorial rechecks were deferred at the user's request.
+Notebook execution is a separate gate requiring `.[tutorials]`. See
+[tutorials/README.md](tutorials/README.md) for automatic validation and building
+the Colab wheel/helper/data bundle from the same source checkout. The normal
+wheel stays small and excludes datasets and experimental outputs.

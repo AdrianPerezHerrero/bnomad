@@ -82,7 +82,8 @@ samples. `--stability-samples` defaults to 200; 0 saves point estimates only.
 The reported probability that rho(A)>1 is **conditional on the fitted
 variational window model**, not a probability of physical breakage.
 
-The LDS clock is successive observations *retained by that cluster*. If it skips
+Under the default cluster-clock, the LDS clock is successive observations
+*retained by that cluster*. If it skips
 windows or has an irregular retained clock, conversion to growth per second is
 withheld. A regular retained clock permits log(rho)/step_seconds, but the
 interpretation is still the evolution of overlapping AE windows. Overlap,
@@ -128,6 +129,9 @@ Outputs default to `agents/flutter_autoencoder_runs/`:
   over recorded window-end time with posterior uncertainty, and final-A
   one-step changes in the first two coordinates. Paths break at MAP membership
   gaps; arrows represent retained-window model steps, not fixed elapsed time.
+  In physical-clock mode, an arrow is one global observation step; latent
+  predictions also propagate across unobserved ticks. These remain window-model
+  coordinates, not measured mechanical displacement states.
   Enabled by default; disable with `--no-trajectory-plots` or `--no-plots`.
 - Per-run plots: original motion, AE/LDS reconstruction, published context,
   inferred states, spectral-radius uncertainty, training loss and AE coordinates.

@@ -1,3 +1,8 @@
+> Historical September 2026 migration record. Its stop instruction and
+> publication/validation status describe that earlier task. The current
+> [documentation and CI audit](../documentation_audit.md) records later
+> validation authorized by the maintainer.
+
 # Final migration checkpoint
 
 Status: implementation migration finished in npdc-0.3.0. User explicitly stopped

@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 # Performance change ledger
 
@@ -81,16 +85,16 @@ frozen JSON values exactly. All paired benchmark outputs, loss traces and
 warm-start states match exactly: maximum absolute difference **0**. All six
 representative workload state hashes agree with the pre-change reports. No
 fixture or numerical tolerance changed. Full results:
-[validation](../benchmarks/performance_p01_validation.json),
-[paired timings](../benchmarks/performance_p01_paired.json),
-[comparison](../benchmarks/performance_p01_comparison.json).
+`validation`,
+`paired timings`,
+`comparison`.
 
 An initially strict in-memory fixture comparison reported four tuple/list type
 differences in `model_cached` cache keys. Loading the old implementation reproduced
 the same differences, with no optimization delta. JSON stores those tuples as
 lists. Comparing the fixture's JSON representation resolves the mismatch without
 rounding any numbers or changing tolerances. The diagnostic evidence remains in
-[alignment audit](../benchmarks/performance_p01_alignment_exact.json).
+`alignment audit`.
 
 **Paired performance:** one warmup and 11 measured repetitions per implementation,
 alternating order in the same process, using baseline source from `81fbcd2`.
@@ -116,7 +120,7 @@ from 19,696 to 18,672, and search indices from 3,072 to 2,048. Whole-call traced
 Python peak increases slightly from 64,995 to 65,587 bytes (+592); sampled warm
 RSS growth is unchanged at 98,304 bytes. This reduces repeated allocation work,
 not measured peak memory. The per-call lookup has no lifetime beyond the call.
-Raw after profile: [warp_scalar.json](../benchmarks/performance_p01_profiles/warp_scalar.json).
+Raw after profile: `warp_scalar.json`.
 
 **Other workloads:** sequential after/before medians change by -0.70% online,
 +1.05% offline dynamic, -1.34% static, and -0.48% multi-output. These paths do not

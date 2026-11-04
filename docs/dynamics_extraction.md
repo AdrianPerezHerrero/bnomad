@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 # Dynamics boundary: current contract and extraction
 
@@ -181,7 +185,7 @@ or reset Torch's default dtype.
 The original characterization goldens and GP-emission reference were not changed.
 The complete inference comparisons include assignments, cluster birth/reuse,
 responsibilities, GP/LDS posterior state, multi-output weights and alignment.
-See [`dynamics_characterization_determinism.json`](../benchmarks/dynamics_characterization_determinism.json).
+See `dynamics_characterization_determinism.json`.
 
 An executable-AST audit compared all four numerical function bodies and seven
 trajectory bodies to the original methods, normalizing only the numerical
@@ -220,8 +224,8 @@ it does not exercise the failing emission-level matrix-as-history call.
 | Linear | Pair smoother | 84.105 us | 84.711 us | +0.72% |
 | Linear | ML matrix step | 593.843 us | 591.781 us | -0.35% |
 
-Raw samples: [`dynamics_before.json`](../benchmarks/dynamics_before.json) and
-[`dynamics_after.json`](../benchmarks/dynamics_after.json). The largest increase
+Raw samples: `dynamics_before.json` and
+`dynamics_after.json`. The largest increase
 is approximately 2.90 microseconds per static pair-smoothing call. Thin delegates
 add a Python call; these measurements also include timing noise. No optimization
 or statistically proven equivalence is claimed.
@@ -236,8 +240,8 @@ fitting plus two filtering/pair-smoothing/Bayesian updates. Three repetitions,
 | Projected | 2.585422 / 2.585192 s (-0.01%) | .781584 / .775205 ms (-0.82%) | 2.982134 / 2.977566 ms (-0.15%) |
 | Reduced | 2.551096 / 2.562821 s (+0.46%) | .777917 / .777755 ms (-0.02%) | 2.968626 / 2.953590 ms (-0.51%) |
 
-Raw samples: [`dynamics_emissions_before.json`](../benchmarks/dynamics_emissions_before.json)
-and [`dynamics_emissions_after.json`](../benchmarks/dynamics_emissions_after.json).
+Raw samples: `dynamics_emissions_before.json`
+and `dynamics_emissions_after.json`.
 There is no clear regression in these small combined workloads. The first exact
 fit includes optimizer startup; medians reduce that effect. No memory benchmark,
 GPU benchmark, or large-data performance claim is made.

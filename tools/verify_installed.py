@@ -11,6 +11,19 @@ import subprocess
 import sys
 
 
+def failure_excerpt(text):
+    """Keep every unittest failure visible even when progress fills the log tail."""
+    lines = text.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith(('FAIL:', 'ERROR:'))]
+    blocks = []
+    for start in starts:
+        stop = start + 1
+        while stop < len(lines) and not lines[stop].startswith(('=====', 'Ran ')):
+            stop += 1
+        blocks.extend(lines[start:stop][:100])
+    return '\n'.join(blocks + lines[-60:])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
@@ -32,6 +45,7 @@ def main():
          'assert "site-packages" in p.parts; assert Path(sys.prefix).resolve() in p.parents']),
         ('dependencies', ['-m', 'pip', 'check']),
         ('environment', ['-m', 'pip', 'freeze']),
+        ('documentation', ['tools/check_documentation.py', '--output', str(output/'documentation.json')]),
         ('reference', ['-I', '-m', 'hdpgpc.examples.reference', '--check', '--output', str(output/'reference.json')]),
         *[(f'example_{mode}', ['-I', f'examples/minimal_{mode}.py'])
           for mode in ('online', 'offline', 'static', 'warping', 'multi_output')],
@@ -51,8 +65,8 @@ def main():
         status[name] = result.returncode
         (output/'status.json').write_text(json.dumps(status, indent=2)+'\n')
         if result.returncode:
-            tail = (output/(name+'.log')).read_text(encoding='utf-8', errors='replace').splitlines()[-60:]
-            print('\n'.join(tail), file=sys.stderr, flush=True)
+            log_text = (output/(name+'.log')).read_text(encoding='utf-8', errors='replace')
+            print(failure_excerpt(log_text), file=sys.stderr, flush=True)
             raise SystemExit(f'{name} failed; inspect {output/(name+".log")}')
     print('All installed-package release gates passed', flush=True)
 

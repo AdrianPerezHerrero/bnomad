@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 # Performance evidence and decisions
 
@@ -30,7 +34,7 @@ reuse, sampling granularity, Python-only tracing and unmeasured CUDA are explici
 limits; zero RSS growth does not imply zero allocations.
 
 Raw profiles, including per-function call counts, all timings, allocation sites
-and environment versions: [performance_baseline_profiles](../benchmarks/performance_baseline_profiles).
+and environment versions: `performance_baseline_profiles`.
 
 | Workload | Median wall seconds | Warm RSS growth MiB | Traced Python peak MiB |
 | --- | ---: | ---: | ---: |

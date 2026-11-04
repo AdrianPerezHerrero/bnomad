@@ -38,7 +38,7 @@ model = HDPGPC(configuration('online'))
 for waveform in waveforms()[:4]:
     result = model.update(waveform)
     print(result.assigned_cluster, result.new_cluster)
-print(model.labels_)       # [0 0 0 0] for this dynamic online recipe
+print(model.labels_)       # one label for each committed observation
 ```
 
 Each update commits one observation. The first cluster exists before the first

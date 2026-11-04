@@ -42,10 +42,10 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://github.com/AdrianPerezHerrero/HDP-GPC"
-repository = "https://github.com/AdrianPerezHerrero/HDP-GPC"
-documentation = "https://github.com/AdrianPerezHerrero/HDP-GPC/tree/main/docs"
-issues = "https://github.com/AdrianPerezHerrero/HDP-GPC/issues"
+homepage = "https://github.com/AdrianPerezHerrero/bnomad"
+repository = "https://github.com/AdrianPerezHerrero/bnomad"
+documentation = "https://github.com/AdrianPerezHerrero/bnomad/tree/main/docs"
+issues = "https://github.com/AdrianPerezHerrero/bnomad/issues"
 
 [project.optional-dependencies]
 images = ["Pillow>=10,<13"]

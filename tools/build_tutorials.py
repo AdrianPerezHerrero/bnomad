@@ -119,10 +119,11 @@ def build(spec):
     name, title, dynamics, schedule, outputs, warp, objective, assumption = spec
     cells = [markdown(f'# {title}\n\n{objective}\n\n{assumption}'),
       markdown('''## Colab setup
-      CPU only. Run all cells in order. No source edits are needed. Until the new
-      package is published, upload `hdpgpc-colab.zip` when prompted; GitHub main
-      currently contains the old API. Locally, open this notebook from the checkout
-      after installing `.[tutorials]`. See the README for the bundle/build command.
+      CPU only. Run all cells in order. When Colab prompts for an upload, supply
+      `hdpgpc-colab.zip`, built from the same 0.3 checkout as this notebook.
+      Locally, install `.[tutorials]` and open the notebook from the checkout.
+      See [the tutorial guide](README.md) for bundle/build commands and the
+      distinction between a GitHub source checkout and an installed release.
 
       The setup reuses a supported local installation or installs the wheel in a
       private environment. On an unsupported host Python it downloads Python 3.11
@@ -157,10 +158,12 @@ def build(spec):
       raw-amplitude output scale 300. HDP concentration preset `balanced` and
       `max_models=4` bound this small exploration; the latter is not a known class count.
 
-      Two batch outer iterations avoid a known empty-cluster reallocation failure
-      reached with three on this subset (see inventory). They still allow repeated
-      local/global updates. Do not interpret this cap as convergence. Inner GP and
-      warp optimizer behavior is unchanged. Online schedules do not use this cap.
+      Two batch outer iterations keep the teaching run bounded. The historical
+      inventory records a 0.2 empty-cluster edge case; it is not a current 0.3
+      convergence result. Do not interpret this budget as convergence. Online
+      schedules do not use this cap. These recipes use the default cluster-clock;
+      [physical-clock](../docs/dynamics_clocks.md) is a separate option for regular
+      physical sampling.
       '''), code(f'''config = HDPGPCConfig(
     x_basis=grid, verbose=False,
     hdp=HDPConfig(M=1, hdp_hyp='balanced', hmm_switch=True, max_models=4),
@@ -285,12 +288,14 @@ extra['comparison'] = utils['snapshot'](comparison)
         independently of static versus dynamic component behavior.
       - For alignment, compare `policy='none', warp=False`; for two channels, inspect
         the uniform/SNR comparison. Do not reinterpret `share_gp` as a C-sharing switch.
-      - Increase observations or grid resolution in a separate copy and measure runtime.
-        The known three-pass empty-cluster failure must be investigated before simply
-        raising the outer iteration cap on this subset.
+      - Increase observations or grid resolution in a separate copy and measure runtime
+        and convergence, retaining the full configuration and any failure log.
 
-      PCA, user transform hooks and shared-C/fixed-LDS presets are not currently
-      implemented by this public API; no corresponding exercise is silently simulated.
+      Version 0.3 also provides [fixed PCA/affine observations](../docs/fixed_observation_models.md),
+      [learned MFA and shared loadings](../docs/mfa_emission.md), and
+      [fixed/shared LDS policies](../docs/model_choices.md). Those are separate
+      formulations to compare explicitly. Arbitrary nonlinear encoders/decoders
+      still require compatible likelihood and inference implementations.
       '''), code("plt.close('all')")]
     for i, cell in enumerate(cells): cell['id'] = f'cell-{i:02d}'
     return dict(cells=cells, nbformat=4, nbformat_minor=5,

@@ -271,6 +271,10 @@ observation coordinates is performed.
 `posterior(cluster)` returns one `LatentState` per output, allowing different
 native bases. Each snapshot includes output index, last included observation
 index, basis grid, filtered mean/covariance and stored smoothed mean/covariance.
+With `dynamics.clock='physical-clock'`, `observation_index` instead identifies the
+latest propagated global tick, including for an unobserved component. The current
+prediction uses that propagated state. Cluster-clock retains the last-included
+observation convention. See [dynamics clocks](dynamics_clocks.md).
 Means are one-dimensional; covariance matrices remain two-dimensional. These are
 the existing stored values, with no fresh smoothing or covariance correction.
 Output ordering follows the backend; configured output reduction retains its

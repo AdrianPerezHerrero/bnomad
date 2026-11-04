@@ -11,6 +11,9 @@ Optional alignment helps separate waveform shape from timing variation.
 **Package:** `hdpgpc` · **Version:** 0.3.0 · **Python:** 3.10–3.12 ·
 **License:** [GPL-3.0-only](LICENSE)
 
+The source repository is **bnomad**; the installable distribution and Python
+import remain **`hdpgpc`**. This guide describes the 0.3 API in this checkout.
+
 [Quickstart](#quickstart) · [Your data](#use-your-own-data) ·
 [Soft assignments](#hard-and-soft-assignments) ·
 [Dataset workflows](#run-a-dataset-experiment) · [Documentation](docs/README.md)
@@ -22,6 +25,7 @@ Optional alignment helps separate waveform shape from timing variation.
 | Cluster a complete recording or process observations as they arrive | Offline inference and online updates | [Tutorials](docs/tutorials.md) |
 | Account for uncertain cluster membership | Hard or responsibility-weighted soft inference | [Assignment options](docs/configuration.md) |
 | Model changes within a cluster | Gaussian latent states, LDS filtering/smoothing, configurable A/C and noise policies | [Model choices](docs/model_choices.md) |
+| Advance components through missing assignments on a regular sampling grid | Optional physical-clock; cluster-clock remains the core default | [Dynamics clocks](docs/dynamics_clocks.md) |
 | Cluster long waveforms or image-derived observations in a smaller state space | Fixed PCA, affine autoencoder, SFA, Fourier/wavelet decoders; learned MFA emissions | [Observation models](docs/fixed_observation_models.md), [MFA](docs/mfa_emission.md) |
 | Use a common learned observation map across clusters | Shared MFA C and diagonal Sigma, with separate cluster means | [Shared MFA](docs/mfa_emission.md#shared-loadings-and-diagonal-noise) |
 | Align waveforms or constrain temporal progression | Optional GP/DTW-GP/GP-flow alignment; left-to-right HMM stages | [Alignment](docs/alignment_choices.md), [ordered stages](docs/transition_topology.md) |
@@ -268,3 +272,6 @@ Developed by Adrián Pérez Herrero. Licensed under
 see [NOTICE.md](NOTICE.md) and [licenses/bnpy.txt](licenses/bnpy.txt).
 Use [CITATION.cff](CITATION.cff) to cite the software and record the version or
 Git commit used for your experiment.
+The [references guide](docs/references.md) lists the underlying methods and
+dataset publications. No package paper DOI or arXiv identifier is declared;
+method/dataset citations are separate from the software citation.

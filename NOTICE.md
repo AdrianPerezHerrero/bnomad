@@ -14,6 +14,6 @@ separate from this software license. No MIT-BIH records or other research datase
 are included in built distributions. Download and cite datasets according to their
 providers' terms. Synthetic tutorial data are generated locally.
 
-`GPI_test.py` and `extract_data.py` are historical experiment scripts, not safe
-import entry points: they can change directories or request local data. They are
-retained for compatibility. Use the public API and packaged examples instead.
+`GPI_test.py` and `extract_data.py` belong to the historical research export;
+they are absent from the native 0.3 distribution. Use the public API and packaged
+examples. See `docs/migration.md` for removed entry points and pickle paths.

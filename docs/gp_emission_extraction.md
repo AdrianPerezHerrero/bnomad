@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 # GP emission component extraction
 
@@ -107,7 +111,7 @@ determinism contract; their loaded numerical state is compared.
   importing the protocol does not initialize numerical libraries.
 - Two fresh full characterization captures, forward and reverse order, matched
   every original snapshot **byte for byte**. See
-  [`emission_characterization_determinism.json`](../benchmarks/emission_characterization_determinism.json).
+  `emission_characterization_determinism.json`.
 - The four component snapshots also matched exactly in a separate reverse-order
   execution. No numerical difference was observed, including below the regression
   tolerances on these fixtures.
@@ -145,8 +149,8 @@ includes two posterior updates, pair smoothing and Bayesian parameter updates.
 | Reduced | Query prediction | 0.773952 ms | 0.778258 ms | +0.56% |
 | Reduced | Batch score | 3.005509 ms | 2.968777 ms | -1.22% |
 
-Raw samples: [`emissions_before.json`](../benchmarks/emissions_before.json) and
-[`emissions_after.json`](../benchmarks/emissions_after.json). These are small
+Raw samples: `emissions_before.json` and
+`emissions_after.json`. These are small
 wall-time measurements, not evidence of an optimization or statistically proven
 equivalence. The first exact fit includes lazy optimizer startup; medians reduce
 that effect. No memory benchmark was performed. Arithmetic, state allocation and

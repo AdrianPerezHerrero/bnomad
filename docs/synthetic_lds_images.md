@@ -145,8 +145,10 @@ Never clip or independently normalize frames for the controlled experiment.
   current regime chooses A. This is a conventional switching LDS.
 - `--state-mode per_regime`: each regime has its own state history, resumes it
   when revisited, and starts from its saved initial distribution. This matches
-  the current HDP-GPC convention of evolving a cluster between its successive
-  assigned observations, even when other clusters occur between them.
+  the default HDP-GPC cluster-clock convention of evolving a cluster between
+  its successive assigned observations. The opt-in physical-clock model instead
+  advances every component at every global tick; this generator has no such
+  per-component physical-clock mode. See [dynamics clocks](dynamics_clocks.md).
 
 In both cases labels are a prescribed schedule, not a fitted or sampled HMM.
 `previous_indices` records which earlier state generated each transition;

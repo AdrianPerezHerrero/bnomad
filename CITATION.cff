@@ -6,8 +6,8 @@ version: 0.3.0
 authors:
   - family-names: "Pérez Herrero"
     given-names: "Adrián"
-repository-code: "https://github.com/AdrianPerezHerrero/HDP-GPC"
-url: "https://github.com/AdrianPerezHerrero/HDP-GPC"
+repository-code: "https://github.com/AdrianPerezHerrero/bnomad"
+url: "https://github.com/AdrianPerezHerrero/bnomad"
 license: GPL-3.0-only
 keywords:
   - Gaussian processes

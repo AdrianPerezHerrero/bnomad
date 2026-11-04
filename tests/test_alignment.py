@@ -24,7 +24,7 @@ class AlignmentRegressionTests(unittest.TestCase):
 
 def regression(name):
     def test(self):
-        assert_snapshot(self, CASES[name](), REFERENCE[name], name)
+        assert_snapshot(self, CASES[name](), REFERENCE[name], name, trace_atol=1e-12)
     test.__name__ = "test_" + name
     return test
 

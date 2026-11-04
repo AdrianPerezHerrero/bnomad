@@ -1,4 +1,8 @@
-> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [0.3 validation report](migration_0_3/report.md) for this release.
+> Historical 0.2 evidence. Source paths and compatibility instructions below describe the archived release, not 0.3. Use [the current architecture](architecture.md), [migration guide](migration.md), and [current validation audit](documentation_audit.md) for this release.
+
+Historical source and benchmark references shown as code identify archived 0.2
+artifacts that are not bundled here. See the [current architecture](architecture.md)
+and [latest validation audit](documentation_audit.md) for current source and checks.
 
 # Optional temporal alignment: existing path and extraction
 
@@ -243,13 +247,13 @@ numerical thread, and enable deterministic Torch algorithms.
 - Both fresh full characterization captures (forward/reverse order) matched the
   original snapshots **byte for byte**. All twelve alignment snapshots also
   matched exactly in two fresh processes in opposite orders. Reports:
-  [full inference](../benchmarks/alignment_characterization_determinism.json),
-  [alignment component](../benchmarks/alignment_component_determinism.json).
+  `full inference`,
+  `alignment component`.
 - A syntax-tree audit against an isolated pre-task package confirmed the complete
   warp engine is identical after removing the added module docstring. All seven
   moved model-method bodies (excluding docstring indentation), both online
   preparation blocks and selected-warper update gates are also AST-identical.
-  The [source audit](../benchmarks/alignment_source_audit.json) also verifies
+  The `source audit` also verifies
   that the preserved pre-task sources match the frozen fixture's source hashes.
 - An offline wheel built in a temporary source copy included all seven alignment
   modules. Imports and public/legacy class pickle identity passed from the
@@ -291,9 +295,9 @@ CPU fixtures do not establish GPU or large-dataset performance.
 | Model cache miss | 139.217 | 141.815 | +1.87% |
 | Model cache hit | 0.034520 | 0.035464 | +2.73% |
 
-Raw primary reports are [before](../benchmarks/alignment_before.json),
-[engine relocation](../benchmarks/alignment_engine_after.json) and
-[final](../benchmarks/alignment_after.json). Two threshold crossings were
+Raw primary reports are `before`,
+`engine relocation` and
+`final`. Two threshold crossings were
 investigated and reported to the user **before proceeding**:
 
 1. Engine-only relocation initially measured a **5.92% speedup** for recursive

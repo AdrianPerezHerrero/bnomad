@@ -12,7 +12,7 @@ imports a retired implementation class.
 | `inference` | Separate standard/fast online, selectable legacy/split–merge offline, classification and label-conditioned schedules; HMM messages and objective aggregation | `InferenceEngine`, `OnlineInference`, `OfflineInference` |
 | `hdp` | Sticks, transitions, concentration presets, expected logs, entropy, attributed bnpy optimizer | `HDPVariational` |
 | `emissions` | GP/output trajectories, observation policies and histories, fixed interfaces, affine decoders, PCA/linear-AE calibration, Fourier/wavelet bases, prediction, fitting and SNR weights | `EmissionModel`, `GaussianProcessEmission`, `FixedObservationModel`, `AffineGaussianObservation`, calibration/basis helpers |
-| `dynamics` | Static/LDS initialization, filtering, smoothing, learning and conjugate distributions | `DynamicsModel`, `StaticDynamics`, `LinearDynamics` |
+| `dynamics` | Static/LDS initialization, filtering, smoothing, learning, component clocks and conjugate distributions | `DynamicsModel`, `StaticDynamics`, `LinearDynamics` |
 | `alignment` | Identity/AMTGP policies, grids, optimization, prior and caches | `NoAlignment`, `GPAlignment`, `GaussianProcessWarp` |
 | `numerics` | Shared low-level normalization | private |
 | `datasets` | Research dataset utilities | dataset-specific |
@@ -38,6 +38,9 @@ scientific components -> numerical helpers and numerical libraries
 
 Engines share state, not an inference loop. HDP does not orchestrate emissions,
 dynamics or alignment. Dynamics algorithms do not import the main model or GP emission class.
+`dynamics/_clock.py` owns opt-in physical-clock propagation, gap smoothing,
+statistics and process-prior scores. Default retained-observation histories
+keep their cluster-clock path; see [dynamics clocks](dynamics_clocks.md).
 `dynamics/_independent.py` owns compatible fixed-zero-transition batch
 trajectory operations; `AffineGaussianObservation` owns batched conditioning
 and likelihoods. Its private pass-local conditioner reuses observation factors
@@ -85,7 +88,7 @@ there because they describe LDS parameter posteriors, not a particular encoder.
 calibration result. Dataset loaders, including the canonical UCR ZIP reader,
 belong to `datasets`; optional WFDB is imported only when reading WFDB records.
 
-The eight dataset experiment scripts are matching entry points. Generic stages
+Dataset experiment scripts are matching entry points. Generic stages
 live in `experiments.records` and `experiments.ucr`, using the same public model
 API and common reporting. Neither inference nor observation modules import
 these workflows or example files. The annotated cluster gallery now lives in
