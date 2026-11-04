@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import HDPGPC
+from .._defaults import DEFAULT_SIGMA_PRIOR, DEFAULT_GAMMA_PRIOR
 from ..diagnostics import cluster_label_statistics, model_latent_trajectories, plot_latent_trajectories
 from ..emissions import (estimate_mfa_observation, estimate_pca_observation,
                          estimate_autoencoder_observation, AffineGaussianObservation)
@@ -41,9 +42,9 @@ def build_parser(description=None, defaults=None, *, dataset='expression', repre
                         help='Latent state dimension, smaller than the observation dimension.')
     parser.add_argument('--calibration-samples', type=int, default=400)
     parser.add_argument('--sigma-prior', type=float,
-                        default=0.001 if representation == 'mfa' else 1.,
+                        default=DEFAULT_SIGMA_PRIOR,
                         help='Multiplier of the calibrated observation covariance.')
-    parser.add_argument('--gamma-prior', type=float, default=0.01)
+    parser.add_argument('--gamma-prior', type=float, default=DEFAULT_GAMMA_PRIOR)
     parser.add_argument('--noise-floor', type=float, default=1e-6)
     if representation == 'mfa':
         parser.add_argument('--mean-precision', type=float, default=1.)

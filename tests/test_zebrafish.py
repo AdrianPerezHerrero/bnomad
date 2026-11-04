@@ -1,4 +1,8 @@
-"""Unfiltered expression loading, chronology, and paired experiment contracts."""
+"""Unfiltered expression loading, chronology, and paired experiment contracts.
+
+The count fixture has no planted early/late signal. These tests verify the
+workflow and artifacts rather than segmentation accuracy.
+"""
 import csv
 import json
 from pathlib import Path
@@ -11,6 +15,17 @@ import numpy as np
 from hdpgpc.datasets.zebrafish import (ZEBRAFISH_FILES, ZEBRAFISH_STAGES,
     download_zebrafish, load_zebrafish_expression)
 from hdpgpc.preprocessing import fit_pca_projection
+
+
+# Best converged dynamic-MFA recipe from the unchanged-fixture search. Keep
+# this local to the fixture: it is not a biological-data or model-wide default.
+# Both arms retain the same settings so only factor evolution differs.
+MFA_FIXTURE_DEFAULTS = dict(
+    components=4, projection_components=0,
+    sigma_prior=.1, gamma_prior=.1, hdp_preset='max',
+    iterations=30, exploration_steps=4, max_clusters=3,
+    lds_degrees=10, split_merge_refine_steps=1, seed=42,
+)
 
 
 def write_fixture(root):
@@ -90,9 +105,8 @@ class ZebrafishExperimentTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); write_fixture(root)
             expected = load_zebrafish_expression(root).stage_values()[0]
-            args = build_parser().parse_args(['--data-dir', str(root), '--output-dir', str(root/'runs'),
-                '--components', '1', '--projection-components', '0', '--iterations', '2',
-                '--exploration-steps', '1', '--max-clusters', '3', '--verbose', 'silent',
+            args = build_parser(defaults=MFA_FIXTURE_DEFAULTS).parse_args([
+                '--data-dir', str(root), '--output-dir', str(root/'runs'), '--verbose', 'debug',
                 '--no-trajectory-plots', '--no-projection-plots'])
             _validate(args)
             with patch('hdpgpc.experiments._expression.fit_pca_projection',
@@ -104,6 +118,7 @@ class ZebrafishExperimentTests(unittest.TestCase):
                 self.assertFalse(metadata['projection_applied'])
                 self.assertEqual(metadata['projection_components'], 0)
                 self.assertEqual(metadata['observation_dimension'], 6)
+                self.assertEqual(metadata['factor_components'], args.components)
                 self.assertIsNone(metadata['projection_explained_variance'])
                 path = Path(report['output_directory'])
                 self.assertIn('clusters_output_0.png', report['artifacts'])
@@ -112,7 +127,9 @@ class ZebrafishExperimentTests(unittest.TestCase):
                     self.assertFalse(saved['projection_applied'])
                     self.assertNotIn('gene_loadings', saved.files)
                     self.assertNotIn('explained_variance_ratio', saved.files)
-                    self.assertEqual(saved['mfa_C'].shape, (6, 1))
+                    # Skipping preliminary PCA preserves gene rows; MFA still
+                    # has the explicitly requested number of latent factors.
+                    self.assertEqual(saved['mfa_C'].shape, (expected.shape[1], args.components))
             comparison = json.loads((root/'runs/comparison.json').read_text())
             self.assertFalse(comparison['projection_applied'])
             self.assertEqual(comparison['projection_components'], 0)
@@ -145,9 +162,9 @@ class ZebrafishExperimentTests(unittest.TestCase):
         from hdpgpc.experiments.zebrafish import build_parser, run_zebrafish
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); write_fixture(root)
-            args = build_parser().parse_args(['--data-dir', str(root), '--output-dir', str(root/'runs'),
-                '--components', '1', '--projection-components', '4', '--iterations', '2',
-                '--exploration-steps', '1', '--max-clusters', '3', '--no-plots', '--verbose', 'silent'])
+            args = build_parser(defaults=MFA_FIXTURE_DEFAULTS).parse_args([
+                '--data-dir', str(root), '--output-dir', str(root/'runs'),
+                '--no-plots', '--verbose', 'silent'])
             reports = run_zebrafish(args)
             self.assertEqual([r['status'] for r in reports], ['ok', 'ok'])
             self.assertNotEqual(reports[0]['run_id'], reports[1]['run_id'])
@@ -159,6 +176,9 @@ class ZebrafishExperimentTests(unittest.TestCase):
                     self.assertIn(name, report['artifacts'])
                 self.assertFalse(report['metadata']['selected_genes'])
                 self.assertEqual(report['metadata']['gene_count'], 6)
+                settings = json.loads((path/'settings.json').read_text())['settings']
+                for key, value in MFA_FIXTURE_DEFAULTS.items():
+                    self.assertEqual(settings[key], value, key)
                 self.assertEqual(report['fitted'], 18)
                 self.assertEqual(set(report['metadata']['label_metrics']), {'broad', 'stage'})
                 with np.load(path/'prepared_data.npz', allow_pickle=False) as prepared:

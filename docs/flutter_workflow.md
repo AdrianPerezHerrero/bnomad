@@ -71,9 +71,10 @@ calibration may still use other selected recordings and is explicitly recorded.
 ## Dynamics and uncertainty
 
 The dynamic arm learns A and Gamma per cluster. The independent arm fixes
-A=0 and learns Gamma. Sigma is fixed to calibrated residual covariance by
+A=0 and learns Gamma. Sigma is fixed to scaled calibrated residual covariance by
 default; `--sigma-prior` multiplies that covariance, while `--gamma-prior`
-initializes the per-coordinate process variance. Neither arm is given the
+initializes the per-coordinate process variance. Both prior arguments default
+to 0.1. Neither arm is given the
 published response descriptions as inputs or assignments.
 
 `dynamics.json` includes each cluster's eigenvalues, spectral radius, MAP

@@ -1,5 +1,9 @@
 # 0.3.0 — native implementation migration
 
+- Standardized core and all dataset-runner sigma/gamma noise prior defaults to
+  0.1, including Xenopus clutch defaults. Explicit recipes and fixed covariance
+  policies retain their specified values; see docs/noise_priors.md.
+
 - Audited current documentation, tutorials, repository URLs and bibliography;
   added an offline link/metadata check to installed-package validation.
 - Scoped float32 covariance and optimized GP log-kernel fixture tolerances to

@@ -35,6 +35,7 @@
 - [Real-record Colab notebook suite](../tutorials/README.md)
 - [Public API reference](public_api.md)
 - [Typed configuration](configuration.md)
+- [Noise prior defaults, previous values and covariance scaling](noise_priors.md)
 - [Reproducibility and testing](reproducibility.md)
 - [Migration from the research API](migration.md)
 - [Architecture](architecture.md)

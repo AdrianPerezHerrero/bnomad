@@ -94,6 +94,8 @@ not automatically propagate according to elapsed experimental hours.
 Both arms receive identical observations, spectral MFA initialization,
 emission priors, seed, inference budget and cluster cap. Shared learned C and
 diagonal Sigma are the default, with cluster-specific means.
+Both prior arguments default to 0.1; independent factors still use their
+fixed Gamma=I policy. See [noise priors](noise_priors.md) for covariance scaling.
 `--no-shared-emission` selects cluster-local emissions in both arms. The runner
 explicitly preserves HMM assignments for independent factors, overriding the
 general MFA helper's independent-assignment convenience default. No native

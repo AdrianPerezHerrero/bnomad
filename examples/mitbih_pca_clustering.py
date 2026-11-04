@@ -8,7 +8,7 @@ python examples/mitbih_pca_clustering.py --records all --resume
 PCA is calibrated on up to 400 beats, uniformly sampled offline or taken from
 a prefix online (replayed during fitting). Its mean and decoder C remain fixed;
 A/Gamma learn per cluster. Sigma defaults to the calibrated fixed covariance;
---sigma-prior multiplies that covariance (default 1). Select --sigma-mode to
+--sigma-prior multiplies that covariance (default 0.1). Select --sigma-mode to
 learn it. --gamma-prior sets the Gamma prior variance times identity.
 Chronological records retain HMM transitions.
 

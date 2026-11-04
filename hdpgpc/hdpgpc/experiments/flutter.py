@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import HDPGPC
+from .._defaults import DEFAULT_SIGMA_PRIOR, DEFAULT_GAMMA_PRIOR
 from ..datasets.flutter import (FLUTTER_RECORDS, download_flutter, load_flutter_record,
                                 window_flutter_record)
 from ..diagnostics import model_latent_trajectories, plot_latent_trajectories
@@ -45,8 +46,8 @@ def build_parser(description=None, defaults=None):
     parser.add_argument('--learning-rate', type=float, default=.02)
     parser.add_argument('--noise-floor', type=float, default=1e-6)
     parser.add_argument('--noise-floor-fraction', type=float, default=.05)
-    parser.add_argument('--sigma-prior', type=float, default=1.0, help='Calibrated observation covariance multiplier.')
-    parser.add_argument('--gamma-prior', type=float, default=1.0, help='Initial per-coordinate process variance.')
+    parser.add_argument('--sigma-prior', type=float, default=DEFAULT_SIGMA_PRIOR, help='Calibrated observation covariance multiplier.')
+    parser.add_argument('--gamma-prior', type=float, default=DEFAULT_GAMMA_PRIOR, help='Initial per-coordinate process variance.')
     parser.add_argument('--sigma-mode', choices=NOISE_MODES, default='fixed')
     parser.add_argument('--configurations', nargs='+', choices=('independent', 'dynamic'), default=['dynamic'])
     parser.add_argument('--hmm-switch', action=argparse.BooleanOptionalAction, default=True)

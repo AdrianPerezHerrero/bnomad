@@ -183,7 +183,8 @@ class ConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'x_basis'):
             HDPGPCConfig().build_model()
         with self.assertRaisesRegex(ValueError, 'ini_sigma'):
-            HDPGPCConfig(x_basis=np.arange(5.)[:, None]).build_model()
+            HDPGPCConfig(x_basis=np.arange(5.)[:, None],
+                         emission=GPEmissionConfig(ini_sigma=None)).build_model()
 
     def test_unsafe_or_unknown_serialized_values_rejected(self):
         for data in ({'schema_version': 2}, {'schema_version': 1, 'typo': 2},

@@ -104,9 +104,9 @@ signs are fixed for reproducible artifacts. Random initialization uses a local
 generator and does not change the model's global random seed.
 
 Sigma is the diagonal ddof=1 variance of raw decoder reconstruction residuals,
-floored by `--noise-floor`. The usual `--sigma-prior` multiplies it once. P0=I
+floored by `--noise-floor`. The usual `--sigma-prior` (default 0.1) multiplies it once. P0=I
 initializes the latent state in these normalized coordinates. Gamma remains
-`--gamma-prior * I`, default 0.01, independently of predictor residuals.
+`--gamma-prior * I`, default 0.1, independently of predictor residuals.
 `--lds-degrees` retains its usual covariance-prior meaning.
 
 ## Temporal sampling and the role of B

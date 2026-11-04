@@ -381,4 +381,4 @@ def validate(c, *, for_build=False):
             required += [(e.ini_lengthscale, 'ini_lengthscale'), (e.bound_lengthscale, 'bound_lengthscale')]
         for value, name in required:
             if any(v is None for v in clusters(value, name)[:M]):
-                raise ValueError(name + ' must be supplied; its legacy default remains None')
+                raise ValueError(name + ' must be supplied and cannot be None')

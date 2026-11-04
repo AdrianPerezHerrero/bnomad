@@ -92,9 +92,9 @@ calibration rows:
 \]
 
 Residual variances use ddof=1; epsilon is `--noise-floor` (default 1e-6). The
-usual `--sigma-prior` multiplies Sigma once before installation. SFA's unit
+usual `--sigma-prior` (default 0.1) multiplies Sigma once before installation. SFA's unit
 population feature covariance gives the initial latent covariance P0=I.
-Gamma's prior remains `--gamma-prior * I`, default 0.01; it is not a derivative
+Gamma's prior remains `--gamma-prior * I`, default 0.1; it is not a derivative
 variance estimate. Noise variances and SFA derivative variances have different
 meanings and are not substituted for one another.
 

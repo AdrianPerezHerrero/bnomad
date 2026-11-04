@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from .. import HDPGPC
+from .._defaults import DEFAULT_SIGMA_PRIOR, DEFAULT_GAMMA_PRIOR
 from ..datasets.xjtu_sy import (XJTU_RECORDS, XJTU_SOURCE, XJTU_SAMPLE_RATE,
     XJTU_SAMPLES, XJTU_PERIOD_SECONDS, download_xjtu_sy, load_xjtu_sy_windows)
 from ..diagnostics import model_latent_trajectories, plot_latent_trajectories
@@ -62,8 +63,8 @@ def build_parser(description=None, defaults=None, *, representation='autoencoder
     parser.add_argument('--learning-rate', type=float, default=.02)
     parser.add_argument('--noise-floor', type=float, default=1e-6)
     parser.add_argument('--noise-floor-fraction', type=float, default=.05)
-    parser.add_argument('--sigma-prior', type=float, default=.1)
-    parser.add_argument('--gamma-prior', type=float, default=.1)
+    parser.add_argument('--sigma-prior', type=float, default=DEFAULT_SIGMA_PRIOR)
+    parser.add_argument('--gamma-prior', type=float, default=DEFAULT_GAMMA_PRIOR)
     parser.add_argument('--sigma-mode', choices=NOISE_MODES, default='fixed')
     parser.add_argument('--configurations', nargs='+', choices=('independent','dynamic'), default=['dynamic'])
     parser.add_argument('--hmm-switch', action=argparse.BooleanOptionalAction, default=True)

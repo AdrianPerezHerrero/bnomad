@@ -7,6 +7,8 @@ from dataclasses import dataclass, field, fields
 import json
 from typing import Literal, TYPE_CHECKING, Union
 
+from .._defaults import DEFAULT_SIGMA_PRIOR, DEFAULT_GAMMA_PRIOR
+
 if TYPE_CHECKING:
     from numpy import ndarray
     from sklearn.gaussian_process.kernels import Kernel
@@ -51,7 +53,7 @@ class GPEmissionConfig:
     fit_gp: bool = True
     ini_lengthscale: ScalarOption = None
     bound_lengthscale: Bounds = None
-    ini_sigma: ScalarOption = None
+    ini_sigma: ScalarOption = DEFAULT_SIGMA_PRIOR
     ini_outputscale: ScalarOption = None
     bound_sigma: Bounds = (1e-10, 1e10)
     inducing_points: BoolOption = False
@@ -115,7 +117,7 @@ class ObservationConfig:
 class DynamicsConfig:
     """Static/LDS controls; omitted MNIW degrees of freedom follow the schedule."""
     model_type: Literal['static', 'dynamic'] | list[Literal['static', 'dynamic']] | ndarray = 'dynamic'
-    ini_gamma: ScalarOption = None
+    ini_gamma: ScalarOption = DEFAULT_GAMMA_PRIOR
     A_policy: MatrixPolicyConfig | None = None
     Gamma_policy: NoisePolicyConfig | None = None
     bound_gamma: Bounds = (1e-1, 1e2)

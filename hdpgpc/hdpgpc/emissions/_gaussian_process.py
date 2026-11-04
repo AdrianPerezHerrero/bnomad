@@ -206,11 +206,11 @@ class GaussianProcessEmission:
         ini_A : matrix like
             DESCRIPTION. Projection step matrix. The default is Id.
         ini_Gamma : matrix like
-            DESCRIPTION. Noise associated with the subsequent process. The default is 0.01.
+            DESCRIPTION. Process covariance; defaults to 0.1 times identity.
         ini_C : matrix like
             DESCRIPTION. Projection observations matrix. The default is Id.
         ini_Sigma : matrix like
-            DESCRIPTION. Noise associated with observations. The default is 0.5**2.
+            DESCRIPTION. Observation covariance; defaults to 0.1 times identity.
 
         Returns
         -------

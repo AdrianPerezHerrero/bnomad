@@ -20,19 +20,17 @@ python examples/xenopus_autoencoder_clustering.py --download --clutches A B --ep
 The Xenopus autoencoder entry script defaults to both clutches, dynamic states,
 the `more` HDP preset, left-to-right assignments, process variance 0.1, LDS
 degrees 3, 10 latent components and up to 200 preliminary PCA components.
-Observation covariance multipliers are **0.01 for clutch A** and **0.005 for
-clutch B**. The equivalent commands with explicit settings are:
+Both prior arguments now default to **0.1 for every clutch**. Earlier
+experimental settings remain available as explicit overrides:
 
 ```sh
 python examples/xenopus_autoencoder_clustering.py --clutch A --sigma-prior 0.01
 python examples/xenopus_autoencoder_clustering.py --clutch B --sigma-prior 0.005
 ```
 
-Running that script without arguments selects these settings; individual CLI
-arguments override them. An explicit `--sigma-prior` applies to every selected
-clutch, including when its value is 0.01. Each run saves the effective value in
-its settings. The shared defaults described below still apply to
-the other expression entry scripts.
+Running without either override uses sigma-prior=0.1 and gamma-prior=0.1.
+An explicit `--sigma-prior` applies to every selected clutch; each run saves
+its effective value. The same defaults apply to all expression entry scripts.
 
 ## Observation models
 
@@ -47,8 +45,7 @@ decoder. Calibration is performed once per selected time course and shared by
 both configurations, without reference labels.
 
 Both fixed-decoder experiments default to fixed calibrated observation noise.
-`--sigma-prior` is a covariance multiplier (shared default **1**; Xenopus
-autoencoder **0.01 for A, 0.005 for B**); `--sigma-mode`
+`--sigma-prior` is a covariance multiplier (shared default **0.1**); `--sigma-mode`
 selects supported fixed, cluster, diagonal or shared covariance policies.
 These fixed-decoder scripts do not use MFA's learned-C/shared-emission controls.
 

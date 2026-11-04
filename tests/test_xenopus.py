@@ -86,7 +86,7 @@ class XenopusExperimentTests(unittest.TestCase):
             for clutch in ('A', 'B'):
                 write_fixture(root, clutch)
             run_ids = []
-            for override in (None, 0.01):
+            for override in (None, 0.1, 0.01):
                 with self.subTest(override=override):
                     flags = ['--data-dir', str(root), '--output-dir', str(root/'runs'),
                         '--components', '1', '--projection-components', '4', '--epochs', '3',
@@ -97,18 +97,19 @@ class XenopusExperimentTests(unittest.TestCase):
                     parser = build_parser(defaults=script['DEFAULTS'],
                                           representation=script['REPRESENTATION'])
                     args = parser.parse_args(flags)
-                    reports = run_xenopus(args, sigma_prior_defaults=script['SIGMA_PRIOR_DEFAULTS'])
-                    self.assertEqual(args.sigma_prior, override)  # No cross-clutch namespace mutation.
+                    reports = run_xenopus(args)
+                    expected_sigma = .1 if override is None else override
+                    self.assertEqual(args.sigma_prior, expected_sigma)  # No cross-clutch namespace mutation.
                     self.assertEqual([report['dataset'] for report in reports],
                                      ['xenopus_clutch_A', 'xenopus_clutch_B'])
                     self.assertEqual([report['status'] for report in reports], ['ok', 'ok'])
                     run_ids.append([report['run_id'] for report in reports])
                     for clutch, report in zip(('A', 'B'), reports):
                         settings = json.loads((Path(report['output_directory'])/'settings.json').read_text())['settings']
-                        self.assertEqual(settings['sigma_prior'],
-                                         override if override is not None else script['SIGMA_PRIOR_DEFAULTS'][clutch])
-            self.assertEqual(run_ids[0][0], run_ids[1][0])  # Identical effective A settings resume.
-            self.assertNotEqual(run_ids[0][1], run_ids[1][1])  # Explicit 0.01 overrides B's 0.005.
+                        self.assertEqual(settings['sigma_prior'], expected_sigma)
+                        self.assertEqual(settings['gamma_prior'], .1)
+            self.assertEqual(run_ids[0], run_ids[1])  # Explicit .1 reuses the same runs for both clutches.
+            self.assertTrue(all(a != b for a, b in zip(run_ids[0], run_ids[2])))
 
     def test_clutches_run_separately_and_preserve_stage_masks_and_prefix(self):
         from hdpgpc.experiments.xenopus import build_parser, run_xenopus
