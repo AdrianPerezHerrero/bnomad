@@ -1,5 +1,11 @@
 # 0.3.0 — native implementation migration
 
+- Fixed initial GP-prior recognition after kernel cloning so machine-rounding
+  differences cannot add an unintended LDS prediction step. Added a one-ulp
+  regression and retained the learned-covariance evolution check. Portability
+  checks cover fitted noise metadata and saved warp optimizer controls while
+  retaining scientific-output and exact-repeat checks.
+
 - Standardized core and all dataset-runner sigma/gamma noise prior defaults to
   0.1, including Xenopus clutch defaults. Explicit recipes and fixed covariance
   policies retain their specified values; see docs/noise_priors.md.

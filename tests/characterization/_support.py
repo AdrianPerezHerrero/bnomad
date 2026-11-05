@@ -40,12 +40,12 @@ ATOL = 1e-9
 
 
 def snapshot_tolerances(path):
-    # Optimized warm-start controls differ by up to 3.36e-8 on Windows.
+    # Optimized warm-start controls differ by up to 1.02e-7 on Windows.
     # Returned offsets, aligned curves, scores and every other state retain
     # the original bounds; exact comparisons never consult this exception.
     warm_start = re.fullmatch(
         r'warper_(?:scalar|batch)\.calls\[\d+\]\.warm_start\.values\[\d+\]', path)
-    return RTOL, 5e-8 if warm_start else ATOL
+    return RTOL, 2e-7 if warm_start else ATOL
 
 
 _thread_limit = threadpool_limits(limits=1)

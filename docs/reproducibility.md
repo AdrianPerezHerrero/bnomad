@@ -65,16 +65,32 @@ float32 warp covariance differed by 5.96e-8, and fitted GP log-kernel parameters
 by 3.71e-7. The covariance/gradient fixture permits `rtol=2*eps, atol=eps/4`
 only for float32 (float64 remains exact). Only optimized `kernel_theta` snapshot
 leaves permit an absolute 1e-6 difference in log space, approximately one part
-per million in the positive parameters. Other scientific outputs retain their
-existing bounds. A regression test rejects larger parameter changes and altered
-covariance predictions. No fixture or model prior was changed for these checks.
+per million in the positive parameters. The reduced-grid `alpha_ini` metadata,
+which is that fitted noise times identity, uses the corresponding relative
+`expm1(1e-6)` bound with zero absolute tolerance. Its equality to the actual
+fitted kernel noise is checked separately; off-diagonal entries remain zero.
+Other scientific outputs retain their existing bounds. Regression checks reject
+larger parameter changes and altered covariance predictions. No fixture or model
+prior was changed for these checks.
+
+The November 5 CI investigation also identified an initial-prior branch bug:
+cloning a fitted sklearn kernel can shift its reconstructed covariance by one
+floating-point unit. Bitwise equality then incorrectly adds process noise before
+the first observation, producing a much larger posterior change. The GP filter
+now recognizes the initial kernel prior within eight dtype epsilons at the
+kernel covariance matrix's scale, without a fixed absolute tolerance floor.
+A one-ulp regression checks the result
+against the closed-form Gaussian posterior; a genuinely changed covariance
+still advances through A and Gamma. Frozen inference-trace tolerances and
+reference files are unchanged.
 
 The remaining jobs in that hosted run also exposed Windows optimizer
 rounding and Python-version differences. Alignment objective/penalty trace
 scalars (`loss`, `data`, `smooth`, `amp`) permit an absolute 1e-12 difference;
 the observed first differences were around 1e-14. The scalar/batch warper
-characterization permits absolute 5e-8 differences only in saved warm-start
-control leaves (observed maximum 3.36e-8). Returned offsets, aligned curves,
+characterization permits absolute 2e-7 differences only in saved warm-start
+control leaves (observed difference 1.012e-7 in the November 4 Windows jobs).
+Returned offsets, aligned curves,
 scores and other scientific outputs retain their existing bounds. Exact
 fresh-process repeat hashes remain mandatory, including warm-start controls.
 
