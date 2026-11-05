@@ -72,6 +72,8 @@ def build_parser(dataset='mitbih', representation='waveform', description=None, 
     parser.add_argument('--learning-rate', type=float, default=.02)
     parser.add_argument('--noise-floor', type=float, default=1e-6)
     parser.add_argument('--noise-floor-fraction', type=float, default=.05)
+    parser.add_argument('--trajectory-plots', action=argparse.BooleanOptionalAction, default=False,
+                        help='Plot retained latent-state trajectories (offline inference only).')
     parser.add_argument('--sigma-mode', choices=NOISE_MODES)
     parser.add_argument('--calibrate-lds-noise-priors', action=argparse.BooleanOptionalAction, default=False)
     if dataset == 'daphnet':
@@ -166,7 +168,7 @@ def run_record(values, labels, grid, args, run, metadata, row_metadata, colors=N
         centers, scales = values[0].mean(0), values[0].std(0)
         values, _ = prepare_sequences(values, channels=tuple(range(values.shape[2])), scale_from_first=True)
         np.savez_compressed(run.path / 'normalization.npz', centers=centers, scales=scales)
-    decoder, codes, extra_figures = None, None, None
+    decoder, codes, calibration_figures = None, None, None
     if args.representation != 'waveform':
         if values.shape[2] != 1 or alignment_policy(args) != 'none' or args.lds_inducing_points:
             raise ValueError('Fixed affine records require one output, no warp and no inducing grid')
@@ -183,7 +185,7 @@ def run_record(values, labels, grid, args, run, metadata, row_metadata, colors=N
                 noise_floor_fraction=args.noise_floor_fraction)
             decoder = estimate.model
             np.savez_compressed(run.path / 'training.npz', losses=estimate.losses, indices=estimate.indices)
-            def extra_figures():
+            def calibration_figures():
                 from ..diagnostics._calibration_plots import plot_autoencoder_calibration
                 return {'autoencoder_calibration': plot_autoencoder_calibration(
                     values, estimate.network, estimate.indices, estimate.losses)}
@@ -224,6 +226,23 @@ def run_record(values, labels, grid, args, run, metadata, row_metadata, colors=N
     model = HDPGPC(config).fit(values, grid=grid, birth_diagnostic_limit=args.birth_plots)
     metadata.update(evaluation='in-sample ordered clustering; calibration prefixes are replayed',
                     waveform_points=len(grid))
+
+    def extra_figures():
+        figures = calibration_figures() if calibration_figures is not None else {}
+        if getattr(args, 'trajectory_plots', False):
+            from ..diagnostics import plot_latent_trajectories
+            is_ecg = args.dataset == 'mitbih'
+            times = row_metadata['source_row'] if is_ecg else row_metadata['start_seconds']
+            for output in range(values.shape[2]):
+                name = ('latent_trajectories' if values.shape[2] == 1 else
+                        f'latent_trajectories_output_{output}')
+                figures[name] = plot_latent_trajectories(model, times=times, output=output,
+                    title=f'{run.dataset}: {args.representation}, output {output}; {config.dynamics.clock}',
+                    min_cluster_samples=args.min_cluster_samples,
+                    time_label='Beat index' if is_ecg else 'Window start time (s)',
+                    time_unit='' if is_ecg else 's', observation_label='beats' if is_ecg else 'windows')
+        return figures
+
     return save_results(run, model, values, labels, grid, args, ordered=True,
         metadata=metadata, row_metadata=row_metadata, codes=codes,
         projection_name=args.representation.upper(), annotation_colors=colors,
@@ -240,6 +259,8 @@ def run_records(args, parser=None):
         raise ValueError('Prior and GP scales must be positive and finite')
     if args.birth_plots and args.schedule != 'offline':
         raise ValueError('Birth diagnostic plots require offline inference')
+    if getattr(args, 'trajectory_plots', False) and args.plots and args.schedule != 'offline':
+        raise ValueError('--trajectory-plots requires --schedule offline for full posterior histories')
     for bounds, initial in ((args.lengthscale_bounds, args.lengthscale), (args.gp_noise_bounds, args.gp_noise),
                             (args.gp_outputscale_bounds, args.gp_outputscale),
                             (args.sigma_bounds, args.sigma_prior if args.representation == 'waveform' else None),

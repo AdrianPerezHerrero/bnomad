@@ -18,6 +18,25 @@ in their dedicated runners). It affects the fixed Sigma or the learned Sigma
 prior center. `--gamma-prior` also defaults to 0.1 and sets Gamma's prior center
 to that scalar times identity. The calibrated initial state covariance is separate.
 
+All three MIT-BIH scripts support optional `--trajectory-plots` with offline
+inference, for either dynamics clock:
+
+```sh
+python examples/mitbih_autoencoder_clustering.py --records 207 --dynamics-clock physical-clock --trajectory-plots
+```
+
+The run folder contains `latent_trajectories.png`, with smoothed state paths,
+posterior uncertainty and one-step changes under the final A. Multi-channel
+waveform runs save one `latent_trajectories_output_N.png` per selected output.
+The axis uses beat index: the bundled arrays do not contain beat timestamps,
+so a physical-clock tick here means one beat observation, not a fixed number
+of seconds. Physical-clock plots include propagated states between observations
+retained by a cluster. The autoencoder calibration figure is also retained.
+Use `--no-trajectory-plots` to disable this diagnostic, or `--no-plots` to
+disable all figures. The diagnostic defaults to off; online/online-fast runs
+do not retain the full histories it requires. `--min-cluster-samples` controls
+which clusters receive trajectory panels, as for other diagnostics.
+
 ```python
 from hdpgpc import HDPGPC
 from hdpgpc.preprocessing import prepare_sequences

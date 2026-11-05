@@ -1,6 +1,7 @@
 """MITBIH autoencoder record experiment.
 
 python examples/mitbih_autoencoder_clustering.py --records 100
+python examples/mitbih_autoencoder_clustering.py --records 207 --dynamics-clock physical-clock --trajectory-plots
 python examples/mitbih_autoencoder_clustering.py --records 100 --schedule online_fast
 python examples/mitbih_autoencoder_clustering.py --records all --resume
 

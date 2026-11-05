@@ -67,6 +67,29 @@ for _name in CASES:
 
 
 class SnapshotPrecisionTests(unittest.TestCase):
+    def test_determinism_file_paths_use_the_same_baseline_rules(self):
+        from .verify_determinism import assert_baseline_snapshot
+        for case in ('warper_scalar', 'warper_batch'):
+            with self.subTest(case=case):
+                expected = json.loads((BASELINES/(case+'.json')).read_text(encoding='utf-8'))
+                actual = copy.deepcopy(expected)
+                actual['calls'][1]['warm_start']['values'][0] += 1.012e-7
+                # Exercise the filename-taking entry point used by the CLI.
+                assert_baseline_snapshot(actual, expected, case+'.json')
+                with self.assertRaises(AssertionError):
+                    assert_snapshot(self, actual, expected, path=case, exact=True)
+                actual['calls'][1]['warm_start']['values'][0] += 1e-5
+                with self.assertRaises(AssertionError):
+                    assert_baseline_snapshot(actual, expected, case+'.json')
+                actual = copy.deepcopy(expected)
+                # Scalar offsets are (T,1); batch offsets are (B,T,1).
+                values = actual['calls'][1]['result'][0]['values']
+                while isinstance(values[0], list):
+                    values = values[0]
+                values[0] += 1e-7
+                with self.assertRaises(AssertionError):
+                    assert_baseline_snapshot(actual, expected, case+'.json')
+
     def test_optimizer_control_bound_keeps_warp_outputs_and_exact_checks_strict(self):
         expected = json.loads((BASELINES/'warper_scalar.json').read_text(encoding='utf-8'))
         actual = copy.deepcopy(expected)

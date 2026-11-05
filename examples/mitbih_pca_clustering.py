@@ -1,6 +1,7 @@
 """MIT-BIH PCA affine record experiment.
 
 python examples/mitbih_pca_clustering.py --records 100 --components 12
+python examples/mitbih_pca_clustering.py --records 207 --dynamics-clock physical-clock --trajectory-plots
 python examples/mitbih_pca_clustering.py --records 100 --offline-strategy split_merge --sigma-mode cluster_diagonal
 python examples/mitbih_pca_clustering.py --records 100 --schedule online_fast
 python examples/mitbih_pca_clustering.py --records all --resume

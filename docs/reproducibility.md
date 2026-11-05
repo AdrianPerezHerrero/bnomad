@@ -34,6 +34,10 @@ finite floats use the same tolerance. Narrowly scoped portability exceptions
 are documented below. Fresh repeated captures must still match
 one another byte for byte, including a run with reversed case order. Never regenerate a
 reference merely because a test fails. Investigate the first changed quantity.
+The verifier uses case names without the snapshot's `.json` suffix when applying
+these baseline rules, matching the unit tests. Reports distinguish exact-repeat
+differences from baseline differences, including the first mismatched field;
+both checks must pass. Matching repeats alone do not establish baseline agreement.
 
 For maintainers, from the repository or unpacked source archive:
 
@@ -69,7 +73,17 @@ per million in the positive parameters. The reduced-grid `alpha_ini` metadata,
 which is that fitted noise times identity, uses the corresponding relative
 `expm1(1e-6)` bound with zero absolute tolerance. Its equality to the actual
 fitted kernel noise is checked separately; off-diagonal entries remain zero.
-Other scientific outputs retain their existing bounds. Regression checks reject
+For the reduced-grid interpolated query covariance, `pred_dist` adds that
+fitted WhiteKernel variance once on the diagonal. The snapshot comparison
+subtracts the actual-minus-reference fitted-noise difference times identity
+before applying the original covariance bounds. A real-model regression
+verifies this exact dependence; unrelated diagonal/off-diagonal covariance
+changes still fail. Query means and other scientific outputs retain their
+existing bounds. The reduced-grid log density is also compared at the common
+reference fitted noise, using the actual learned posterior. Its raw value is
+separately checked against Gaussian log-density/latent-trace algebra at two
+noise levels, and the original captured value must match the model output.
+Regression checks reject
 larger parameter changes and altered covariance predictions. No fixture or model
 prior was changed for these checks.
 
