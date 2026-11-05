@@ -9,7 +9,7 @@ import pickle
 import unittest
 from unittest.mock import patch
 
-from emission_cases import MODES, make_emission, reset, run_case, snapshot, np, torch
+from emission_cases import MODES, make_emission, reset, run_case, snapshot, encode, np, torch
 from hdpgpc.emissions import EmissionModel, GaussianProcessEmission
 from hdpgpc.emissions import _gaussian_process as legacy
 
@@ -21,9 +21,12 @@ class EmissionTests(unittest.TestCase):
     def setUp(self):
         reset()
 
-    def compare(self, actual, expected, path="state"):
+    def compare(self, actual, expected, path="state", *, fitted_noise_delta=0.):
         if isinstance(expected, dict):
             self.assertEqual(set(actual), set(expected), path)
+            if path == 'reduced':
+                fitted_noise_delta = (math.exp(actual['kernel_theta']['values'][-1])
+                                      - math.exp(expected['kernel_theta']['values'][-1]))
             if set(expected) == {"dtype", "shape", "values"}:
                 self.assertEqual(actual["dtype"], expected["dtype"], path)
                 self.assertEqual(actual["shape"], expected["shape"], path)
@@ -34,25 +37,49 @@ class EmissionTests(unittest.TestCase):
                 # dtype, optimizer settings and counts retain their checks.
                 optimized_kernel = path.endswith('.kernel_theta')
                 optimized_noise = path == 'reduced.alpha_ini'
-                np.testing.assert_allclose(actual["values"], expected["values"],
+                values = actual['values']
+                if path == 'reduced.query[1]':
+                    # pred_dist adds WhiteKernel noise exactly once to the
+                    # query diagonal. Compare at the reference fitted noise;
+                    # keep all remaining covariance entries at original bounds.
+                    values = np.asarray(values) - fitted_noise_delta*np.eye(actual['shape'][0])
+                np.testing.assert_allclose(values, expected["values"],
                     rtol=0 if optimized_kernel else (np.expm1(1e-6) if optimized_noise else 1e-7),
                     atol=1e-6 if optimized_kernel else (0. if optimized_noise else 1e-9), err_msg=path)
             else:
                 for key in expected:
-                    self.compare(actual[key], expected[key], f"{path}.{key}")
+                    self.compare(actual[key], expected[key], f"{path}.{key}",
+                                 fitted_noise_delta=fitted_noise_delta)
         elif isinstance(expected, list):
             self.assertEqual(len(actual), len(expected), path)
             for i, (a, e) in enumerate(zip(actual, expected)):
-                self.compare(a, e, f"{path}[{i}]")
+                self.compare(a, e, f"{path}[{i}]", fitted_noise_delta=fitted_noise_delta)
         else:
             self.assertEqual(actual, expected, path)
+
+    def compare_fitted_snapshot(self, model, state, expected, mode):
+        comparable = state
+        if mode == 'reduced':
+            # A log density also depends on the fitted query-noise diagonal.
+            # Compare it at common noise, keeping the actual learned posterior.
+            # Verify the original captured score before re-evaluating it.
+            _, x, y = make_emission(mode)
+            self.assertEqual(state['score'], encode(model.log_sq_error(x, y, i=-1)))
+            noise = model.gp.kernel.k2.noise_level
+            comparable = dict(state)
+            try:
+                model.gp.kernel.k2.noise_level = math.exp(expected['kernel_theta']['values'][-1])
+                comparable['score'] = encode(model.log_sq_error(x, y, i=-1))
+            finally:
+                model.gp.kernel.k2.noise_level = noise
+        self.compare(comparable, expected, mode)
 
     def test_real_training_predictions_states_and_optimizer_match_original(self):
         for mode in MODES:
             with self.subTest(mode=mode):
                 model, state = run_case(mode, GaussianProcessEmission)
                 self.assertIs(type(model), legacy.GaussianProcessEmission)
-                self.compare(state, REFERENCE["cases"][mode], mode)
+                self.compare_fitted_snapshot(model, state, REFERENCE["cases"][mode], mode)
                 if mode == 'reduced':
                     # alpha is the fitted kernel noise, not a free tolerance.
                     np.testing.assert_array_equal(state['alpha_ini']['values'],
@@ -73,8 +100,19 @@ class EmissionTests(unittest.TestCase):
         actual['kernel_theta']['values'][2] += 4e-7
         noise = math.exp(actual['kernel_theta']['values'][2])
         actual['alpha_ini']['values'] = (noise * np.eye(len(actual['alpha_ini']['values']))).tolist()
+        covariance = np.asarray(actual['query'][1]['values'])
+        delta = noise - math.exp(expected['kernel_theta']['values'][2])
+        actual['query'][1]['values'] = (covariance + delta*np.eye(len(covariance))).tolist()
         self.compare(actual, expected, 'reduced')
         actual['kernel_theta']['values'][2] += 1e-3
+        with self.assertRaises(AssertionError):
+            self.compare(actual, expected, 'reduced')
+        actual = copy.deepcopy(expected)
+        actual['query'][1]['values'][0][0] += 1e-5
+        with self.assertRaises(AssertionError):
+            self.compare(actual, expected, 'reduced')
+        actual = copy.deepcopy(expected)
+        actual['query'][1]['values'][0][1] += 1e-5
         with self.assertRaises(AssertionError):
             self.compare(actual, expected, 'reduced')
         actual = copy.deepcopy(expected)
@@ -96,6 +134,60 @@ class EmissionTests(unittest.TestCase):
         clone = pickle.loads(pickle.dumps(model))
         self.assertIs(type(clone), GaussianProcessEmission)
         self.compare(snapshot(clone, x, y, expected['optimizer']), expected)
+
+    def test_reduced_snapshot_handles_consistent_fitted_noise_roundoff(self):
+        from hdpgpc.emissions._prior import GaussianProcessPrior
+        original = GaussianProcessPrior.fit_torch
+
+        def shifted_noise(prior, *args, **kwargs):
+            result = original(prior, *args, **kwargs)
+            # Match the hosted fitted-noise drift after actual optimization.
+            prior.kernel.k2.noise_level *= math.exp(3.71128256e-7)
+            identity = torch.eye(len(prior.x_basis), dtype=prior.alpha_ini.dtype,
+                                 device=prior.alpha_ini.device)
+            prior.assign_alpha_ini(prior.kernel.k2.noise_level*identity, prior.gamma_ini)
+            return result
+
+        with patch.object(GaussianProcessPrior, 'fit_torch', shifted_noise):
+            model, state = run_case('reduced', GaussianProcessEmission)
+        self.compare_fitted_snapshot(model, state, REFERENCE['cases']['reduced'], 'reduced')
+        corrupted = copy.deepcopy(state)
+        corrupted['score']['values'] += 1e-5
+        with self.assertRaises(AssertionError):
+            self.compare_fitted_snapshot(model, corrupted, REFERENCE['cases']['reduced'], 'reduced')
+
+    def test_reduced_query_covariance_adds_fitted_white_noise_on_the_diagonal(self):
+        model, _ = run_case('reduced', GaussianProcessEmission)
+        _, x, y = make_emission('reduced')
+        query = torch.linspace(0., 4., 7)[:, None]
+        mean, covariance = model.observe_last(query)
+        noise = model.gp.kernel.k2.noise_level
+        try:
+            model.gp.kernel.k2.noise_level = noise*1.01
+            changed_mean, changed_covariance = model.observe_last(query)
+            torch.testing.assert_close(changed_mean, mean, rtol=0, atol=0)
+            torch.testing.assert_close(changed_covariance-covariance,
+                (model.gp.kernel.k2.noise_level-noise)*torch.eye(len(query)), rtol=0, atol=1e-12)
+            # Check the raw score with independent NumPy Gaussian algebra at
+            # both fitted-noise values, including latent uncertainty/jitter.
+            for variance in (noise, noise*1.01):
+                model.gp.kernel.k2.noise_level = variance
+                m, R = model.observe(x, -1, final_lds=True, smoothed=True)
+                basis = model.x_basis.numpy()
+                K = model.gp.kernel(basis, basis)
+                K += 1e-8*np.mean(np.abs(np.diag(K)))*np.eye(len(K))
+                H = np.linalg.solve(K, model.gp.kernel(basis, x.numpy())).T
+                C, P = model.C[-1].numpy(), model.cov_f_sm[-1].numpy()
+                latent = H @ C @ P @ C.T @ H.T
+                R = R.numpy()
+                R = .5*(R+R.T) + 1e-8*np.mean(np.abs(np.diag(R)))*np.eye(len(R))
+                residual = y.numpy()-m.numpy()
+                expected = -.5*(float((residual.T @ np.linalg.solve(R, residual)).item())
+                    + np.trace(np.linalg.solve(R, latent)) + np.linalg.slogdet(R)[1]
+                    + len(R)*np.log(2*np.pi))
+                self.assertAlmostEqual(model.log_sq_error(x, y, i=-1).item(), expected, places=10)
+        finally:
+            model.gp.kernel.k2.noise_level = noise
 
     def test_prior_white_noise_and_static_dynamic_initialization(self):
         for mode in ("exact", "static"):

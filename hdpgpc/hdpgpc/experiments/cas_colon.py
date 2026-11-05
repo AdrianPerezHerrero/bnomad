@@ -31,7 +31,7 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
                     offline_strategy='split_merge', split_merge_refine_steps=1,
                     exploration_steps=5, hdp_preset='balanced',
                     fit_gp=False, alignment='none', lds_plots=False,
-                    lds_dynamics_plots=False)
+                    lds_dynamics_plots=False, trajectory_plots=True)
     if representation in ('autoencoder', 'linear_prediction'):
         selected['epochs'] = 250
     if representation == 'mfa':
@@ -48,7 +48,6 @@ def build_parser(description=None, defaults=None, *, representation='pca'):
     parser.add_argument('--gap-policy', choices=('split', 'error'), default='split')
     parser.add_argument('--frames-per-cluster', type=int, default=10,
                         help='Maximum randomly sampled gallery frames per cluster (default: 10; uses --seed).')
-    parser.add_argument('--trajectory-plots', action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument('--hmm-switch', action=argparse.BooleanOptionalAction, default=representation != 'mfa')
     if representation == 'mfa':
         parser.add_argument('--dynamic', action=argparse.BooleanOptionalAction, default=False,

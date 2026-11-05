@@ -1,5 +1,15 @@
 # 0.3.0 — native implementation migration
 
+- Fixed determinism verification to use the same case-relative baseline paths
+  as unit tests and report exact per-case differences. Repeated captures still
+  require byte-for-byte equality.
+- Verified reduced-grid query covariance at the reference fitted white-noise
+  value, accounting for the exact diagonal noise term while retaining the
+  original residual covariance and prediction checks.
+
+- Added opt-in offline latent-trajectory plots to MIT-BIH waveform, PCA and
+  autoencoder scripts through the shared record runner, with both dynamics clocks.
+
 - Fixed initial GP-prior recognition after kernel cloning so machine-rounding
   differences cannot add an unintended LDS prediction step. Added a one-ulp
   regression and retained the learned-covariance evolution check. Portability

@@ -1,6 +1,7 @@
 """MITBIH waveform record experiment.
 
 python examples/mitbih_waveform_clustering.py --records 100
+python examples/mitbih_waveform_clustering.py --records 207 --trajectory-plots
 python examples/mitbih_waveform_clustering.py --records 100 --schedule online_fast
 python examples/mitbih_waveform_clustering.py --records all --resume
 
