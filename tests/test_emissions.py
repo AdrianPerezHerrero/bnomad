@@ -29,12 +29,14 @@ class EmissionTests(unittest.TestCase):
                 self.assertEqual(actual["shape"], expected["shape"], path)
                 # Adam's final log-kernel parameters vary slightly across CPU
                 # builds. An absolute 1e-6 log-space bound permits about 1 ppm kernel
-                # parameter variation. All scientific outputs keep the original
-                # tolerance; shapes, dtype, optimizer settings and counts stay exact.
+                # parameter variation. Its derived reduced-grid alpha uses the
+                # same relative noise bound. Predictions, posteriors, shapes,
+                # dtype, optimizer settings and counts retain their checks.
                 optimized_kernel = path.endswith('.kernel_theta')
+                optimized_noise = path == 'reduced.alpha_ini'
                 np.testing.assert_allclose(actual["values"], expected["values"],
-                                           rtol=0 if optimized_kernel else 1e-7,
-                                           atol=1e-6 if optimized_kernel else 1e-9, err_msg=path)
+                    rtol=0 if optimized_kernel else (np.expm1(1e-6) if optimized_noise else 1e-7),
+                    atol=1e-6 if optimized_kernel else (0. if optimized_noise else 1e-9), err_msg=path)
             else:
                 for key in expected:
                     self.compare(actual[key], expected[key], f"{path}.{key}")
@@ -51,6 +53,10 @@ class EmissionTests(unittest.TestCase):
                 model, state = run_case(mode, GaussianProcessEmission)
                 self.assertIs(type(model), legacy.GaussianProcessEmission)
                 self.compare(state, REFERENCE["cases"][mode], mode)
+                if mode == 'reduced':
+                    # alpha is the fitted kernel noise, not a free tolerance.
+                    np.testing.assert_array_equal(state['alpha_ini']['values'],
+                        model.gp.kernel.k2.noise_level * np.eye(len(model.x_basis)))
 
     def test_public_identity_and_structural_interface(self):
         self.assertIs(GaussianProcessEmission, GaussianProcessEmission)
@@ -65,8 +71,18 @@ class EmissionTests(unittest.TestCase):
         expected = REFERENCE['cases']['reduced']
         actual = copy.deepcopy(expected)
         actual['kernel_theta']['values'][2] += 4e-7
+        noise = math.exp(actual['kernel_theta']['values'][2])
+        actual['alpha_ini']['values'] = (noise * np.eye(len(actual['alpha_ini']['values']))).tolist()
         self.compare(actual, expected, 'reduced')
         actual['kernel_theta']['values'][2] += 1e-3
+        with self.assertRaises(AssertionError):
+            self.compare(actual, expected, 'reduced')
+        actual = copy.deepcopy(expected)
+        actual['alpha_ini']['values'][0][0] += 1e-5
+        with self.assertRaises(AssertionError):
+            self.compare(actual, expected, 'reduced')
+        actual = copy.deepcopy(expected)
+        actual['alpha_ini']['values'][0][1] = 1e-12
         with self.assertRaises(AssertionError):
             self.compare(actual, expected, 'reduced')
         actual = copy.deepcopy(expected)

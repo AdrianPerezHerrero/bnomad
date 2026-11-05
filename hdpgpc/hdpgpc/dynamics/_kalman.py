@@ -113,7 +113,12 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
         K_cov = torch.linalg.solve((K_X_X + jitter).T, K_Xs_X.T).T
     P_t = A @ x_basis_cov @ A.T + Gamma
     # First step where initial covariance is needed as a prior, using initial Sigma computed by the GP optim.
-    if torch.equal(cov_prior, K_X_X):
+    # Cloning a fitted sklearn kernel round-trips its log parameters through
+    # exp/log. CPU libraries can move the reconstructed covariance by a few
+    # ulps; that must not turn the initial GP prior into an LDS prediction.
+    # Keep the comparison at machine precision, far below learned changes.
+    prior_tolerance = 8 * torch.finfo(K_X_X.dtype).eps * K_X_X.abs().max()
+    if (cov_prior - K_X_X).abs().max() <= prior_tolerance:
         P_t = x_basis_cov
         f_star, cov_f = backend.pred_dist(x_warped, backend.x_basis,
                                           C @ x_basis_mean, Sigma)

@@ -107,6 +107,40 @@ class DynamicsComponentTests(unittest.TestCase):
         torch.testing.assert_close(Gamma, torch.zeros_like(Gamma), rtol=0, atol=0)
         self.assertFalse(torch.equal(Sigma, params[3]))
 
+    def test_kernel_clone_roundoff_keeps_the_initial_prior_filter(self):
+        model, x, y, params, means, _ = setup('linear')
+        A, Gamma, C, Sigma = params
+        # Far off-diagonals amplify relative lengthscale roundoff; compare at
+        # the covariance matrix's scale rather than each individual entry.
+        model.gp.kernel.k1.k2.length_scale = 1.
+        prior = torch.tensor(model.gp.kernel(x, x))
+        predicted_mean = A @ means[0]
+        expected_cov = torch.linalg.inv(torch.linalg.inv(prior)
+                                       + C.T @ torch.linalg.solve(Sigma, C))
+        expected_mean = expected_cov @ (torch.linalg.solve(prior, predicted_mean)
+                                       + C.T @ torch.linalg.solve(Sigma, y))
+        # One-ulp changes reproduce the CI covariance jump after kernel cloning.
+        for kernel, attribute in ((model.gp.kernel.k1.k1, 'constant_value'),
+                                  (model.gp.kernel.k1.k2, 'length_scale')):
+            with self.subTest(parameter=attribute):
+                value = getattr(kernel, attribute)
+                setattr(kernel, attribute, np.nextafter(value, np.inf))
+                try:
+                    self.assertFalse(torch.equal(prior, torch.tensor(model.gp.kernel(x, x))))
+                    mean, covariance = model.gp.posterior(means[0], prior, y, *params, x_train=x)
+                    torch.testing.assert_close(mean, expected_mean, rtol=1e-12, atol=1e-14)
+                    torch.testing.assert_close(covariance, expected_cov, rtol=1e-12, atol=1e-14)
+                finally:
+                    setattr(kernel, attribute, value)
+
+        # A real covariance change still advances the LDS, including Gamma.
+        evolved = prior + 1e-8 * torch.eye(len(x))
+        predicted_cov = A @ evolved @ A.T + Gamma
+        expected_cov = torch.linalg.inv(torch.linalg.inv(predicted_cov)
+                                       + C.T @ torch.linalg.solve(Sigma, C))
+        _, covariance = model.gp.posterior(means[0], evolved, y, *params, x_train=x)
+        torch.testing.assert_close(covariance, expected_cov, rtol=1e-12, atol=1e-14)
+
     def test_initializers_follow_existing_global_dtype_and_do_not_change_it(self):
         try:
             for dtype in (torch.float32, torch.float64):

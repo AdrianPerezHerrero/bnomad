@@ -1,6 +1,7 @@
 """Golden comparisons of current behavior, including two known failure paths."""
 
 from contextlib import redirect_stdout
+import copy
 import io
 import json
 from pathlib import Path
@@ -63,6 +64,24 @@ def _case_test(name):
 
 for _name in CASES:
     setattr(CharacterizationTests, f"test_{_name}", _case_test(_name))
+
+
+class SnapshotPrecisionTests(unittest.TestCase):
+    def test_optimizer_control_bound_keeps_warp_outputs_and_exact_checks_strict(self):
+        expected = json.loads((BASELINES/'warper_scalar.json').read_text(encoding='utf-8'))
+        actual = copy.deepcopy(expected)
+        # Observed Windows control drift is 1.012e-7; outputs are unchanged.
+        actual['calls'][1]['warm_start']['values'][0] -= 1.012e-7
+        assert_snapshot(self, actual, expected, path='warper_scalar')
+        with self.assertRaises(AssertionError):
+            assert_snapshot(self, actual, expected, path='warper_scalar', exact=True)
+        actual['calls'][1]['warm_start']['values'][0] += 1e-5
+        with self.assertRaises(AssertionError):
+            assert_snapshot(self, actual, expected, path='warper_scalar')
+        actual = copy.deepcopy(expected)
+        actual['calls'][1]['result'][0]['values'][0][0] += 1e-7
+        with self.assertRaises(AssertionError):
+            assert_snapshot(self, actual, expected, path='warper_scalar')
 
 
 if __name__ == "__main__":
