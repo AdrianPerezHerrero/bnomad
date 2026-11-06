@@ -23,6 +23,7 @@ class SamplingTrajectory:
     predicted_covariances: list = field(default_factory=list)
     matrices: list = field(default_factory=list)
     noises: list = field(default_factory=list)
+    offsets: list = field(default_factory=list)
     observations: dict = field(default_factory=dict)
     parameter_tick: int = 0
     shared_parameter_tick: int = 0
@@ -69,6 +70,8 @@ def advance(emission, index):
         A, Q = emission.A[-1], emission.Gamma[-1]
         if t:
             mean = A @ state.filtered_means[-1]
+            if getattr(emission, 'constant_input', False):
+                mean = mean + emission.b[-1]
             covariance = _symmetric(A @ state.filtered_covariances[-1] @ A.T+Q)
         else:
             mean, covariance = state.prior_mean, state.prior_covariance
@@ -80,6 +83,8 @@ def advance(emission, index):
         state.covariances.append(covariance.detach().clone())
         state.matrices.append(A.detach().clone())
         state.noises.append(Q.detach().clone())
+        if getattr(emission, 'constant_input', False):
+            state.offsets.append(emission.b[-1].detach().clone())
     return state
 
 
@@ -102,6 +107,8 @@ def state_at(emission, index=None, *, smoothed=True):
     for _ in range(start,index+1):
         A,Q=emission.A[-1],emission.Gamma[-1]
         mean=A @ mean; covariance=_symmetric(A @ covariance @ A.T+Q)
+        if getattr(emission, 'constant_input', False):
+            mean = mean + emission.b[-1]
     return mean,covariance
 
 
@@ -277,6 +284,8 @@ def update_parameters(emission,weight=1.,*,batch=False,full_data=False,first_obs
     observed=indices if batch or full_data else [last]
     obs,roots=observation_statistics(emission,observed)
     A,Q,C,R=emission.A[-1],emission.Gamma[-1],emission.C[-1],emission.Sigma[-1]
+    constant_input = getattr(emission, 'constant_input', False)
+    b = emission.b[-1] if constant_input else None
     new_internal=getattr(emission,'internal_params',None)
     new_observation=getattr(emission,'observation_params',None)
     try:
@@ -285,6 +294,8 @@ def update_parameters(emission,weight=1.,*,batch=False,full_data=False,first_obs
                 new_internal=_posterior(emission,emission.internal_params,trans,batch=batch)
                 A=new_internal.get_mean()
                 Q=_trajectory._lds_scale(emission,new_internal,final=batch or full_data)
+                if constant_input:
+                    b = new_internal.get_intercept()
             if getattr(emission,'observation_policy',None) is None:
                 new_observation=_posterior(emission,emission.observation_params,obs,batch=batch,roots=roots)
                 C=new_observation.get_mean()
@@ -296,8 +307,32 @@ def update_parameters(emission,weight=1.,*,batch=False,full_data=False,first_obs
                 matrix=torch.linalg.solve(_positive(sxx),syx.T).T
                 noise=(syy-matrix @ syx.T-syx @ matrix.T+matrix @ sxx @ matrix.T)/mass
                 return matrix,_positive(noise)
-            if trans is not None:A,Q=fit(trans)
-            C,R=fit(obs)
+            if trans is not None:
+                if constant_input:
+                    from ._affine import fit_transition_moments
+                    policies = getattr(emission, 'lds_pair_policies', None)
+                    matrix_policy, noise_policy = (policies['transition'] if policies is not None
+                                                   else (None, None))
+                    A,b,Q=fit_transition_moments(A,Q,*trans,intercept=b,
+                        matrix_policy=matrix_policy,noise_policy=noise_policy)
+                else:
+                    A,Q=fit(trans)
+            if constant_input:
+                if getattr(emission, 'observation_policy', None) is None:
+                    mass,y,x,yy,xx,yx=obs
+                    syy=y @ y.T+yy;sxx=x @ x.T+xx;syx=y @ x.T+yx
+                    policies = getattr(emission, 'lds_pair_policies', None)
+                    matrix_policy, noise_policy = (policies['observation'] if policies is not None
+                                                   else (None, None))
+                    if matrix_policy is None or matrix_policy.mode != 'fixed':
+                        C=torch.linalg.solve(_positive(sxx),syx.T).T
+                    if noise_policy is None or noise_policy.mode != 'fixed':
+                        noise=(syy-C @ syx.T-syx @ C.T+C @ sxx @ C.T)/mass
+                        if noise_policy is not None and 'diagonal' in noise_policy.mode:
+                            noise=torch.diag(torch.diag(noise))
+                        R=_positive(noise)
+            else:
+                C,R=fit(obs)
     except torch.linalg.LinAlgError as error:
         emission._lds_update_failures=getattr(emission,'_lds_update_failures',0)+1
         if emission.verbose:
@@ -317,10 +352,14 @@ def update_parameters(emission,weight=1.,*,batch=False,full_data=False,first_obs
     if not emission.bayesian and check_var:R=emission.check_bound_sigma(R)
     if batch:
         emission.A[-1],emission.Gamma[-1]=A,Q
+        if constant_input:
+            emission.b[-1] = b
         emission.C[-1],emission.Sigma[-1]=C,R
     else:
         for name,value in (('A',A),('Gamma',Q),('C',C),('Sigma',R)):
             getattr(emission,name).append(value)
+        if constant_input:
+            emission.b.append(b)
     var=torch.diag(Q).clamp_min(0).sqrt().reshape(-1,1)
     yvar=torch.diag(R).clamp_min(0).sqrt().reshape(-1,1)
     if batch:emission.var[-1],emission.y_var[-1]=var,yvar
@@ -376,6 +415,9 @@ def latent_scores(emission,count=None):
             reverse=(eye-gain @ A_q) @ filtered @ (eye-gain @ A_q).T+gain @ Q_q @ gain.T
             previous=reverse+gain @ P @ gain.T
             residual=current-A @ state.means[t-1]
+            if getattr(emission, 'constant_input', False):
+                offset = emission.b[-1] if emission.lds_scoring == 'final' else state.offsets[t]
+                residual = residual - offset
             variance=(eye-A @ gain) @ P @ (eye-A @ gain).T+A @ reverse @ A.T
             noise=Q
             logdet_cond=2*(emission._chol_spd(P).diag().log().sum()
@@ -421,4 +463,4 @@ def convert(emission,target):
         if isinstance(value,dict):return {key:tensor(item) for key,item in value.items()}
         return value
     for name in state.__dataclass_fields__:
-        setattr(state,name,tensor(getattr(state,name)))
+        setattr(state,name,tensor(getattr(state,name,[]) if name=='offsets' else getattr(state,name)))

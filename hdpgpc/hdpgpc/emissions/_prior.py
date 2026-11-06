@@ -72,7 +72,7 @@ class GaussianProcessPrior:
             self.device = 'cpu'
 
     def posterior(self, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma, warped_mean=None, x_train=None,
-                  x_warped=None, embedding=True, h=1.0):
+                  x_warped=None, embedding=True, h=1.0, b=None):
         """Compute posterior distribution using an observation as an input and returns
         the mean and the covariance centered into the set of basis points.
         Assuming we follow the system described by:
@@ -103,7 +103,7 @@ class GaussianProcessPrior:
         """
         return _LINEAR.filter(self, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma,
                               warped_mean=warped_mean, x_train=x_train, x_warped=x_warped,
-                              embedding=embedding, h=h)
+                              embedding=embedding, h=h, b=b)
 
     def projection_matrix(self, x_basis=None, x_train=None):
         """Compute projection matrix using the optimised GP:
@@ -192,7 +192,7 @@ class GaussianProcessPrior:
             y_p_cov = Sigma
         return y_p, y_p_cov
 
-    def backward(self, A_prior, Gamma_prior, means, covars):
+    def backward(self, A_prior, Gamma_prior, means, covars, b_prior=None):
         """
         Compute backward mean and cov incorporating full sequence
         information to previous latent states.
@@ -214,9 +214,9 @@ class GaussianProcessPrior:
         Lists of new means (txs_samples) and covars (txsxs_samples).
 
         """
-        return _LINEAR.smooth(self, A_prior, Gamma_prior, means, covars)
+        return _LINEAR.smooth(self, A_prior, Gamma_prior, means, covars, b_prior=b_prior)
 
-    def backward_notrange(self, A_prior, Gamma_prior, means, covars):
+    def backward_notrange(self, A_prior, Gamma_prior, means, covars, b_prior=None):
         """
         Compute backward mean and cov incorporating full sequence
         information to previous latent states.
@@ -238,7 +238,7 @@ class GaussianProcessPrior:
         Lists of new means (txs_samples) and covars (txsxs_samples).
 
         """
-        return _LINEAR.smooth_pair(self, A_prior, Gamma_prior, means, covars)
+        return _LINEAR.smooth_pair(self, A_prior, Gamma_prior, means, covars, b_prior=b_prior)
 
     def new_params_LDS(self, A_prior, Gamma_prior, C_prior, Sigma_prior, y_samples, means, covars, model='dynamic'):
         """Compute new matrices of linear tranformation using ML approach following

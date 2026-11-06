@@ -31,6 +31,12 @@ def add_common_arguments(parser, *, defaults=None, ordered=False):
     parser.add_argument('--lds-step-size', type=float, default=.2)
     parser.add_argument('--dynamics-clock', choices=('cluster-clock','physical-clock'),
                         default='cluster-clock', help='Retained observations or a shared regular sampling clock.')
+    parser.add_argument('--constant-input', '--latent-equilibrium', dest='constant_input',
+                        action=argparse.BooleanOptionalAction, default=False,
+                        help='Learn an affine latent transition A z + b; a stable A permits a learned equilibrium.')
+    parser.add_argument('--constant-input-strength', '--latent-equilibrium-strength',
+                        dest='constant_input_strength', type=float, default=1.0,
+                        help='Zero-centered latent intercept prior precision (default: 1).')
     parser.add_argument('--exploration-steps', type=int, default=10)
     parser.add_argument('--hard-assignments', action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument('--birth-lds-kl-per-dimension', action=argparse.BooleanOptionalAction, default=True)
@@ -71,6 +77,9 @@ def lds_update(args):
 
 
 def validate_common(args):
+    strength = getattr(args, 'constant_input_strength', 1.0)
+    if not math.isfinite(strength) or strength <= 0:
+        raise ValueError('constant-input-strength must be finite and positive')
     if getattr(args, 'transition_topology', 'ergodic') == 'left_to_right' and (
             args.schedule != 'offline' or args.offline_strategy != 'split_merge'):
         raise ValueError('left_to_right requires --schedule offline --offline-strategy split_merge')

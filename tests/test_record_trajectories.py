@@ -62,6 +62,11 @@ class RecordTrajectoryTests(unittest.TestCase):
                                          clock == 'physical-clock')
                     if representation == 'autoencoder':
                         self.assertIn('autoencoder_calibration.png', report['artifacts'])
+                        projected, = run_records(parser.parse_args([*flags, '--projection-plots', '--latent-equilibrium']))
+                        self.assertEqual(projected['status'], 'ok', projected.get('error'))
+                        for name in ('projection.png', 'projection_dynamics.png'):
+                            self.assertIn(name, projected['artifacts'])
+                            self.assertTrue((Path(projected['output_directory'])/name).is_file())
                     if representation == 'pca':
                         # Master plotting switch suppresses the new diagnostic too.
                         args = parser.parse_args([*flags, '--no-plots'])

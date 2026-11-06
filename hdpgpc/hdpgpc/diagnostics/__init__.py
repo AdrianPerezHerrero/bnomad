@@ -4,7 +4,8 @@ __all__ = ('plot_warp_diagnostics', 'model_warp_arrays',
            'plot_clustering_summary',
            'plot_lds_diagnostics', 'model_lds_arrays',
            'plot_lds_dynamics', 'model_lds_dynamics',
-           'plot_embedding_summary', 'model_latent_trajectories',
+           'plot_embedding_summary', 'plot_embedding_dynamics', 'model_embedding_dynamics',
+           'model_latent_trajectories',
            'plot_latent_trajectories', 'plot_image_clustering_summary',
            'plot_birth_warp_diagnostic',
            'cluster_label_statistics', 'format_confusion_matrix',
@@ -32,6 +33,9 @@ def __getattr__(name):
         if name == 'plot_embedding_summary':
             from . import _embedding_plots
             return getattr(_embedding_plots, name)
+        if name in ('plot_embedding_dynamics', 'model_embedding_dynamics'):
+            from . import _embedding_dynamics
+            return getattr(_embedding_dynamics, name)
         if name == 'plot_birth_warp_diagnostic':
             from . import _birth_warp_plots
             return getattr(_birth_warp_plots, name)

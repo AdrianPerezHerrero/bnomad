@@ -30,10 +30,15 @@ class GaussianProcessEmission:
         self : returns an instance of self.
         """
 
+    # Older private checkpoints predate these optional fields.
+    constant_input = False
+    constant_input_strength = 1.0
+
     def __init__(self, kernel, x_basis, annealing=True, bayesian=False, cuda=False, inducing_points=False,
                  estimation_limit=None, free_deg_MNIV=5, verbose=True,
                  lds_update='conjugate_sequential', lds_step_size=0.2,
-                 lds_scoring='final', fit_gp=True):
+                 lds_scoring='final', fit_gp=True, constant_input=False,
+                 constant_input_strength=1.0):
         self.gp = GaussianProcessPrior(kernel, x_basis, cuda=cuda, verbose=verbose)
         self.x_basis = self.cond_to_torch(x_basis)
         self.x_train = []
@@ -45,6 +50,8 @@ class GaussianProcessEmission:
         self.y_var = []
         self.var = []
         self.A = []
+        self.constant_input = constant_input
+        self.constant_input_strength = constant_input_strength
         self.Gamma = []
         self.C = []
         self.Sigma = []
@@ -243,6 +250,10 @@ class GaussianProcessEmission:
         self.Gamma_def = self.cond_to_cuda(self.cond_to_torch(ini_Gamma))
         self.C_def = self.cond_to_cuda(self.cond_to_torch(ini_C))
         self.Sigma_def = self.cond_to_cuda(self.cond_to_torch(ini_Sigma))
+        if self.constant_input:
+            self.b_def = torch.zeros((ini_A.shape[0], 1), dtype=self.A_def.dtype,
+                                     device=self.A_def.device)
+            self.b = [self.b_def.clone()]
         if not self.fit_gp:
             self.gp.assign_alpha_ini(self.Sigma_def, self.Gamma_def)
         self.var.append(np.atleast_2d(np.diag(ini_Gamma)).T)
@@ -265,6 +276,8 @@ class GaussianProcessEmission:
             if getattr(self, 'factor_analysis', False):
                 from ._factor_analysis import observation_prior
                 self.observation_params = observation_prior(self, ini_C, ini_Sigma)
+            if self.constant_input:
+                self.internal_params = _trajectory.transition_prior(self, ini_A, ini_Gamma)
         if self.lds_scoring == 'historical':
             self.lds_internal_score_history = []
             self.lds_observation_score_history = []
@@ -314,7 +327,10 @@ class GaussianProcessEmission:
             self.observation_params.set_scale(self.cond_to_cuda(self.cond_to_torch(torch.mul(noise, torch.eye(len(self.x_basis), device=noise.device)))))
             self.observation_params.m_mean = self.C[-1]
             self.internal_params.set_scale(self.Gamma[-1])
-            self.internal_params.m_mean = self.A[-1]
+            if self.constant_input:
+                self.internal_params = _trajectory.transition_prior(self, self.A[-1], self.Gamma[-1], self.b[-1])
+            else:
+                self.internal_params.m_mean = self.A[-1]
         if self.lds_scoring == 'historical':
             _trajectory.record_lds_parameter_score(self, replace_last=True)
         self.fitted = True
@@ -440,6 +456,9 @@ class GaussianProcessEmission:
                                    + gain @ Gamma_q @ gain.T)
             cov_prev_pair = reverse_conditional + gain @ cov_cur @ gain.T
             residual = mean_cur - A @ mean_prev
+            if self.constant_input:
+                b_index = -1 if self.lds_scoring == 'final' else min(i, len(self.b)-1)
+                residual = residual - self.b[b_index]
             residual_projection = eye - A @ gain
             residual_cov = (residual_projection @ cov_cur @ residual_projection.T
                             + A @ reverse_conditional @ A.T)
@@ -475,7 +494,8 @@ class GaussianProcessEmission:
             f_star_, cov_f_ = self.gp.posterior(self.f_star_sm[-1], self.cov_f_sm[-1], self.y_train[-1], self.A[-1],
                                                 self.Gamma[-1], self.C[-1], self.Sigma[-1], x_train=x_train,
                                                 x_warped=x_warped, embedding=embedding,
-                                                h=1. if self._independent_factors() else h)
+                                                h=1. if self._independent_factors() else h,
+                                                **({'b': self.b[-1]} if self.constant_input and self.N > 1 else {}))
             self.f_star.append(f_star_)
             self.f_star_sm.append(f_star_)
             self.cov_f.append(cov_f_)
@@ -558,6 +578,8 @@ class GaussianProcessEmission:
         previous_cov = torch.as_tensor(self.cov_f_sm[-1], dtype=dtype, device=device)
         first = self.N == 0
         prior_mean = previous_mean if first else a @ previous_mean
+        if self.constant_input and not first:
+            prior_mean = prior_mean + self.b[-1]
         prior_cov = previous_cov if first else a @ previous_cov @ a.T + gamma
         eye_basis = torch.eye(len(basis), dtype=dtype, device=device)
         prior_cov = 0.5 * (prior_cov + prior_cov.T) + 1e-6 * eye_basis
@@ -752,9 +774,12 @@ class GaussianProcessEmission:
             # Carry the last fit into the next offline E-step, while resetting
             # the MNIW posterior to the original prior for its next batch step.
             filter_start = (self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1])
+            input_start = self.b[-1] if self.constant_input else None
             factor_snapshot = getattr(self, 'fixed_observation_model', None)
             result = _trajectory.reinit_LDS(self, False, save_last_diag, return_likelihood)
             self.A[0], self.Gamma[0], self.C[0], self.Sigma[0] = filter_start
+            if self.constant_input:
+                self.b[0] = input_start
             if getattr(self, 'factor_analysis', False):
                 self.fixed_observation_model = factor_snapshot
                 self.gp.fixed_observation_model = factor_snapshot
@@ -793,9 +818,17 @@ class GaussianProcessEmission:
             if not torch.equal(x_trains, self.direct_observation_grid[None].expand_as(x_trains)):
                 raise ValueError('Factor analysis requires its configured feature grid')
             model = self.fixed_observation_model
+            prior_mean = self.b[-1] if self.constant_input else torch.zeros_like(self.f_star_sm[0])
             means, covariances = model.condition_batch(
-                torch.zeros_like(self.f_star_sm[0]), self.ini_cov_def, y_trains,
+                prior_mean, self.ini_cov_def, y_trains,
                 responsibilities=y_trains.new_ones(len(y_trains)))
+            if self.constant_input:
+                first = self.indexes[0]
+                first_mean, first_covariance = model.condition_batch(
+                    torch.zeros_like(prior_mean), self.ini_cov_def, y_trains[first:first+1],
+                    responsibilities=y_trains.new_ones(1))
+                means[first:first+1] = first_mean
+                covariances[first:first+1] = first_covariance
             self._factor_local_moments = (means, covariances)
             return model.expected_log_likelihood_batch(y_trains, means, covariances)
 
@@ -916,8 +949,12 @@ class GaussianProcessEmission:
             precision = torch.cholesky_inverse(factor)
             logdet = torch.linalg.slogdet(covariances).logabsdet
             dimension = means.shape[1]
+            residuals = means
+            if self.constant_input:
+                residuals = means-self.b[-1]
+                residuals[self.indexes[0]] = means[self.indexes[0]]
             return .5*(dimension + logdet - 2*factor.diag().log().sum()
-                - torch.einsum('nix,ij,njx->n', means, precision, means)
+                - torch.einsum('nix,ij,njx->n', residuals, precision, residuals)
                 - torch.einsum('ij,nji->n', precision, covariances))
         if len(torch.nonzero(self.Gamma[-1]))< 1:
             return sq_err
@@ -957,7 +994,9 @@ class GaussianProcessEmission:
                                  is not None else Sigma / h)
             f_star_, cov_f_ = self.gp.posterior(f_star_sm_, cov_f_sm_, y, A,
                                                 Gamma / h, C, observation_noise,
-                                                x_train=x_train, h=h)
+                                                x_train=x_train, h=h,
+                                                **({'b': self.b[min(t, len(self.b)-1)] if t is not None else self.b[-1]}
+                                                   if self.constant_input and self.N > 0 and t != 0 else {}))
         else:
             f_star_ = torch.clone(self.f_star[-1])
             cov_f_ = torch.clone(self.cov_f[-1])
@@ -1357,6 +1396,9 @@ class GaussianProcessEmission:
         self.y_var = recursive_numpy(self.y_var)
         self.var = recursive_numpy(self.var)
         self.A = recursive_numpy(self.A)
+        if self.constant_input:
+            self.b = recursive_numpy(self.b)
+            self.b_def = recursive_numpy(self.b_def)
         self.Gamma = recursive_numpy(self.Gamma)
         self.C = recursive_numpy(self.C)
         self.Sigma = recursive_numpy(self.Sigma)
@@ -1394,6 +1436,9 @@ class GaussianProcessEmission:
         self.y_var = recursive_torch(self.y_var)
         self.var = recursive_torch(self.var)
         self.A = recursive_torch(self.A)
+        if self.constant_input:
+            self.b = recursive_torch(self.b)
+            self.b_def = recursive_torch(self.b_def)
         self.Gamma = recursive_torch(self.Gamma)
         self.C = recursive_torch(self.C)
         self.Sigma = recursive_torch(self.Sigma)
@@ -1432,6 +1477,9 @@ class GaussianProcessEmission:
             self.y_var = recursive_cuda(self.y_var)
             self.var = recursive_cuda(self.var)
             self.A = recursive_cuda(self.A)
+            if self.constant_input:
+                self.b = recursive_cuda(self.b)
+                self.b_def = recursive_cuda(self.b_def)
             self.Gamma = recursive_cuda(self.Gamma)
             self.C = recursive_cuda(self.C)
             self.Sigma = recursive_cuda(self.Sigma)
@@ -1473,6 +1521,9 @@ class GaussianProcessEmission:
         self.y_var = recursive_cpu(self.y_var)
         self.var = recursive_cpu(self.var)
         self.A = recursive_cpu(self.A)
+        if self.constant_input:
+            self.b = recursive_cpu(self.b)
+            self.b_def = recursive_cpu(self.b_def)
         self.Gamma = recursive_cpu(self.Gamma)
         self.C = recursive_cpu(self.C)
         self.Sigma = recursive_cpu(self.Sigma)

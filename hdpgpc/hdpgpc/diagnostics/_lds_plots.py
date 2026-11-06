@@ -37,6 +37,8 @@ def model_lds_arrays(model, *, output=0):
     for cluster in cluster_ids:
         gp = backend.gpmodels[output][cluster]
         result[cluster] = {name: _array(getattr(gp, name)[-1]) for name in _NAMES}
+        if getattr(gp, 'constant_input', False):
+            result[cluster]['b'] = _array(gp.b[-1])
     return result
 
 

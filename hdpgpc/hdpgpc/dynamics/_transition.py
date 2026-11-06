@@ -31,17 +31,30 @@ class TransitionHistory:
 
 
 class TransitionPolicy:
-    def __init__(self, A, Gamma, degrees, matrix_policy, noise_policy):
+    constant_input = False
+
+    def __init__(self, A, Gamma, degrees, matrix_policy, noise_policy, *,
+                 constant_input=False, intercept_strength=1.0):
         self.scope = 'shared'
-        self.prior = make_pair_prior(A, Gamma, degrees, matrix_policy, noise_policy)
+        from ._affine import make_transition_prior
+        self.constant_input = constant_input
+        self.prior = make_transition_prior(A, Gamma, degrees, matrix_policy, noise_policy,
+            constant_input=constant_input and bool(torch.count_nonzero(Gamma)),
+            intercept_strength=intercept_strength)
         self.posterior = self.prior
         self.A, self.Gamma = self.prior.get_mean(), self.prior.get_scale()
+        if constant_input:
+            self.b = (self.prior.get_intercept() if hasattr(self.prior, 'get_intercept')
+                      else torch.zeros_like(self.A[:, :1]))
 
     def attach(self, emission):
         count = len(emission.A)
         emission.transition_policy = self
         emission.A = TransitionHistory(self, 'A', count)
         emission.Gamma = TransitionHistory(self, 'Gamma', count)
+        if self.constant_input:
+            emission.b = TransitionHistory(self, 'b', count)
+            emission.b_def = self.prior.get_intercept() if hasattr(self.prior, 'get_intercept') else self.b
         emission.A_def = self.prior.get_mean()
         emission.Gamma_def = self.prior.get_scale()
         emission.internal_params = self.posterior
@@ -57,9 +70,15 @@ class TransitionPolicy:
             getattr(self.posterior, method)()
         self.A = self.posterior.get_mean()
         self.Gamma = self.posterior.get_scale(final=True)
+        if self.constant_input and hasattr(self.posterior, 'get_intercept'):
+            self.b = self.posterior.get_intercept()
+        elif self.constant_input:
+            self.b = self.A[:, :1]*0
 
     def update(self, emissions, responsibilities, *, online=False, current_index=None):
-        observations, latents = [], []
+        if self.constant_input and not bool(torch.count_nonzero(self.Gamma)):
+            return
+        observations, latents, roots = [], [], []
         cov_y = torch.zeros_like(self.Gamma)
         cov_x = torch.zeros_like(self.Gamma)
         cov_cross = torch.zeros_like(self.Gamma)
@@ -79,6 +98,7 @@ class TransitionPolicy:
                 if statistics is not None:
                     weight,y,x,yy,xx,yx=statistics
                     observations.append(y);latents.append(x)
+                    roots.extend([1.] * y.shape[1])
                     cov_y+=yy;cov_x+=xx;cov_cross+=yx;mass+=weight
                     if online:state.shared_parameter_tick=int(current_index)
                 continue
@@ -103,6 +123,7 @@ class TransitionPolicy:
                                             emission._chol_spd(predicted)).T
                 observations.append(root * mean)
                 latents.append(root * previous)
+                roots.append(root)
                 cov_y += weight * covariance
                 cov_x += weight * previous_cov
                 cov_cross += weight * covariance @ gain.T
@@ -112,8 +133,11 @@ class TransitionPolicy:
         base = self.posterior if online else self.prior
         self.posterior = base.posterior(
             mass, torch.cat(observations, dim=1), torch.cat(latents, dim=1),
-            cov_y, cov_x, cov_cross)
+            cov_y, cov_x, cov_cross,
+            **({'intercept_weights': roots} if hasattr(base, 'get_intercept') else {}))
         self.A, self.Gamma = self.posterior.get_mean(), self.posterior.get_scale(final=True)
+        if self.constant_input and hasattr(self.posterior, 'get_intercept'):
+            self.b = self.posterior.get_intercept()
         for emission in emissions:
             emission.internal_params = self.posterior
             if emission.var:

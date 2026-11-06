@@ -13,9 +13,33 @@ from . import _clock
 from ._distributions import matrix_normal_inv_wishart, inv_wishart
 
 
+def transition_prior(self, A, Gamma, intercept=None):
+    """Preserve the legacy prior, or add one conjugate constant predictor."""
+    from ._affine import make_transition_prior
+    policies = getattr(self, 'lds_pair_policies', None)
+    pair = (None, None) if policies is None else policies['transition']
+    return make_transition_prior(
+        A, Gamma, self.free_deg_MNIV, *pair,
+        constant_input=getattr(self, 'constant_input', False) and bool(torch.count_nonzero(torch.as_tensor(Gamma))),
+        intercept=getattr(self, 'b_def', None) if intercept is None else intercept,
+        intercept_strength=getattr(self, 'constant_input_strength', 1.0))
+
+
+def _append_input(self, distribution=None, *, replace=False):
+    if getattr(self, 'constant_input', False):
+        value = (distribution.get_intercept() if hasattr(distribution, 'get_intercept')
+                 else self.b[-1])
+        if replace:
+            self.b[-1] = value
+        else:
+            self.b.append(value)
+
+
 def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=False):
     """ Method to reinitiate LDS parameters. Can save some of them.
     """
+    input_start = (self.b[-1] if save_last else self.b_def) if getattr(self, 'constant_input', False) else None
+    old_input = self.b[-1] if getattr(self, 'constant_input', False) else None
     if save_last:
         ind_ = -1
         if save_last_diag:
@@ -49,8 +73,14 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
         from ._parameter_posterior import make_pair_prior
         self.internal_params = make_pair_prior(ini_A, ini_Gamma, self.free_deg_MNIV,
                                                *pair_policies['transition'])
+    if getattr(self, 'constant_input', False):
+        self.b = [input_start]
+        self.internal_params = transition_prior(self, ini_A, ini_Gamma, input_start)
     if transition_policy is not None:
         self.internal_params = transition_policy.posterior
+        if getattr(self, 'constant_input', False):
+            from ._transition import TransitionHistory
+            self.b = TransitionHistory(transition_policy, 'b')
     if policy is not None:
         if getattr(policy, 'factor_analysis', False):
             policy.attach(self)
@@ -72,7 +102,8 @@ def reinit_LDS(self, save_last=False, save_last_diag=False, return_likelihood=Fa
         self.lds_observation_score_history = []
         record_lds_parameter_score(self)
     if return_likelihood:
-        return self.internal_params.log_likelihood_MNIW(A_, Gam_), self.observation_params.log_likelihood_MNIW(C_, Sig_)
+        old_transition = torch.cat((A_, old_input),dim=1) if old_input is not None else A_
+        return self.internal_params.log_likelihood_MNIW(old_transition, Gam_), self.observation_params.log_likelihood_MNIW(C_, Sig_)
 
 
 def _lds_parameter_score_components(self):
@@ -93,6 +124,8 @@ def _lds_parameter_score_components(self):
         else:
             prior_A = make_pair_prior(self.A_def, self.Gamma_def, self.free_deg_MNIV,
                                       *pair_policies['transition'])
+        if getattr(self, 'constant_input', False):
+            prior_A = transition_prior(self, self.A_def, self.Gamma_def)
         transition = transition - self.internal_params.kl_divergence(prior_A)
 
     if getattr(self, 'observation_policy', None) is not None:
@@ -161,7 +194,8 @@ def backwards(self, h=1.0):
         mean = list(self.f_star[1:])
         covs = list(self.cov_f[1:])
         if model_type == 'dynamic':
-            aux_f_star, aux_cov_f = self.gp.backward(self.A[1:], self.Gamma[1:], mean, covs)
+            aux_f_star, aux_cov_f = self.gp.backward(self.A[1:], self.Gamma[1:], mean, covs,
+                **({'b_prior': self.b[1:]} if getattr(self, 'constant_input', False) else {}))
         else:
             aux_f_star, aux_cov_f = self.gp.backward(self.A[0], self.Gamma[0], mean, covs)
         for i in range(len(mean)):
@@ -179,7 +213,8 @@ def backwards_pair(self, h, snr=None):
             if snr is None:
                 mean = list(self.f_star[-2:])
                 covs = list(self.cov_f[-2:])
-                aux_f_star, aux_cov_f = self.gp.backward_notrange(self.A[-1], self.Gamma[-1], mean, covs)
+                aux_f_star, aux_cov_f = self.gp.backward_notrange(self.A[-1], self.Gamma[-1], mean, covs,
+                    **({'b_prior': self.b[-1]} if getattr(self, 'constant_input', False) else {}))
                 for i in range(len(mean)):
                     self.f_star_sm[-(i + 1)] = aux_f_star[-(i + 1)]
                     self.cov_f_sm[-(i + 1)] = aux_cov_f[-(i + 1)]
@@ -187,7 +222,8 @@ def backwards_pair(self, h, snr=None):
                 if snr > 0.5:
                     mean = self.f_star_sm[-2:]
                     covs = self.cov_f_sm[-2:]
-                    aux_f_star, aux_cov_f = self.gp.backward_notrange(self.A[-1], self.Gamma[-1], mean, covs)
+                    aux_f_star, aux_cov_f = self.gp.backward_notrange(self.A[-1], self.Gamma[-1], mean, covs,
+                        **({'b_prior': self.b[-1]} if getattr(self, 'constant_input', False) else {}))
                     for i in range(len(mean)):
                         self.f_star_sm[-(i + 1)] = aux_f_star[-(i + 1)]
                         self.cov_f_sm[-(i + 1)] = aux_cov_f[-(i + 1)]
@@ -200,6 +236,8 @@ def new_params(self, batch=None, reestimate=True, model_type='dynamic', verbose=
         _clock.smooth(self)
         return _clock.update_parameters(self,full_data=True,reestimate=reestimate,
             observation_window=batch,check_var=check_var)
+    if getattr(self, 'constant_input', False):
+        return _affine_ml_params(self, batch, reestimate, check_var)
     if batch is None or batch >= self.N:
         batch = self.N
     if reestimate:
@@ -380,6 +418,70 @@ def hold_lds_params(self):
     for name in ('A', 'Gamma', 'C', 'Sigma', 'var', 'y_var'):
         history = getattr(self, name)
         history.append(history[-1])
+    _append_input(self)
+    record_lds_parameter_score(self)
+
+
+def _affine_ml_params(self, batch, reestimate, check_var):
+    """Expected-moment ML update with one constant predictor and fixed policies."""
+    if not reestimate or self.N < 1:
+        return hold_lds_params(self)
+    from ._affine import fit_transition_moments
+    count = self.N if batch is None or batch >= self.N else max(int(batch), 0)
+    if not count:
+        return hold_lds_params(self)
+    first = self.N-count
+    means = self.f_star_sm[1:]
+    covariances = self.cov_f_sm[1:]
+    A, Q, C, R = self.A[-1], self.Gamma[-1], self.C[-1], self.Sigma[-1]
+    b = self.b[-1]
+    pair = getattr(self, 'lds_pair_policies', None) or {}
+    trans_pair = pair.get('transition', (None, None))
+    obs_pair = pair.get('observation', (None, None))
+    y, x = [], []
+    yy, xx, yx = torch.zeros_like(Q), torch.zeros_like(Q), torch.zeros_like(Q)
+    for position in range(max(1, first), self.N):
+        current, previous = means[position], means[position-1]
+        filtered = self.cov_f[position]
+        At, Qt = self.A[min(position,len(self.A)-1)], self.Gamma[min(position,len(self.Gamma)-1)]
+        gain = torch.cholesky_solve(At @ filtered.T,
+            self._chol_spd(At @ filtered @ At.T+Qt)).T
+        y.append(current); x.append(previous)
+        yy += covariances[position]; xx += covariances[position-1]
+        yx += covariances[position] @ gain.T
+    if y and bool(torch.count_nonzero(Q)):
+        A, b, Q = fit_transition_moments(A, Q, len(y), torch.cat(y,1),
+            torch.cat(x,1), yy, xx, yx, intercept=b,
+            matrix_policy=trans_pair[0], noise_policy=trans_pair[1])
+    if getattr(self, 'observation_policy', None) is None:
+        observations = []
+        for position in range(first, self.N):
+            value = self.y_train[position].reshape(-1,1)
+            if getattr(self, 'direct_observation_offset', None) is not None:
+                value = value-self.direct_observation_offset
+            else:
+                value = self.project_observation_to_basis(value, self.x_train[position], allow_warped=True)
+            observations.append(value)
+        Y, X = torch.cat(observations,1), torch.cat(means[first:],1)
+        V = sum(covariances[first:], torch.zeros_like(Q))
+        Sxx = X @ X.T+V
+        fixed_C = obs_pair[0] is not None and obs_pair[0].mode == 'fixed'
+        if not fixed_C:
+            C = (Y @ X.T) @ torch.linalg.pinv(Sxx)
+        fixed_R = obs_pair[1] is not None and obs_pair[1].mode == 'fixed'
+        if not fixed_R:
+            error = Y-C @ X
+            R = (error @ error.T+C @ V @ C.T)/count
+            R = .5*(R+R.T)
+            if obs_pair[1] is not None and 'diagonal' in obs_pair[1].mode:
+                R = torch.diag(torch.diag(R))
+            R = R+torch.eye(len(R),dtype=R.dtype,device=R.device)*torch.finfo(R.dtype).eps
+    if check_var:
+        Q, R = self.Gamma[-1], self.Sigma[-1]
+    for name, value in (('A',A),('Gamma',Q),('C',C),('Sigma',R),('b',b)):
+        getattr(self,name).append(value)
+    self.var.append(torch.diag(Q).clamp_min(0).sqrt().reshape(-1,1))
+    self.y_var.append(torch.diag(R).clamp_min(0).sqrt().reshape(-1,1))
     record_lds_parameter_score(self)
 
 
@@ -419,7 +521,7 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
     obs_noise_cov = torch.zeros((observation_dim, observation_dim), device=device, dtype=dtype)
     obs_cross_cov = torch.zeros((observation_dim, dim), device=device, dtype=dtype)
     obs_y, obs_f, obs_roots = [], [], []
-    transition_y, transition_f = [], []
+    transition_y, transition_f, transition_roots = [], [], []
     transition_cov_y = torch.zeros_like(obs_cov)
     transition_cov_f = torch.zeros_like(obs_cov)
     transition_cov_cross = torch.zeros_like(obs_cov)
@@ -465,6 +567,7 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
                                         self._chol_spd(predicted_cov)).T
         transition_y.append(root * mean)
         transition_f.append(root * previous_mean)
+        transition_roots.append(root)
         transition_cov_y = transition_cov_y + weight * covariance
         transition_cov_f = transition_cov_f + weight * previous_cov
         transition_cov_cross = transition_cov_cross + weight * covariance @ gain.T
@@ -495,7 +598,8 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
         new_int = prior_int.posterior(
             transition_mass, torch.cat(transition_y, dim=1),
             torch.cat(transition_f, dim=1), transition_cov_y,
-            transition_cov_f, transition_cov_cross)
+            transition_cov_f, transition_cov_cross,
+            **({'intercept_weights': transition_roots} if getattr(self, 'constant_input', False) else {}))
 
     self.observation_params = new_obs
     self.internal_params = new_int
@@ -515,6 +619,7 @@ def bayesian_batch_params(self, resp, grid_samples=None, *,
         if self.lds_pair_policies['observation'][1].mode == 'fixed':
             Sigma_new = self.Sigma_def
     self.A[-1], self.Gamma[-1] = A_new, Gamma_new
+    _append_input(self, new_int, replace=True)
     self.C[-1], self.Sigma[-1] = C_new, Sigma_new
     if getattr(self, 'factor_analysis', False):
         from ..emissions._factor_analysis import refresh_factor_observation
@@ -530,6 +635,10 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
         Can use full data batch n-step estimation or 1-step estimation.
         Online first_observation updates C/Sigma from one beat without an A/Gamma transition.
     """
+    if getattr(self, 'constant_input', False) and not self.bayesian and not _clock.enabled(self):
+        if h > 0 and snr > .5:
+            return _affine_ml_params(self, None, True, False)
+        return hold_lds_params(self)
     if _clock.enabled(self):
         if snr<=.5:return
         if h>0:_clock.smooth(self)
@@ -554,7 +663,7 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                             samples_A_ = self.f_star_sm[-2]
                             cov = self.cov_f_sm[-1]
                             cov_ = self.cov_f_sm[-2]
-                            if self.lds_update == 'legacy':
+                            if self.lds_update == 'legacy' and not getattr(self, 'constant_input', False):
                                 # Preserve the historical mean-only update.
                                 cov = torch.zeros_like(cov)
                                 cov_ = torch.zeros_like(cov_)
@@ -578,17 +687,28 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                             cov_ = torch.sum(torch.stack(self.cov_f_sm[1:n_f+1]), axis=0)
                             cov_cross = torch.zeros_like(cov)
                             A, Gamma = self.A[-1], self.Gamma[-1]
-                            for t in range(n_f + 1):
-                                P = A @ self.cov_f_sm[t] @ A.T + Gamma
-                                L_P = self._chol_spd(P)
-                                J = torch.cholesky_solve(A @ self.cov_f_sm[t].T, L_P).T
-                                cov_cross = cov_cross + J @ self.cov_f_sm[t + 1]
-                            cov_cross = 0.5 * (cov_cross + cov_cross.T)
+                            if getattr(self, 'constant_input', False):
+                                for position in range(1, n_f+1):
+                                    At = self.A[min(position,len(self.A)-1)]
+                                    Qt = self.Gamma[min(position,len(self.Gamma)-1)]
+                                    filtered = self.cov_f[position]
+                                    J = torch.cholesky_solve(At @ filtered.T,
+                                        self._chol_spd(At @ filtered @ At.T+Qt)).T
+                                    cov_cross += self.cov_f_sm[position+1] @ J.T
+                            else:
+                                for t in range(n_f + 1):
+                                    P = A @ self.cov_f_sm[t] @ A.T + Gamma
+                                    L_P = self._chol_spd(P)
+                                    J = torch.cholesky_solve(A @ self.cov_f_sm[t].T, L_P).T
+                                    cov_cross = cov_cross + J @ self.cov_f_sm[t + 1]
+                                cov_cross = 0.5 * (cov_cross + cov_cross.T)
                         if not full_data:
                             N_k = h
                         elif self.estimation_limit != np.PINF:
                             N_k = self.estimation_limit
                         else:
+                            N_k = samples_A.shape[1]
+                        if full_data and getattr(self, 'constant_input', False):
                             N_k = samples_A.shape[1]
                         if h < 1.0 and not full_data:
                             root_h = np.sqrt(h)
@@ -739,6 +859,7 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
                     Sigma_ = self.Sigma_def
             if self.N < self.estimation_limit or full_data or first_observation_update:
                 self.A.append(new_int_dist.get_mean())
+                _append_input(self, new_int_dist)
                 self.Gamma.append(Gamma_)
                 if model_type == 'static':
                     self.C.append(new_obs_dist.get_mean())
@@ -754,6 +875,7 @@ def bayesian_new_params(self, h, model_type='dynamic', full_data=False, q=None, 
             Gamma_ = _lds_scale(self, new_int_dist, final=full_data)
             Sigma_ = _lds_scale(self, new_obs_dist, final=full_data)
             self.A.append(new_int_dist.get_mean())
+            _append_input(self, new_int_dist)
             self.Gamma.append(Gamma_)
             if model_type == 'static' and getattr(self, 'observation_policy', None) is None:
                 self.C.append(new_obs_dist.get_C())

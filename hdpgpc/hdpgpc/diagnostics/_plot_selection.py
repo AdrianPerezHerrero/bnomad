@@ -30,7 +30,8 @@ def uses_physical_clock(model):
     Static independent factors can disable the clock despite the recipe setting.
     """
     from ..dynamics import _clock
-    return (model.config.dynamics.clock == 'physical-clock' and
+    dynamics = getattr(model.config, 'dynamics', None)
+    return (getattr(dynamics, 'clock', 'cluster-clock') == 'physical-clock' and
             all(_clock.enabled(output[int(cluster)])
                 for output in model._backend.gpmodels for cluster in model.cluster_ids_))
 

@@ -1,5 +1,9 @@
 # Cluster-clock and physical-clock dynamics
 
+Both clocks support the optional [constant latent input](latent_equilibrium.md),
+enabled with `--constant-input` or `--latent-equilibrium`. This adds an affine
+transition intercept without changing which observations define a clock step.
+
 The default remains **cluster-clock**. Select the optional shared sampling clock
 through the ordinary typed configuration:
 

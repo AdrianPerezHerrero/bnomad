@@ -119,7 +119,10 @@ def model_lds_dynamics(model, *, grid=None, output=0):
         residual = _symmetric(residual)
         forecast = _symmetric(propagated + process + residual)
         current = offset + H @ mean
-        next_mean = offset + H @ A @ mean
+        next_latent = A @ mean
+        if getattr(emission, 'constant_input', False):
+            next_latent = next_latent + _array(emission.b[-1]).reshape(-1)
+        next_mean = offset + H @ next_latent
         result[cluster] = {
             'grid': coordinates[:, 0].copy(),
             'observation_map': H, 'offset': offset,

@@ -38,6 +38,9 @@ class ModelState:
     Bindings are descriptors to those exact functions (no copied bodies/wrappers).
     The public model is HDPGPC; this class is not a compatibility constructor.
     """
+    constant_input = False
+    constant_input_strength = 1.0
+
     def __init__(self, config, *, schedule=None):
         from ..config._models import _initialization_options, resolved_lds_policies
         options = _initialization_options(config, schedule=schedule)
@@ -88,6 +91,8 @@ class ModelState:
         self.lds_scoring = options['lds_scoring']
         self.lds_step_size = options['lds_step_size']
         self.dynamics_clock = config.dynamics.clock
+        self.constant_input = config.dynamics.constant_input
+        self.constant_input_strength = config.dynamics.constant_input_strength
         self.observation_scope = options['scope']
         self.factor_analysis = config.observation.family == 'factor_analysis'
         self.factor_mean_precision = config.observation.factor_mean_precision
@@ -344,7 +349,9 @@ class ModelState:
                 template = self.gpmodels[ld][0]
                 owner = TransitionPolicy(template.A[0], template.Gamma[0],
                                          self.free_deg_MNIV, self.lds_policies['A'],
-                                         self.lds_policies['Gamma'])
+                                         self.lds_policies['Gamma'],
+                                         constant_input=self.constant_input,
+                                         intercept_strength=self.constant_input_strength)
                 self.transition_policies.append(owner)
                 for emission in self.gpmodels[ld]:
                     owner.attach(emission)
@@ -360,6 +367,11 @@ class ModelState:
 
     def initialize_lds_emission(self, emission, initial):
         emission.dynamics_clock = self.dynamics_clock
+        emission.constant_input = self.constant_input
+        emission.constant_input_strength = self.constant_input_strength
+        if self.constant_input and not emission.bayesian:
+            emission.internal_params = None
+            emission.observation_params = None
         if self.dynamics_clock == 'physical-clock':
             emission._clock_target_index=max(0,getattr(self,'T',0)-1)
             if not emission.bayesian:

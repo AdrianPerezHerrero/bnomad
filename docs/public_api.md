@@ -98,6 +98,11 @@ Serialized affine state dictionaries and configuration arrays are unchanged.
 Python pickles referring to the removed module paths require migration; no
 legacy module aliases are retained.
 Latent filtering, smoothing and parameter estimation remain in `dynamics`.
+`DynamicsConfig(constant_input=True)` enables the affine latent transition
+`z_next = A z + b`; `constant_input_strength` sets its zero-centered intercept
+prior precision (default 1). The default remains `False` and old serialized
+recipes retain zero input. See [constant input and latent equilibrium](latent_equilibrium.md)
+for fixed-point, random-walk and shared-policy interpretations.
 
 `SFAObservationEstimate` and `estimate_sfa_observation` are exported from
 `hdpgpc.emissions` (implementation `emissions._sfa`). Temporal calibration

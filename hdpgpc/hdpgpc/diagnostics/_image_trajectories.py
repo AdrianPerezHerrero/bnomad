@@ -37,7 +37,8 @@ def model_latent_trajectories(model, *, output=0):
             means=np.stack([_array(mean).reshape(-1) for mean in state.means])
             result[int(cluster)]={'indices':indices,'means':means,
                 'covariances':np.stack([_array(cov) for cov in state.covariances]),
-                'forecast_means':means @ _array(gp.A[-1]).T,
+                'forecast_means':means @ _array(gp.A[-1]).T + (
+                    _array(gp.b[-1]).reshape(1,-1) if getattr(gp,'constant_input',False) else 0.),
                 'prior_mean':_array(state.prior_mean).reshape(-1),
                 'prior_covariance':_array(state.prior_covariance),
                 'observation_indices':np.asarray(gp.indexes,dtype=np.int64),
@@ -52,7 +53,8 @@ def model_latent_trajectories(model, *, output=0):
         A = _array(gp.A[-1])
         result[int(cluster)] = {
             'indices': indices.copy(), 'means': means, 'covariances': covariance,
-            'forecast_means': means @ A.T,
+            'forecast_means': means @ A.T + (
+                _array(gp.b[-1]).reshape(1,-1) if getattr(gp,'constant_input',False) else 0.),
             'prior_mean': _array(gp.f_star_sm[0]).reshape(-1),
             'prior_covariance': _array(gp.cov_f_sm[0]),
         }
@@ -89,7 +91,7 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
 
     Uses the first two common latent coordinates (one-dimensional states get a
     zero second coordinate). Components are not refit for this visualization.
-    Orange arrows show A*m-m in that projection; they are model changes, not
+    Orange arrows show A*m+b-m (b=0 by default) in that projection; they are model changes, not
     observed future frames. Two-dimensional arrows omit other state dimensions.
     Only clusters with at least min_cluster_samples final MAP assignments get
     detail panels; histories and labels are never modified.
@@ -131,7 +133,8 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
                          xlabel='Latent component 1', ylabel='Latent component 2')
         axes[row, 1].set(title='Smoothed components +/- 2 posterior SD',
                          xlabel=time_label, ylabel='Latent coefficient')
-        axes[row, 2].set(title='Orange: final A one-step change',
+        affine = getattr(getattr(getattr(model, 'config', None), 'dynamics', None), 'constant_input', False)
+        axes[row, 2].set(title='Orange: final A z + b one-step change' if affine else 'Orange: final A one-step change',
                          xlabel='Latent component 1', ylabel='Latent component 2')
         if not len(indices):
             continue
@@ -321,7 +324,10 @@ def plot_image_clustering_summary(model, values, annotations, *, image_shape, ti
             raise ValueError('Calibration encoder must have finite (pixels, latent dimension) entries')
         raw_projection = offset + ((pixels - offset) @ encoder) @ C.T
         reconstructed = offset + states @ C.T
-        forecast = offset + (states @ A.T) @ C.T
+        next_states = states @ A.T
+        if getattr(gp, 'constant_input', False):
+            next_states = next_states + _array(gp.b[-1]).reshape(1,-1)
+        forecast = offset + next_states @ C.T
         majority = majorities[cluster] or 'unlabeled'
         gallery = fig.add_gridspec(5, frames_per_cluster, left=.065, right=.985,
             bottom=(figure_height - overview_height - row * cluster_height) / figure_height,

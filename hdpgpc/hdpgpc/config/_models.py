@@ -135,6 +135,11 @@ class DynamicsConfig:
     reest_conditions: list[int] = field(default_factory=lambda: [1, 20, 5])
     # Physical mode advances all component states on the shared observation grid.
     clock: Literal['cluster-clock', 'physical-clock'] = 'cluster-clock'
+    # Affine latent transition z_next = A z + b; b is zero when disabled.
+    # When I-A is invertible its equilibrium is solve(I-A, b).
+    constant_input: bool = False
+    # Zero-centered Gaussian/matrix-normal intercept column prior precision.
+    constant_input_strength: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -331,8 +336,11 @@ class HDPGPCConfig:
         memo = {}
         return {'schema_version': 1, 'x_basis': encode(self.x_basis, memo), 'verbose': encode(self.verbose, memo),
                 **{name: {f.name: encode(getattr(getattr(self, name), f.name), memo) for f in fields(typ)
-                       if not (name == 'dynamics' and f.name == 'clock'
-                               and self.dynamics.clock == 'cluster-clock')}
+                       if not (name == 'dynamics' and (
+                           (f.name == 'clock' and self.dynamics.clock == 'cluster-clock')
+                           or (f.name == 'constant_input' and not self.dynamics.constant_input)
+                           or (f.name == 'constant_input_strength'
+                               and self.dynamics.constant_input_strength == 1.0)))}
                    for name, typ in SECTIONS.items()}}
 
     @classmethod

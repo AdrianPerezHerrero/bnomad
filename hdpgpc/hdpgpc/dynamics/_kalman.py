@@ -5,7 +5,7 @@ import torch
 
 
 def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma, warped_mean=None, x_train=None,
-              x_warped=None, embedding=True, h=1.0):
+              x_warped=None, embedding=True, h=1.0, b=None):
     """Compute posterior distribution using an observation as an input and returns
     the mean and the covariance centered into the set of basis points.
     Assuming we follow the system described by:
@@ -37,6 +37,8 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
 
     y = y_train
     x_basis_mean = torch.matmul(A, mean_prior)
+    if b is not None:
+        x_basis_mean = x_basis_mean + b.reshape(x_basis_mean.shape)
     x_basis_cov = cov_prior
     x_basis_ = backend.x_basis
 
@@ -140,7 +142,7 @@ def filter_posterior(backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma
     return mean_post, cov_post
 
 
-def smooth_sequence(backend, A_prior, Gamma_prior, means, covars):
+def smooth_sequence(backend, A_prior, Gamma_prior, means, covars, b_prior=None):
     """
     Compute backward mean and cov incorporating full sequence
     information to previous latent states.
@@ -168,7 +170,11 @@ def smooth_sequence(backend, A_prior, Gamma_prior, means, covars):
         Gamma_prior_ = Gamma_prior[t] if t < len(Gamma_prior) else Gamma_prior[-1]
         P_t = torch.linalg.multi_dot([A_prior_, covars[t], A_prior_.T]) + Gamma_prior_
         J_t = torch.linalg.solve(P_t.T, A_prior_ @ covars[t].T).T
-        means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior_, means[t])))
+        predicted = torch.matmul(A_prior_, means[t])
+        if b_prior is not None:
+            b = b_prior[t] if t < len(b_prior) else b_prior[-1]
+            predicted = predicted + b.reshape(predicted.shape)
+        means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - predicted))
         eye = torch.eye(covars[t].shape[0], dtype=covars[t].dtype, device=covars[t].device)
         projection = eye - J_t @ A_prior_
         reverse_conditional = (projection @ covars[t] @ projection.T
@@ -177,7 +183,7 @@ def smooth_sequence(backend, A_prior, Gamma_prior, means, covars):
     return means, covars
 
 
-def smooth_pair(backend, A_prior, Gamma_prior, means, covars):
+def smooth_pair(backend, A_prior, Gamma_prior, means, covars, b_prior=None):
     """
     Compute backward mean and cov incorporating full sequence
     information to previous latent states.
@@ -203,7 +209,10 @@ def smooth_pair(backend, A_prior, Gamma_prior, means, covars):
     for t in range(T - 2, -1, -1):
         P_t = torch.linalg.multi_dot([A_prior, covars[t], A_prior.T]) + Gamma_prior
         J_t = torch.linalg.solve(P_t.T, torch.matmul(A_prior, covars[t].T)).T
-        means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - torch.matmul(A_prior, means[t])))
+        predicted = torch.matmul(A_prior, means[t])
+        if b_prior is not None:
+            predicted = predicted + b_prior.reshape(predicted.shape)
+        means[t] = means[t] + torch.matmul(J_t, (means[t + 1] - predicted))
         eye = torch.eye(covars[t].shape[0], dtype=covars[t].dtype, device=covars[t].device)
         projection = eye - J_t @ A_prior
         reverse_conditional = (projection @ covars[t] @ projection.T

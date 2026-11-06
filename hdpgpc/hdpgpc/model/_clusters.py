@@ -36,6 +36,8 @@ def keep_last_all(self):
                 # native serialization and continued online inference.
                 for name in ('A', 'Gamma', 'C', 'Sigma', 'var', 'y_var'):
                     setattr(gp, name, [getattr(gp, name)[-1]])
+                if getattr(gp, 'constant_input', False):
+                    gp.b = [gp.b[-1]]
             else:
                 gp.reinit_LDS(save_last=True)
             policy = getattr(gp, 'observation_policy', None)
@@ -339,6 +341,11 @@ def gpmodel_deepcopy(self, gpmodel):
                        lds_scoring=getattr(gpmodel, 'lds_scoring', 'final'),
                        lds_step_size=getattr(gpmodel, 'lds_step_size', 0.2))
     gp_.dynamics_clock = getattr(gpmodel, 'dynamics_clock', 'cluster-clock')
+    gp_.constant_input = getattr(gpmodel, 'constant_input', False)
+    gp_.constant_input_strength = getattr(gpmodel, 'constant_input_strength', 1.0)
+    if gp_.constant_input:
+        gp_.b = deepcopy(gpmodel.b.copy())
+        gp_.b_def = deepcopy(gpmodel.b_def)
     if hasattr(gpmodel, '_sampling_trajectory'):
         gp_._sampling_trajectory = deepcopy(gpmodel._sampling_trajectory)
     if hasattr(gpmodel, '_clock_target_index'):

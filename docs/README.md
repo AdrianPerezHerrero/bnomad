@@ -23,6 +23,7 @@
 - [MIT-BIH beat and annotation alignment](mitbih_annotations.md)
 - [LDS inference, PCA, inducing points, and prior calibration](lds_inference.md)
 - [Cluster-clock and physical-clock latent evolution](dynamics_clocks.md)
+- [Optional constant input and latent equilibrium](latent_equilibrium.md)
 - [Fixed observation models and decoder contract](fixed_observation_models.md)
 - [Learned affine factor-analysis emissions in native HDPGPC](mfa_emission.md)
 - [Fixed real windowed Fourier observation](fourier_observation.md)

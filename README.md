@@ -26,6 +26,7 @@ import remain **`hdpgpc`**. This guide describes the 0.3 API in this checkout.
 | Account for uncertain cluster membership | Hard or responsibility-weighted soft inference | [Assignment options](docs/configuration.md) |
 | Model changes within a cluster | Gaussian latent states, LDS filtering/smoothing, configurable A/C and noise policies | [Model choices](docs/model_choices.md) |
 | Advance components through missing assignments on a regular sampling grid | Optional physical-clock; cluster-clock remains the core default | [Dynamics clocks](docs/dynamics_clocks.md) |
+| Learn a persistent latent location or drift | Optional `--constant-input` / `--latent-equilibrium`; default off | [Constant latent input](docs/latent_equilibrium.md) |
 | Cluster long waveforms or image-derived observations in a smaller state space | Fixed PCA, affine autoencoder, SFA, Fourier/wavelet decoders; learned MFA emissions | [Observation models](docs/fixed_observation_models.md), [MFA](docs/mfa_emission.md) |
 | Use a common learned observation map across clusters | Shared MFA C and diagonal Sigma, with separate cluster means | [Shared MFA](docs/mfa_emission.md#shared-loadings-and-diagonal-noise) |
 | Align waveforms or constrain temporal progression | Optional GP/DTW-GP/GP-flow alignment; left-to-right HMM stages | [Alignment](docs/alignment_choices.md), [ordered stages](docs/transition_topology.md) |
