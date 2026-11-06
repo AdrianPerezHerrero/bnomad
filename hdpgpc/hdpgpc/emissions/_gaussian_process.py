@@ -1025,14 +1025,15 @@ class GaussianProcessEmission:
             return C @ Gamma @ C.T
         return Gamma
 
-    def observe_last(self, x_post):
+    def observe_last(self, x_post, *, observation_index=None):
         """ Compute the last observation distribution over new x_post.
         """
         C = self.C[-1]
         Sigma = self.Sigma[-1]
         if _clock.enabled(self):
             state=_clock.trajectory(self)
-            mean,covariance=_clock.state_at(self,len(state.means)-1)
+            tick = len(state.means)-1 if observation_index is None else observation_index
+            mean,covariance=_clock.state_at(self,tick)
             fixed=getattr(self,'fixed_observation_model',None)
             if fixed is not None:return fixed.predictive_moments(mean,covariance,noise=Sigma)
             return self._observation_distribution(x_post,self.x_basis,C @ mean,Sigma)

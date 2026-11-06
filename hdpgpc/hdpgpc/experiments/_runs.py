@@ -206,7 +206,7 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
         plot_clustering_summary, plot_embedding_summary, model_lds_arrays,
         model_lds_dynamics, model_warp_arrays, plot_lds_diagnostics,
         plot_lds_dynamics, plot_warp_diagnostics, plot_birth_warp_diagnostic)
-    from ..diagnostics._plot_selection import cluster_plot_ids, empty_cluster_figure
+    from ..diagnostics._plot_selection import cluster_plot_ids, empty_cluster_figure, uses_physical_clock
     values = np.asarray(values)
     has_labels = labels is not None
     labels = np.asarray(labels) if has_labels else None
@@ -316,6 +316,16 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
                 annotation_colors=annotation_colors,
                 **({'min_cluster_samples': min_cluster_samples} if min_cluster_samples > 1 else {}))):
             save(figure, f'clusters_output_{output}.png')
+        if (uses_physical_clock(model)
+                and summary_plotter is plot_clustering_summary):
+            for output, figure in enumerate(plot_clustering_summary(
+                    model, values, labels, grid=grid, record=run.dataset,
+                    metrics=scores if has_labels else None, ordered=ordered,
+                    warped=model.config.inference.warp,
+                    show_latent=ordered or args.lds_plots or args.lds_dynamics_plots,
+                    annotation_colors=annotation_colors,
+                    min_cluster_samples=min_cluster_samples, early_stop=True)):
+                save(figure, f'clusters_output_{output}_early_stop.png')
         if args.projection_plots and has_labels:
             projection = values.reshape(len(values), -1) if codes is None else codes
             save(plot_embedding_summary(projection, model.labels_, labels, scores,

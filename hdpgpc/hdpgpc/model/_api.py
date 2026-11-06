@@ -250,16 +250,32 @@ class HDPGPC:
             raise RuntimeError('Legacy inference did not retain the requested component')
         return cluster
 
-    def predictive(self, cluster, *, grid=None) -> Prediction:
+    def _physical_observation_index(self, models, observation_index):
+        """Validate a read-only query into committed physical-clock histories."""
+        if observation_index is None:
+            return
+        from ..dynamics import _clock
+        if (isinstance(observation_index, bool) or not isinstance(observation_index, Integral)
+                or observation_index < 0):
+            raise ValueError('observation_index must be a nonnegative integer')
+        if not all(_clock.enabled(gp) for gp in models):
+            raise ValueError('observation_index requires physical-clock dynamics')
+        if any(observation_index >= len(_clock.trajectory(gp).means) for gp in models):
+            raise ValueError('observation_index must refer to a retained physical-clock tick')
+
+    def predictive(self, cluster, *, grid=None, observation_index=None) -> Prediction:
         """Read the current observation distribution, not a forecast/label predictor.
 
         Default coordinates are the waveform grid for a fixed decoder, otherwise this
         cluster's first-output GP basis. Supplied
         coordinates are model/aligned coordinates; no inverse warp is performed.
+        An optional observation_index reads a saved physical-clock tick using
+        final observation parameters, without advancing the fitted histories.
         """
         import numpy as np
         cluster = self._cluster(cluster)
         models = [output[cluster] for output in self._backend.gpmodels]
+        self._physical_observation_index(models, observation_index)
         fixed_grid = (self._config.observation.fixed_grid if
                       self._config.observation.fixed_grid is not None else
                       self._config.observation.pca_grid)
@@ -272,21 +288,24 @@ class HDPGPC:
         if coordinates.ndim != 2 or coordinates.shape[1] != 1 or not len(coordinates):
             raise ValueError('Prediction grid must be nonempty (points, 1)')
         x = self._backend.cond_cuda(self._backend.cond_to_torch(coordinates))
-        predictions = [gp.observe_last(x) for gp in models]
+        predictions = [gp.observe_last(x) if observation_index is None else
+                       gp.observe_last(x, observation_index=observation_index) for gp in models]
         means = np.column_stack([_snapshot(mean).reshape(-1) for mean, _ in predictions])
         covariances = np.stack([_snapshot(cov) for _, cov in predictions])
         return Prediction(cluster, _snapshot(coordinates), _snapshot(means), _snapshot(covariances))
 
-    def posterior(self, cluster) -> tuple[LatentState, ...]:
-        """Copy the latest native-basis filtered/smoothed state for each output."""
+    def posterior(self, cluster, *, observation_index=None) -> tuple[LatentState, ...]:
+        """Copy the latest state, or a specified saved physical-clock tick."""
         cluster = self._cluster(cluster)
+        self._physical_observation_index(
+            [output[cluster] for output in self._backend.gpmodels], observation_index)
         result = []
         for ld, output in enumerate(self._backend.gpmodels):
             gp = output[cluster]
             from ..dynamics import _clock
             if _clock.enabled(gp):
                 state=_clock.trajectory(gp)
-                tick=len(state.means)-1
+                tick=len(state.means)-1 if observation_index is None else observation_index
                 filtered,filtered_covariance=_clock.state_at(gp,tick,smoothed=False)
                 smoothed,smoothed_covariance=_clock.state_at(gp,tick)
                 result.append(LatentState(output=ld,observation_index=tick,

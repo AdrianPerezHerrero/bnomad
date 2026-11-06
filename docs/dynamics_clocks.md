@@ -138,6 +138,25 @@ and shapes are unchanged. In cluster mode it continues to report the last
 observation retained by that cluster. `predictive()` remains the current observation
 distribution rather than adding another forecast step.
 
+For physical-clock histories, `posterior(cluster, observation_index=t)` and
+`predictive(cluster, observation_index=t)` read a saved global tick without
+advancing the model. Predictions use the final fitted observation parameters.
+Explicit indices are rejected for cluster-clock and outside the saved history.
+
+The shared record experiments (including MIT-BIH) additionally save
+`clusters_output_0_early_stop.png` when plotting physical-clock runs, and
+`latent_trajectories_early_stop.png` when `--trajectory-plots` is enabled.
+Multiple outputs receive separate numbered files. The trajectory starts at
+observation 0 and ends at that cluster’s last final MAP assignment, retaining
+unobserved gaps before that endpoint. The gallery evaluates each cluster’s
+distribution at its own endpoint, rather than at the end of the record. The
+original full-record plots are also saved. `--no-plots` suppresses both versions.
+These are read-only views of the fitted smoothed posterior, not separate fits or
+causal early-stopping estimates. Other observations can still have informed the
+final fitted parameters. For direct diagnostic calls, pass `early_stop=True` to
+`plot_latent_trajectories` or `plot_clustering_summary`; this option requires
+physical-clock dynamics.
+
 Flutter/bearing diagnostics distinguish retained observations from total trajectory
 steps and report propagation-only counts. Conversion to growth per second is
 still withheld if provided display timestamps are irregular. Spectral radii remain

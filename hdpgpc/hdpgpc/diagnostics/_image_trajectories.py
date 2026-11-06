@@ -84,7 +84,7 @@ def _times(times, count):
 
 def plot_latent_trajectories(model, *, times=None, output=0, title='', trajectories=None,
                              min_cluster_samples=1, time_label='Video time (s)', time_unit='s',
-                             observation_label='frames'):
+                             observation_label='frames', early_stop=False):
     """Per cluster: state path, component uncertainty and final-A changes.
 
     Uses the first two common latent coordinates (one-dimensional states get a
@@ -93,8 +93,12 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
     observed future frames. Two-dimensional arrows omit other state dimensions.
     Only clusters with at least min_cluster_samples final MAP assignments get
     detail panels; histories and labels are never modified.
+    Physical-clock early_stop=True retains ticks from zero through each cluster's
+    last final-MAP observation, including gaps before its first measurement.
     """
     labels = np.asarray(model.labels_, dtype=int)
+    from ._plot_selection import physical_clock_endpoints
+    endpoints = physical_clock_endpoints(model) if early_stop else {}
     times = _times(times, len(labels))
     paths = model_latent_trajectories(model, output=output) if trajectories is None else trajectories
     visible = set(cluster_plot_ids(labels, min_cluster_samples).tolist())
@@ -105,6 +109,8 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
     fig, axes = plt.subplots(len(ids), 3, figsize=(16, 3.6 * len(ids)), squeeze=False,
                              constrained_layout=True)
     heading = (title + ' | ' if title else '') + 'Smoothed latent trajectories and one-step LDS changes'
+    if early_stop:
+        heading += ' | observation 0 through each cluster’s last assignment'
     if min_cluster_samples > 1:
         heading += f' | {len(ids)}/{len(paths)} clusters with >= {min_cluster_samples} assigned samples'
     fig.suptitle(heading)
@@ -113,6 +119,10 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
         indices = state['indices']
         owned = (np.ones(len(indices),dtype=bool) if state.get('clock')=='physical-clock'
                  else labels[indices] == cluster)
+        if early_stop:
+            if state.get('clock') != 'physical-clock':
+                raise ValueError('early_stop requires physical-clock trajectory histories')
+            owned &= indices <= endpoints[cluster]
         indices = indices[owned]
         means, covariances = state['means'][owned], state['covariances'][owned]
         forecasts = state['forecast_means'][owned]
@@ -147,6 +157,9 @@ def plot_latent_trajectories(model, *, times=None, output=0, title='', trajector
             axes[row, 0].annotate(f'{times[indices[position]]:g}{time_unit}', xy[position], fontsize=8,
                                    xytext=(4, 4), textcoords='offset points')
         selected = np.unique(np.linspace(0, len(indices) - 1, min(20, len(indices)), dtype=int))
+        if early_stop:
+            # A final-tick arrow would forecast beyond the requested endpoint.
+            selected = selected[indices[selected] < endpoints[cluster]]
         delta = predicted[selected] - xy[selected]
         axes[row, 2].scatter(xy[:, 0], xy[:, 1], color=color, s=8, alpha=.5)
         axes[row, 2].quiver(xy[selected, 0], xy[selected, 1], delta[:, 0], delta[:, 1],

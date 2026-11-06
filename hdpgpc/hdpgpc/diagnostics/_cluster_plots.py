@@ -72,12 +72,15 @@ def _plot_cluster_latent(axis, state, gamma, color, *, pca=False, legend=False):
 
 def plot_clustering_summary(model, values, annotations, *, grid=None, record='', metrics=None,
                         channels=None, warped=False, ordered=True, show_latent=True,
-                        annotation_colors=None, min_cluster_samples=1):
+                        annotation_colors=None, min_cluster_samples=1, early_stop=False):
     """Plot the full-record overview and annotated cluster gallery.
 
     A separate figure is returned for each output channel. Transition entries
     are row-normalized counts of consecutive hard assignments. The annotation
     colour of every sample is independent of its assigned cluster.
+    With early_stop=True, physical-clock means, covariance bands and latent
+    insets are read at each cluster's last final-MAP observation instead of
+    the final global tick. Final fitted parameters and assignments are retained.
     Set ordered=False for independent datasets: labels use a generic palette
     and the overview shows class composition instead of temporal transitions.
     show_latent=False omits the latent process and Gamma overlays.
@@ -86,6 +89,8 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
     counts. Assignment timelines, transition/composition tables and metrics keep
     the complete fitted clustering.
     """
+    from ._plot_selection import physical_clock_endpoints
+    endpoints = physical_clock_endpoints(model) if early_stop else {}
     values = np.asarray(values)
     if values.ndim != 3 or not all(values.shape):
         raise ValueError('values must have shape (observations, points, outputs)')
@@ -114,9 +119,10 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
     if len(channels) != values.shape[2]:
         raise ValueError('channels must name each output in values')
 
-    predictions = {int(cluster): model.predictive(int(cluster), grid=grid)
+    query = lambda cluster: ({'observation_index': endpoints[int(cluster)]} if early_stop else {})
+    predictions = {int(cluster): model.predictive(int(cluster), grid=grid, **query(cluster))
                    for cluster in visible_ids}
-    latent_states = ({int(cluster): model.posterior(int(cluster))
+    latent_states = ({int(cluster): model.posterior(int(cluster), **query(cluster))
                       for cluster in visible_ids} if show_latent else {})
     for prediction in predictions.values():
         if len(prediction.grid) != values.shape[1]:
@@ -244,7 +250,8 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
             axis.autoscale_view()
             axis.set(xlabel='Rescaled coordinate', ylabel='Scaled amplitude',
                      title=f'Cluster {cluster} · {member.sum()} samples' +
-                           (f' · majority {label}' if label else ''))
+                           (f' · majority {label}' if label else '') +
+                           (f' · last observation {endpoints[cluster]}' if early_stop else ''))
 
         assignment_axis.set(xlabel='Beat index', ylabel='Cluster', title='Regimes through the record',
                             xlim=(-1, len(assignments)))
@@ -254,7 +261,7 @@ def plot_clustering_summary(model, values, annotations, *, grid=None, record='',
         assignment_axis.set_yticks(cluster_ids)
         assignment_axis.grid(axis='x', alpha=0.2)
         models_axis.set(xlabel='Rescaled coordinate', ylabel='Scaled amplitude',
-                        title='Fitted model means')
+                        title='Means at each cluster’s last observation' if early_stop else 'Fitted model means')
 
         if ordered:
             image = transition_axis.imshow(transitions, vmin=0, vmax=1, cmap='Blues', aspect='auto')

@@ -22,3 +22,23 @@ def empty_cluster_figure(title, min_cluster_samples):
               ha='center', va='center', transform=axis.transAxes)
     figure.suptitle(title)
     return figure
+
+
+def uses_physical_clock(model):
+    """Whether represented emissions actually retain physical-clock histories.
+
+    Static independent factors can disable the clock despite the recipe setting.
+    """
+    from ..dynamics import _clock
+    return (model.config.dynamics.clock == 'physical-clock' and
+            all(_clock.enabled(output[int(cluster)])
+                for output in model._backend.gpmodels for cluster in model.cluster_ids_))
+
+
+def physical_clock_endpoints(model):
+    """Last final-MAP observation per cluster for read-only early-stop plots."""
+    if not uses_physical_clock(model):
+        raise ValueError('early_stop requires physical-clock dynamics')
+    labels = np.asarray(model.labels_, dtype=int)
+    return {int(cluster): int(np.flatnonzero(labels == cluster)[-1])
+            for cluster in np.unique(labels)}

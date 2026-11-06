@@ -33,6 +33,7 @@ class RecordTrajectoryTests(unittest.TestCase):
             np.save(root/'207_labels.npy', np.repeat(['N', 'V'], 6))
             for representation, clock, channels in (
                     ('waveform', 'cluster-clock', ['0', '1']),
+                    ('waveform', 'physical-clock', ['0', '1']),
                     ('pca', 'cluster-clock', ['0']),
                     ('autoencoder', 'physical-clock', ['0'])):
                 with self.subTest(representation=representation, clock=clock):
@@ -52,6 +53,13 @@ class RecordTrajectoryTests(unittest.TestCase):
                     for name in names:
                         self.assertIn(name, report['artifacts'])
                         self.assertTrue((Path(report['output_directory'])/name).is_file())
+                    early_names = [name.replace('.png', '_early_stop.png') for name in names]
+                    early_names += [f'clusters_output_{output}_early_stop.png'
+                                    for output in range(len(channels))]
+                    for name in early_names:
+                        self.assertEqual(name in report['artifacts'], clock == 'physical-clock')
+                        self.assertEqual((Path(report['output_directory'])/name).is_file(),
+                                         clock == 'physical-clock')
                     if representation == 'autoencoder':
                         self.assertIn('autoencoder_calibration.png', report['artifacts'])
                     if representation == 'pca':

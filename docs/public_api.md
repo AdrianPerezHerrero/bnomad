@@ -275,6 +275,10 @@ With `dynamics.clock='physical-clock'`, `observation_index` instead identifies t
 latest propagated global tick, including for an unobserved component. The current
 prediction uses that propagated state. Cluster-clock retains the last-included
 observation convention. See [dynamics clocks](dynamics_clocks.md).
+For physical-clock histories, both methods accept `observation_index=t` to read
+a saved global tick. This does not advance the model; `predictive` uses final
+fitted observation parameters with the state at `t`. Negative, noninteger or
+out-of-history indices, and explicit indices for cluster-clock, are rejected.
 Means are one-dimensional; covariance matrices remain two-dimensional. These are
 the existing stored values, with no fresh smoothing or covariance correction.
 Output ordering follows the backend; configured output reduction retains its

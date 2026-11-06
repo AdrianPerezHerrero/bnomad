@@ -231,16 +231,21 @@ def run_record(values, labels, grid, args, run, metadata, row_metadata, colors=N
         figures = calibration_figures() if calibration_figures is not None else {}
         if getattr(args, 'trajectory_plots', False):
             from ..diagnostics import plot_latent_trajectories
+            from ..diagnostics._plot_selection import uses_physical_clock
             is_ecg = args.dataset == 'mitbih'
             times = row_metadata['source_row'] if is_ecg else row_metadata['start_seconds']
             for output in range(values.shape[2]):
                 name = ('latent_trajectories' if values.shape[2] == 1 else
                         f'latent_trajectories_output_{output}')
-                figures[name] = plot_latent_trajectories(model, times=times, output=output,
+                options = dict(times=times, output=output,
                     title=f'{run.dataset}: {args.representation}, output {output}; {config.dynamics.clock}',
                     min_cluster_samples=args.min_cluster_samples,
                     time_label='Beat index' if is_ecg else 'Window start time (s)',
                     time_unit='' if is_ecg else 's', observation_label='beats' if is_ecg else 'windows')
+                figures[name] = plot_latent_trajectories(model, **options)
+                if uses_physical_clock(model):
+                    figures[name + '_early_stop'] = plot_latent_trajectories(
+                        model, early_stop=True, **options)
         return figures
 
     return save_results(run, model, values, labels, grid, args, ordered=True,
