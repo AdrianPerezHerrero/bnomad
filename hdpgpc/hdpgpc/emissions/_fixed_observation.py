@@ -242,7 +242,7 @@ class AffineGaussianObservation(FixedObservationModel):
         return posterior_mean, 0.5 * (posterior_cov + posterior_cov.T)
 
     def expected_log_likelihood(self, observation, latent_mean,
-                                latent_covariance, *, noise=None):
+                                latent_covariance, *, noise=None, _factor_cache=None):
         mean = torch.as_tensor(latent_mean).reshape(-1, 1)
         covariance = torch.as_tensor(latent_covariance, dtype=mean.dtype, device=mean.device)
         y = torch.as_tensor(observation, dtype=mean.dtype, device=mean.device).reshape(-1, 1)
@@ -256,7 +256,8 @@ class AffineGaussianObservation(FixedObservationModel):
             trace = torch.sum(torch.sum((C @ covariance) * C, dim=1) / variance)
             logdet = torch.log(variance).sum()
         else:
-            chol = _chol_cov(Sigma)
+            chol = (_chol_cov(Sigma) if _factor_cache is None else
+                    _factor_cache.factor("observation_noise", Sigma, _chol_cov))
             quadratic = torch.sum(residual * torch.cholesky_solve(residual, chol))
             trace = torch.trace(torch.cholesky_solve(C @ covariance @ C.T, chol))
             logdet = 2 * torch.log(torch.diag(chol)).sum()

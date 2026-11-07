@@ -167,7 +167,7 @@ class GaussianProcessEmission:
             return self.cov_f_sm[i], self.get_params(i)[2]
         return self.cov_f_sm[i], self.C[-1]
 
-    def _gaussian_score_shared_cov(self, Y, mean, cov, latent_cov=None):
+    def _gaussian_score_shared_cov(self, Y, mean, cov, latent_cov=None, *, _factor_cache=None):
         """
         Expected Gaussian observation log density on a shared grid.
 
@@ -188,7 +188,8 @@ class GaussianProcessEmission:
             m = mean.unsqueeze(1)  # (T,1)
 
         diff = Y2 - m  # (T,B)
-        L = self._chol_spd(cov)
+        L = (self._chol_spd(cov) if _factor_cache is None else
+             _factor_cache.factor('gp_observation_noise', cov, self._chol_spd))
         alpha = torch.cholesky_solve(diff, L)
         q = diff.shape[0]
         logdet = 2.0 * torch.log(torch.diag(L)).sum()

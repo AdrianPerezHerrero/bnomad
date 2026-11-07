@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import torch
 
+from ._clock_cache import callable_key, discard, inputs_key, work
+
 
 @dataclass
 class SamplingTrajectory:
@@ -60,6 +62,77 @@ def _views(emission, state):
     emission.cov_f = [state.prior_covariance]+[state.filtered_covariances[t] for t in indices]
     emission.f_star_sm = [state.prior_mean]+[state.means[t] for t in indices]
     emission.cov_f_sm = [state.prior_covariance]+[state.covariances[t] for t in indices]
+    cached = work(emission, state)
+    cached.positions = {t: i for i, t in enumerate(indices)}
+    cached.views = _view_bindings(emission)
+
+
+def _view_bindings(emission):
+    return tuple((id(getattr(emission, name)), len(getattr(emission, name)))
+                 for name in ('indexes', 'x_train', 'y_train', 'f_star', 'cov_f',
+                              'f_star_sm', 'cov_f_sm'))
+
+
+def _refresh_views(emission, state, *, observed=None, smoothed=False):
+    """Update retained views without sorting/rebuilding them on missing ticks."""
+    cached = work(emission, state)
+    if cached.views != _view_bindings(emission):
+        _views(emission, state)
+        return
+    if observed is not None:
+        position = cached.positions.get(observed)
+        if position is None:
+            if emission.indexes and observed < emission.indexes[-1]:
+                _views(emission, state)
+                return
+            position = len(emission.indexes)
+            cached.positions[observed] = position
+            emission.indexes.append(observed)
+            emission.x_train.append(None)
+            emission.y_train.append(None)
+            for name in ('f_star', 'cov_f', 'f_star_sm', 'cov_f_sm'):
+                getattr(emission, name).append(None)
+        emission.x_train[position], emission.y_train[position] = state.observations[observed][:2]
+        emission.f_star[position+1] = state.filtered_means[observed]
+        emission.cov_f[position+1] = state.filtered_covariances[observed]
+        emission.f_star_sm[position+1] = state.means[observed]
+        emission.cov_f_sm[position+1] = state.covariances[observed]
+    if smoothed:
+        emission.f_star_sm = [state.prior_mean]+[state.means[t] for t in emission.indexes]
+        emission.cov_f_sm = [state.prior_covariance]+[state.covariances[t] for t in emission.indexes]
+    emission.N = len(emission.indexes)
+    cached.views = _view_bindings(emission)
+
+
+def _rts_terms(emission, state, tick):
+    """Historical smoother gain and reverse covariance, shared by all consumers."""
+    A, Q = state.matrices[tick], state.noises[tick]
+    P, predicted = state.filtered_covariances[tick-1], state.predicted_covariances[tick]
+    dependencies = (A, Q, P, predicted)
+    key = inputs_key(dependencies)
+    signature = (key, callable_key(emission._chol_spd))
+    cached = work(emission, state)
+    entry = cached.rts.get(tick)
+    if key is not None and entry is not None and entry[0] == signature:
+        return entry[2:]
+    gain = torch.cholesky_solve(A @ P.T, emission._chol_spd(predicted)).T
+    eye = torch.eye(len(P), device=P.device, dtype=P.dtype)
+    projection = eye-gain @ A
+    reverse = projection @ P @ projection.T+gain @ Q @ gain.T
+    if key is not None:
+        cached.retain_rts(tick, (signature, dependencies, gain, reverse))
+    return gain, reverse
+
+
+def _history_inputs(state):
+    histories=('filtered_means','filtered_covariances','predicted_means',
+               'predicted_covariances','matrices','noises')
+    return (state.prior_mean,state.prior_covariance)+tuple(
+        value for name in histories for value in getattr(state,name))
+
+
+def _smoothed_inputs(state):
+    return tuple(state.means)+tuple(state.covariances)
 
 
 def advance(emission, index):
@@ -125,7 +198,8 @@ def _flow_condition(emission, mean, covariance, grids, observation, weight):
     natural=precision @ mean
     kernel=emission.gp.kernel
     K=_kernel_torch(kernel,basis,basis)
-    chol=torch.linalg.cholesky(_symmetric(K)+1e-4*eye)
+    cached=work(emission,trajectory(emission))
+    chol=cached.factor('flow_basis',_symmetric(K)+1e-4*eye,torch.linalg.cholesky)
     eye_y=torch.eye(len(y),device=device,dtype=mean.dtype)
     constant=bool(torch.all(torch.isclose(torch.diag(Sigma),torch.diag(Sigma).mean())))
     for grid in grids:
@@ -134,7 +208,7 @@ def _flow_condition(emission, mean, covariance, grids, observation, weight):
         H=projection @ C
         R=(torch.diag(Sigma).mean()*eye_y if constant else
            _kernel_torch(kernel,grid,grid)-cross.T @ projection.T+projection @ Sigma @ projection.T)
-        L=torch.linalg.cholesky(_symmetric(R)+1e-6*eye_y)
+        L=cached.factor('flow_noise',_symmetric(R)+1e-6*eye_y,torch.linalg.cholesky)
         precision=precision+weight/len(grids)*H.T @ torch.cholesky_solve(H,L)
         natural=natural+weight/len(grids)*H.T @ torch.cholesky_solve(y,L)
     covariance=torch.cholesky_inverse(emission._chol_spd(precision))
@@ -151,7 +225,8 @@ def include(emission,index,grid,warped,observation,weight,*,snr=None,grids=None)
         # Fitting the original kernel changes the prior before any data were retained.
         emission._sampling_trajectory=None
     state=advance(emission,int(index))
-    if weight>0 and (snr is None or snr>.5):
+    retained=weight>0 and (snr is None or snr>.5)
+    if retained:
         mean,covariance=state.predicted_means[index],state.predicted_covariances[index]
         if grids is None:
             identity=torch.eye(len(mean),device=mean.device,dtype=mean.dtype)
@@ -166,45 +241,63 @@ def include(emission,index,grid,warped,observation,weight,*,snr=None,grids=None)
         state.means[index]=mean.detach().clone()
         state.covariances[index]=covariance.detach().clone()
         state.observations[int(index)]=(grid.detach(),observation.detach(),float(weight))
-    _views(emission,state)
+    _refresh_views(emission,state,observed=int(index) if retained else None)
     emission._clock_target_index=int(index)
     return emission.x_basis
 
 
 def smooth(emission):
     state=trajectory(emission)
+    cached=work(emission,state)
+    dependencies=_history_inputs(state)
+    key=inputs_key(dependencies)
+    signature=(key,callable_key(emission._chol_spd))
+    if (key is not None and cached.smoothing is not None
+            and cached.smoothing[0]==signature
+            and cached.smoothing[2]==inputs_key(_smoothed_inputs(state))):
+        _refresh_views(emission,state)
+        return
     state.means=[mean.clone() for mean in state.filtered_means]
     state.covariances=[covariance.clone() for covariance in state.filtered_covariances]
     for t in range(len(state.means)-2,-1,-1):
-        A,Q=state.matrices[t+1],state.noises[t+1]
-        P=state.filtered_covariances[t]
-        predicted=state.predicted_covariances[t+1]
-        gain=torch.cholesky_solve(A @ P.T,emission._chol_spd(predicted)).T
+        gain,reverse=_rts_terms(emission,state,t+1)
         state.means[t]=state.filtered_means[t]+gain @ (state.means[t+1]-state.predicted_means[t+1])
-        eye=torch.eye(len(P),device=P.device,dtype=P.dtype)
-        projection=eye-gain @ A
-        reverse=projection @ P @ projection.T+gain @ Q @ gain.T
         state.covariances[t]=_symmetric(reverse+gain @ state.covariances[t+1] @ gain.T)
-    _views(emission,state)
+    outputs=_smoothed_inputs(state)
+    cached.smoothing=(signature,dependencies,inputs_key(outputs),outputs) if key is not None else None
+    _refresh_views(emission,state,smoothed=True)
 
 
 def transition_statistics(emission,*,start=1,end=None):
     """Unit-mass physical transitions; missing measurements have no emission mass."""
     state=trajectory(emission)
     end=(max(state.observations,default=-1)+1) if end is None else min(end,len(state.means))
+    first=max(1,start)
+    dependencies=tuple(value for values in (
+        state.means[max(0,first-1):end],state.covariances[max(0,first-1):end],
+        state.filtered_covariances[max(0,first-1):max(0,end-1)],
+        state.predicted_covariances[first:end],state.matrices[first:end],state.noises[first:end])
+        for value in values)
+    key=inputs_key(dependencies)
+    signature=(key,first,end,callable_key(emission._chol_spd))
+    cached=work(emission,state)
+    if key is not None and cached.statistics is not None and cached.statistics[0]==signature:
+        result=cached.statistics[2]
+        return (result[0],*(value.clone() for value in result[1:]))
     y,x=[],[]
     zero=torch.zeros_like(state.prior_covariance)
     yy,xx,yx=zero.clone(),zero.clone(),zero.clone()
-    for t in range(max(1,start),end):
+    for t in range(first,end):
         current,previous=state.means[t],state.means[t-1]
-        P=state.filtered_covariances[t-1]
-        gain=torch.cholesky_solve(state.matrices[t] @ P.T,
-                                 emission._chol_spd(state.predicted_covariances[t])).T
+        gain,_=_rts_terms(emission,state,t)
         y.append(current);x.append(previous)
         yy+=state.covariances[t];xx+=state.covariances[t-1]
         yx+=state.covariances[t] @ gain.T
     if not y:return None
-    return len(y),torch.cat(y,1),torch.cat(x,1),yy,xx,yx
+    result=len(y),torch.cat(y,1),torch.cat(x,1),yy,xx,yx
+    cached.statistics=(signature,dependencies,
+        (result[0],*(value.clone() for value in result[1:]))) if key is not None else None
+    return result
 
 
 def observation_statistics(emission,indices):
@@ -279,10 +372,15 @@ def update_parameters(emission,weight=1.,*,batch=False,full_data=False,first_obs
     last=indices[-1]
     start=1 if batch or full_data else max(1,state.parameter_tick+1)
     if full_data and observation_window is not None:start=max(1,indices[0]+1)
-    trans=transition_statistics(emission,start=start,end=last+1)
-    if not bool(torch.count_nonzero(emission.Gamma_def)):trans=None
+    has_transitions=(max(1,start)<last+1 and bool(torch.count_nonzero(emission.Gamma_def)))
+    trans=None
+    if has_transitions and (not emission.bayesian or getattr(emission,'transition_policy',None) is None):
+        trans=transition_statistics(emission,start=start,end=last+1)
     observed=indices if batch or full_data else [last]
-    obs,roots=observation_statistics(emission,observed)
+    obs,roots=None,None
+    if (getattr(emission,'observation_policy',None) is None
+            or (not emission.bayesian and not getattr(emission,'constant_input',False))):
+        obs,roots=observation_statistics(emission,observed)
     A,Q,C,R=emission.A[-1],emission.Gamma[-1],emission.C[-1],emission.Sigma[-1]
     constant_input = getattr(emission, 'constant_input', False)
     b = emission.b[-1] if constant_input else None
@@ -342,7 +440,7 @@ def update_parameters(emission,weight=1.,*,batch=False,full_data=False,first_obs
     emission.internal_params=new_internal
     emission.observation_params=new_observation
     if emission.annealing:
-        if trans is not None:Q=Q+emission.Gamma_def/max(1,count)**2
+        if has_transitions:Q=Q+emission.Gamma_def/max(1,count)**2
         if getattr(emission,'direct_observation_offset',None) is None:
             R=R+emission.Sigma_def/max(1,count)**2
     policies=getattr(emission,'lds_pair_policies',None)
@@ -373,21 +471,23 @@ def update_parameters(emission,weight=1.,*,batch=False,full_data=False,first_obs
 
 def full_pass(emission,grids,values,weights,*,samples=None,deterministic=False):
     from . import _trajectory
+    from ..emissions._fixed_observation import _affine_conditioning_pass
     active=set(emission._active_weighted_indices(weights).tolist())
     if not active:
         return emission.compute_sq_err_all(grids,values),emission.compute_q_lat_all(grids)
     batch=emission.lds_update=='conjugate_batch'
     emission.deterministic_input_warp=deterministic
-    for index in range(len(values)):
-        weight=float(weights[index]) if index in active else 0.
-        include(emission,index,grids[index],grids[index],values[index],weight,
-                grids=None if samples is None else samples[index])
-        if weight>0:
-            if batch:_trajectory.hold_lds_params(emission)
-            elif bool(torch.count_nonzero(emission.Gamma[-1])):
-                smooth(emission)
-                update_parameters(emission,weight,first_observation=(
-                    getattr(emission,'factor_analysis',False) and emission.N==1))
+    with _affine_conditioning_pass(emission):
+        for index in range(len(values)):
+            weight=float(weights[index]) if index in active else 0.
+            include(emission,index,grids[index],grids[index],values[index],weight,
+                    grids=None if samples is None else samples[index])
+            if weight>0:
+                if batch:_trajectory.hold_lds_params(emission)
+                elif bool(torch.count_nonzero(emission.Gamma[-1])):
+                    smooth(emission)
+                    update_parameters(emission,weight,first_observation=(
+                        getattr(emission,'factor_analysis',False) and emission.N==1))
     smooth(emission)
     if batch:update_parameters(emission,batch=True)
     mean_grids=grids if samples is None else torch.stack([sample.mean(0) for sample in samples])
@@ -397,8 +497,19 @@ def full_pass(emission,grids,values,weights,*,samples=None,deterministic=False):
 def latent_scores(emission,count=None):
     state=trajectory(emission)
     count=len(state.means) if count is None else min(count,len(state.means))
+    if not bool(torch.count_nonzero(emission.Gamma[-1])):
+        return state.prior_covariance.new_zeros(count)
+    cached=work(emission,state)
+    dependencies=(_history_inputs(state)+_smoothed_inputs(state)
+        +(state.prior_mean,state.prior_covariance,emission.A[-1],emission.Gamma[-1]))
+    if getattr(emission,'constant_input',False):
+        dependencies+=tuple(state.offsets)+(emission.b[-1],)
+    key=inputs_key(dependencies)
+    signature=(key,count,emission.lds_scoring,getattr(emission,'constant_input',False),
+               callable_key(emission._chol_spd))
+    if key is not None and cached.scores is not None and cached.scores[0]==signature:
+        return cached.scores[2].clone()
     scores=state.prior_covariance.new_zeros(count)
-    if not bool(torch.count_nonzero(emission.Gamma[-1])):return scores
     for t in range(count):
         current,P=state.means[t],state.covariances[t]
         if t==0:
@@ -408,25 +519,34 @@ def latent_scores(emission,count=None):
         else:
             A_q,Q_q=state.matrices[t],state.noises[t]
             A,Q=(emission.A[-1],emission.Gamma[-1]) if emission.lds_scoring=='final' else (A_q,Q_q)
-            filtered=state.filtered_covariances[t-1]
-            gain=torch.cholesky_solve(A_q @ filtered.T,
-                                     emission._chol_spd(state.predicted_covariances[t])).T
+            gain,reverse=_rts_terms(emission,state,t)
             eye=torch.eye(len(P),device=P.device,dtype=P.dtype)
-            reverse=(eye-gain @ A_q) @ filtered @ (eye-gain @ A_q).T+gain @ Q_q @ gain.T
-            previous=reverse+gain @ P @ gain.T
             residual=current-A @ state.means[t-1]
             if getattr(emission, 'constant_input', False):
                 offset = emission.b[-1] if emission.lds_scoring == 'final' else state.offsets[t]
                 residual = residual - offset
             variance=(eye-A @ gain) @ P @ (eye-A @ gain).T+A @ reverse @ A.T
             noise=Q
-            logdet_cond=2*(emission._chol_spd(P).diag().log().sum()
-                +emission._chol_spd(reverse).diag().log().sum()
-                -emission._chol_spd(previous).diag().log().sum())
-        chol=emission._chol_spd(noise)
+            entropy_inputs=(P,gain,reverse)
+            entropy_key=inputs_key(entropy_inputs)
+            entropy_signature=(entropy_key,callable_key(emission._chol_spd))
+            entry=cached.entropy.get(t)
+            if entropy_key is not None and entry is not None and entry[0]==entropy_signature:
+                logdet_cond=entry[2]
+            else:
+                previous=reverse+gain @ P @ gain.T
+                logdet_cond=2*(emission._chol_spd(P).diag().log().sum()
+                    +emission._chol_spd(reverse).diag().log().sum()
+                    -emission._chol_spd(previous).diag().log().sum())
+                if entropy_key is not None and t in cached.rts:
+                    cached.entropy[t]=(entropy_signature,entropy_inputs,logdet_cond)
+                    if len(cached.entropy)>256:
+                        del cached.entropy[next(iter(cached.entropy))]
+        chol=cached.factor('latent_noise',noise,emission._chol_spd)
         scores[t]=.5*(len(P)+logdet_cond-2*chol.diag().log().sum()
             -(residual*torch.cholesky_solve(residual,chol)).sum()
             -torch.trace(torch.cholesky_solve(variance,chol)))
+    cached.scores=(signature,dependencies,scores.clone()) if key is not None else None
     return scores
 
 
@@ -443,14 +563,23 @@ def observation_score(emission,grid,value,index=None,*,mean=None,covariance=None
     if model is not None:
         if not torch.equal(emission.cond_to_torch(grid).reshape(-1,1),emission.direct_observation_grid):
             raise ValueError('Fixed observation requires its configured waveform grid')
+        from ..emissions._fixed_observation import AffineGaussianObservation
+        if type(model) is AffineGaussianObservation:
+            return model.expected_log_likelihood(value,mean,covariance,noise=Sigma,
+                _factor_cache=work(emission,trajectory(emission)))
         return model.expected_log_likelihood(value,mean,covariance,noise=Sigma)
     projected,noise=emission._observation_distribution(grid,emission.x_basis,C @ mean,Sigma)
     latent=emission._observation_latent_cov(grid,covariance,C)
+    from ..emissions._gaussian_process import GaussianProcessEmission
+    if getattr(emission._gaussian_score_shared_cov,'__func__',None) is GaussianProcessEmission._gaussian_score_shared_cov:
+        return emission._gaussian_score_shared_cov(value.reshape(1,-1,1),projected,noise,latent,
+            _factor_cache=work(emission,trajectory(emission)))[0]
     return emission._gaussian_score_shared_cov(value.reshape(1,-1,1),projected,noise,latent)[0]
 
 
 def convert(emission,target):
     """Move/copy the extra clock state with the existing emission conversions."""
+    discard(emission)
     state=getattr(emission,'_sampling_trajectory',None)
     if state is None:return
     def tensor(value):

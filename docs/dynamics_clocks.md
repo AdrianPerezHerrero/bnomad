@@ -130,6 +130,26 @@ conjugate-batch learning with uncertain GP-flow input warps).
 
 ## Diagnostics and practical limits
 
+Physical-clock inference reuses historical smoother gains and reverse covariances
+across smoothing, transition statistics and latent scoring. Repeated requests for
+unchanged statistics or scores reuse their results; covariance factorizations are
+also reused when their inputs are equal. Retained-observation views update as
+measurements arrive rather than being rebuilt at every missing-observation tick.
+Local parameter updates skip statistics owned entirely by shared/fixed policies.
+
+These are exact-work optimizations. They preserve covariance regularization,
+parameter-update timing, all missing-transition statistics, and the complete
+backward smoother after a new measurement. Sequential physical-clock inference
+can therefore still require quadratic total smoothing work over a growing
+record. There is no fixed-lag approximation or collapsed-gap learning rule.
+
+Work caches are private, associated with one emission and trajectory, and are
+excluded from configurations, checkpoints and proposal copies. Tensor replacement,
+ordinary in-place updates, trajectory resets and device conversions invalidate
+dependent work. Differentiable tensors and tensors without mutation versions use
+uncached calculations. The historical smoother-factor cache has a 16 MiB limit
+per emission; reaching it causes recomputation and never truncates the trajectory.
+
 `model_latent_trajectories` returns every sampling tick in physical-clock mode,
 with `observation_indices`, an `observed` mask and the clock name. Its default
 cluster-clock arrays keep their existing format. Latent trajectory plots show the
