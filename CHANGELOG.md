@@ -1,5 +1,10 @@
 # 0.3.0 — native implementation migration
 
+- Reconciled bundled MIT-BIH record 203 with the corrected reference by source
+  sample: removed one obsolete artifact window/label and retained 2,979 paired
+  beats. Saved annotation sample positions now propagate into record reports
+  and data fingerprints; the unavailable filtered beat is documented.
+
 - Fixed determinism verification to use the same case-relative baseline paths
   as unit tests and report exact per-case differences. Repeated captures still
   require byte-for-byte equality.

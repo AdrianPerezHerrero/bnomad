@@ -331,8 +331,12 @@ def _record_jobs(args):
         for name in dict.fromkeys(names):
             record = load_mitbih_record(args.data_dir, name)
             values, grid = prepare_sequences(record.waveforms, channels=channels, unit_grid=args.unit_grid)
-            fingerprint = hashlib.sha256((source_digest(args.data_dir / f'{name}.npy')
-                + source_digest(args.data_dir / f'{name}_labels.npy')).encode()).hexdigest()
-            yield (name, values, record.annotations, grid,
-                {'channels': channels, 'omitted_trailing_annotations': record.omitted_trailing_annotations},
-                {'source_row': np.arange(len(values))}, fingerprint, None)
+            source_files = [args.data_dir / f'{name}.npy', args.data_dir / f'{name}_labels.npy']
+            metadata = {'channels': channels, 'omitted_trailing_annotations': record.omitted_trailing_annotations}
+            row_metadata = {'source_row': np.arange(len(values))}
+            if record.annotation_samples is not None:
+                row_metadata['annotation_sample'] = record.annotation_samples
+                source_files.append(args.data_dir / f'{name}_annotation_samples.npy')
+                metadata['annotation_samples_available'] = True
+            fingerprint = hashlib.sha256(''.join(source_digest(path) for path in source_files).encode()).hexdigest()
+            yield (name, values, record.annotations, grid, metadata, row_metadata, fingerprint, None)
