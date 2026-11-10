@@ -334,3 +334,5 @@ All standard runners accept `--dynamics-clock cluster-clock` (default) or
 on the shared regular sampling grid even without a component observation.
 The XJTU-SY Fourier/Haar entry scripts default to physical-clock explicitly.
 See [clock semantics and limitations](dynamics_clocks.md).
+
+Use `--screen-priors` to calibrate once, run small budgeted prior candidates, save recommendations, and stop before the full fit. See [prior screening](prior_screening.md) for predictive validation, budgets, supported modes and output files.

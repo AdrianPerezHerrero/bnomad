@@ -186,6 +186,11 @@ def run_dataset(archive, name, pair, args, run):
                 if args.max_series and args.max_series < len(values) else np.arange(len(values)))
     selected = rng.permutation(selected)
     values, labels = values[selected, :, None], labels[selected]
+    from ._prior_screen import screen_experiment
+    screened = screen_experiment(values, grid, args, run,
+        lambda candidate: make_config(grid, candidate, decoder))
+    if screened is not None:
+        return screened
     config = make_config(grid, args, decoder)
     if decoder is not None:
         # Save the covariances actually installed in the recipe, including the

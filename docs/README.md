@@ -22,6 +22,7 @@
 - [XJTU-SY raw acquisition windows with PCA/AE/Fourier/Haar clustering](xjtu_sy_workflow.md)
 - [MIT-BIH beat and annotation alignment](mitbih_annotations.md)
 - [LDS inference, PCA, inducing points, and prior calibration](lds_inference.md)
+- [Fast sigma/gamma prior screening](prior_screening.md)
 - [Cluster-clock and physical-clock latent evolution](dynamics_clocks.md)
 - [Optional constant input and latent equilibrium](latent_equilibrium.md)
 - [Fixed observation models and decoder contract](fixed_observation_models.md)

@@ -157,6 +157,11 @@ def _fit_record(data,args,run,configuration,calibration,calibration_names):
     from ..diagnostics._calibration_plots import plot_autoencoder_calibration
     estimate,decoder,center,scale,batch,sample_records,sample_acquisitions = calibration
     values=((data.values.reshape(-1,args.window_samples,2)-center)/scale).reshape(len(data.values),-1)
+    from ._prior_screen import screen_experiment
+    screened=screen_experiment(values[:,:,None],decoder.grid,args,run,
+        lambda candidate:make_config(candidate,decoder,dynamic=configuration=='dynamic'))
+    if screened is not None:
+        return screened
     config=make_config(args,decoder,dynamic=configuration=='dynamic')
     np.savez_compressed(run.path/'prepared_data.npz',raw_windows=data.values,scaled_windows=values,
         acquisition_numbers=data.acquisition_numbers,window_times=data.times,
@@ -289,11 +294,12 @@ def run_xjtu_sy(args):
             if args.resume and run.complete():
                 report=json.loads((run.path/'results.json').read_text())
                 print(f'Using saved results from: {run.path.resolve()}')
-                metadata=report['metadata']
-                _log_emission_summary(args.representation,name,metadata['components'],
-                    metadata.get('calibration_explained_variance_ratio'),
-                    metadata.get('diagnostics',{}).get('reconstruction_explained_variance'),
-                    metadata.get('components_per_channel'))
+                if report.get('mode') != 'prior_screen':
+                    metadata=report['metadata']
+                    _log_emission_summary(args.representation,name,metadata['components'],
+                        metadata.get('calibration_explained_variance_ratio'),
+                        metadata.get('diagnostics',{}).get('reconstruction_explained_variance'),
+                        metadata.get('components_per_channel'))
             else:
                 try:
                     with run:
@@ -310,7 +316,7 @@ def run_xjtu_sy(args):
         cluster_ids='Local to each bearing and configuration',runs=[{
             key:report.get(key) for key in ('dataset','run_id','experiment','status','clusters','seconds','output_directory','error')}
             | {'diagnostics':report.get('metadata',{}).get('diagnostics',{})} for report in reports]))
-    if args.plots and all(report['status']=='ok' for report in reports):
+    if args.plots and not getattr(args, 'screen_priors', False) and all(report['status']=='ok' for report in reports):
         import matplotlib.pyplot as plt
         from ..diagnostics._xjtu_sy import plot_xjtu_overview
         figure=plot_xjtu_overview(reports)

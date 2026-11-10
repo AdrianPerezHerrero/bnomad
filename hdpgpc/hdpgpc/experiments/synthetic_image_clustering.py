@@ -233,6 +233,17 @@ def run_synthetic_clustering(args):
                 sigma_prior_multiplier=args.sigma_prior,
                 sigma_prior_diagonal_mean=float(np.diag(decoder.Sigma).mean()),
                 source_state_matches_cluster_convention=data.state_mode == 'per_regime' and not args.shuffle)
+            from copy import copy
+            from ._prior_screen import screen_experiment
+            screen_args = copy(args)
+            # Screening must not use the generator's true process covariance.
+            screen_args.gamma_prior = gamma if args.gamma_prior is not None else DEFAULT_GAMMA_PRIOR
+            screened = screen_experiment(values, data.grid, screen_args, run,
+                lambda candidate: make_config(candidate, replace(decoder,
+                    Sigma=decoder.Sigma*candidate.sigma_prior/args.sigma_prior), candidate.gamma_prior))
+            if screened is not None:
+                append_summary(args.output_dir, screened)
+                return screened
             config = make_config(args, decoder, gamma)
             config.validate(for_build=True)
             (run.path / 'config.yaml').write_text(config.to_yaml(), encoding='utf-8')

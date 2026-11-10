@@ -67,7 +67,8 @@ def code_digest():
 def experiment_settings(args):
     return {key: value for key, value in vars(args).items()
             if key not in ('output_dir', 'resume', 'download', 'datasets', 'records', 'clutches',
-                           'list_records', 'single_dataset', 'archive_sha256') and not key.startswith('_')}
+                           'list_records', 'single_dataset', 'archive_sha256') and not key.startswith('_')
+            and (not key.startswith('screen_') or getattr(args, 'screen_priors', False))}
 
 
 class ExperimentRun:

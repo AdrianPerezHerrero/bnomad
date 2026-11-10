@@ -215,6 +215,11 @@ def run_record(values, labels, grid, args, run, metadata, row_metadata, colors=N
             raise ValueError('Calibrated pooled LDS variance is not positive')
         noise_scales = pooled, pooled
         metadata['calibrated_noise_prior'] = pooled
+    from ._prior_screen import screen_experiment
+    screened = screen_experiment(values, grid, args, run,
+        lambda candidate: make_config(grid, candidate, values.shape[2], decoder))
+    if screened is not None:
+        return screened
     config = make_config(grid, args, values.shape[2], decoder, noise_scales)
     if decoder is not None:
         prior_state = decoder.state_dict()

@@ -1,5 +1,15 @@
 # 0.3.0 — native implementation migration
 
+- Added opt-in sigma/gamma prior screening with one frozen representation,
+  short native fits, pre-update predictive validation, adaptive refinement,
+  fit/time budgets and shared experiment reports. Both priors default to a
+  five-point logarithmic grid over 1e-3–10.0, with five clips of up to 128 training
+  and 32 validation observations, 60 total pilot fits and a 120-second budget
+  including local refinement and repeat checks. Explicit
+  ranges and budgets remain available. Plots use a common first-clip score for
+  grid colors and a separate confirmation/selection panel. Normal inference is
+  unchanged.
+
 - Reconciled bundled MIT-BIH record 203 with the corrected reference by source
   sample: removed one obsolete artifact window/label and retained 2,979 paired
   beats. Saved annotation sample positions now propagate into record reports

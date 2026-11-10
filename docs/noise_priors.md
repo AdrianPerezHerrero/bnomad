@@ -52,3 +52,5 @@ Explicit historical tutorial/reference recipes and frozen numerical fixtures
 retain their stated values. Historical initializer regression workloads now
 supply their old 0.25/0.01 values explicitly; separate tests verify the new
 defaults, actual core initialization, calibrated scaling and CLI overrides.
+
+See [fast prior screening](prior_screening.md) for the opt-in `--screen-priors` workflow, which estimates and tests joint prior pairs without a full-data fit.

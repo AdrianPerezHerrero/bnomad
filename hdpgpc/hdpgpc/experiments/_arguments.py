@@ -6,6 +6,8 @@ NOISE_MODES = ('fixed', 'cluster', 'cluster_diagonal', 'shared', 'shared_diagona
 
 
 def add_common_arguments(parser, *, defaults=None, ordered=False):
+    from ._prior_screen import add_screen_arguments
+    add_screen_arguments(parser)
     parser.add_argument('--schedule', choices=('offline', 'online', 'online_fast'), default='offline')
     parser.add_argument('--offline-strategy', choices=('legacy', 'split_merge'), default='legacy',
                         help='Offline optimizer; legacy preserves the current birth/deletion search.')
@@ -77,6 +79,8 @@ def lds_update(args):
 
 
 def validate_common(args):
+    from ._prior_screen import validate_screen_arguments
+    validate_screen_arguments(args)
     strength = getattr(args, 'constant_input_strength', 1.0)
     if not math.isfinite(strength) or strength <= 0:
         raise ValueError('constant-input-strength must be finite and positive')
