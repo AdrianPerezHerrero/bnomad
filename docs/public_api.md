@@ -207,6 +207,20 @@ Soft mode requires Bayesian parameter updates; cluster creation and reported
 labels still use a discrete choice. With ordered topology, the reported path
 obeys the configured transitions.
 
+Hard state labels and transition counts use the same assignment sequence.
+Ordinary inference keeps marginal MAP labels; incoming pairs are constructed
+from consecutive labels, with no incoming pair for observation zero. Ordered
+topology retains its feasible joint decoding. Forced online assignments update
+the current label and incoming pair before learning. Standard online inference
+can still revise earlier marginal assignments; a forced current label does not
+freeze the entire past sequence.
+
+The shared commit logic is used by offline proposals, both online engines,
+label reload and hard continuation. Older hard fast-online pair caches are
+rebuilt from retained states once when first used. Corrected transition counts
+can change learned transitions, structural decisions and clustering results
+where the former independent pair maximum disagreed with the hard labels.
+
 ```python
 from dataclasses import replace
 from hdpgpc import HDPGPC
@@ -243,7 +257,9 @@ NumPy snapshots:
 | `posterior` | Optional tuple of `LatentState`, one per output, after the update |
 
 The native `_safe_exp` respects `hard_assignments`: it hardens log marginals in
-hard mode and normalizes them in soft mode. The facade's streaming result is a
+hard mode and normalizes them in soft mode. Learning paths construct hard
+transition pairs from the chosen state sequence instead of separately hardening
+the pair marginals. Soft HMM pairs retain their forward/backward values. The facade's streaming result is a
 separate one-hot summary, not the native responsibility tensor. Neither that
 one-hot vector nor an ad hoc softmax of raw emission scores should be presented
 as calibrated assignment uncertainty.

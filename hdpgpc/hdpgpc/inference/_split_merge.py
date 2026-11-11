@@ -15,6 +15,7 @@ import torch
 from . import _offline as legacy
 from ._birth_diagnostics import capture_seed, capture_refit
 from ._messages import assignment_messages
+from ._assignments import from_labels, from_log_marginals
 from ..hdp import _topology
 from . import _ordered_messages
 
@@ -376,12 +377,9 @@ def _refine(state, steps):
                                                hard=state.hard_assignments)
         else:
             alpha, beta, scales = assignment_messages(state, start, state.trans_A, evidence)
-            resp = state._safe_exp(torch.log(alpha) + torch.log(beta))
-            if state.hard_assignments:
-                pair = resp.new_zeros((state.T, state.M, state.M))
-                pair[1:] = resp[:-1, :, None] * resp[1:, None, :]
-            else:
-                pair = state._safe_exp(state.coupled_state_coef(alpha, beta, state.trans_A, evidence, scales))
+            log_pair = (None if state.hard_assignments else
+                        state.coupled_state_coef(alpha, beta, state.trans_A, evidence, scales))
+            resp, pair = from_log_marginals(state, torch.log(alpha)+torch.log(beta), log_pair)
         candidate = _stage(state, resp, pair, range(state.M), force=state.lds_update == 'conjugate_batch')
         if candidate is None:
             break
@@ -563,10 +561,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     state._dtw_offline_references = {}
     state.M = min(state.M, state.T, state.max_models or state.T)
     labels = torch.arange(state.T, device=state.device) * state.M // state.T
-    resp = state._split_merge_y.new_zeros((state.T, state.M))
-    resp.scatter_(1, labels[:, None], 1.)
-    pair = resp.new_zeros((state.T, state.M, state.M))
-    pair[1:] = resp[:-1, :, None] * resp[1:, None, :]
+    resp, pair = from_labels(labels, state.M, state._split_merge_y)
     state.resp_last, state.respPair_last = resp, pair
     state.q_last = resp.new_zeros((state.T, state.M, state.n_outputs))
     state.q_lat_last, state.snr_last = state.q_last.clone(), torch.ones_like(state.q_last)

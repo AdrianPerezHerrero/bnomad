@@ -1,7 +1,8 @@
 """HMM responsibilities and forward/backward message recurrences.
 
 Functions operate on the explicitly supplied mutable inference state.
-Numerical expressions and mutation order are preserved from the executable specification.
+Message recurrences retain their numerical expressions. Hard state/pair
+commitment is shared so transition counts follow the selected labels.
 """
 
 import numpy as np
@@ -18,6 +19,7 @@ from ..hdp._variational import HDPVariational
 from ..hdp._optimizer import find_optimum_multiple_tries, kvec
 from ..numerics._normalization import max_shift_log_scores
 from ..hdp._entropy import state_entropy_terms, pair_entropy_terms
+from ._assignments import from_log_marginals
 
 
 def _safe_exp(self, x, hard=None):
@@ -185,8 +187,8 @@ def variational_local_terms(self, q, transTheta=None, startTheta=None, liks=None
         print("Mismatch between SSE (" + str(m_ + 1) + ") and Resp (" + str(m_resp + 1) + ").")
     if self.verbose and torch.any(torch.isnan(resp)):
         print("Error")
-    assignments = self._safe_exp(resp, hard=hard_assignments)
-    pair_assignments = self._safe_exp(respPair, hard=hard_assignments)
+    assignments, pair_assignments = from_log_marginals(
+        self, resp, respPair, hard=hard_assignments)
     if classify:
         return q, assignments, resp, pair_assignments, respPair
     else:

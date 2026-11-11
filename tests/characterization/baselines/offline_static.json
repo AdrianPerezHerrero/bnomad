@@ -3335,7 +3335,7 @@
       ]
     },
     "respPair_last": {
-      "dtype": "float32",
+      "dtype": "float64",
       "shape": [
         6,
         2,
@@ -3596,7 +3596,7 @@
       }
     ],
     "transStateCount_last": {
-      "dtype": "float32",
+      "dtype": "float64",
       "shape": [
         2,
         2
@@ -4398,7 +4398,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -4758,7 +4758,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -4962,7 +4962,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -5166,7 +5166,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -5370,7 +5370,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -5574,7 +5574,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -5778,7 +5778,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -6138,7 +6138,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -6342,7 +6342,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -6546,7 +6546,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -6750,7 +6750,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -6954,7 +6954,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -7158,7 +7158,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -7362,7 +7362,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -7566,7 +7566,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -7770,7 +7770,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -7974,7 +7974,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -8178,7 +8178,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -8382,7 +8382,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -8586,7 +8586,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -8790,7 +8790,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -8994,7 +8994,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -9198,7 +9198,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -9414,7 +9414,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           3,
@@ -9666,7 +9666,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -9882,7 +9882,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           3,
@@ -10134,7 +10134,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -10338,7 +10338,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,
@@ -10542,7 +10542,7 @@
       "method": "compute_q_elbo",
       "one_sample": false,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           6,
           2,

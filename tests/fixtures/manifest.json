@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
-  "source_revision": "034c61b + reviewed reference fixes (2026-10-27)",
-  "reason": "Version 2: explicit reference concentrations and birth-score policy; current normalized Gaussian score, corrected conjugate posterior and soft weighting, current HMM transitions, current warp derivatives. Existing array comparison tolerances are unchanged; discrete scientific expectations reviewed separately.",
+  "source_revision": "034c61b + reviewed reference fixes (2026-10-27); reviewed hard-assignment coherence fix (2026-11-11)",
+  "reason": "Version 2: explicit reference concentrations and birth-score policy; current normalized Gaussian score, corrected conjugate posterior and soft weighting, current HMM transitions, current warp derivatives. Existing array comparison tolerances are unchanged; discrete scientific expectations reviewed separately. Hard pairs now follow committed marginal labels; native pair dtype matches state dtype. The reviewed old scientific captures change only pair dtype metadata. New independent invariants cover ambiguous posteriors, forced state changes, reload and both clocks; tolerances are unchanged.",
   "comparison": {
     "structure_and_discrete": "exact",
     "float_rtol": 1e-07,
@@ -11,7 +11,8 @@
     "Offline fixtures retain 2 occupied clusters in each output",
     "Online static growth remains [1,1,2,2]",
     "Known online warp and multi-output failures retain their exception types",
-    "Forced online reuse now succeeds without creating clusters or losing history"
+    "Forced online reuse now succeeds without creating clusters or losing history",
+    "Hard pairs have zero incoming mass at observation zero and source/destination marginals matching adjacent committed states."
   ],
   "files": [
     {
@@ -1378,6 +1379,96 @@
           "key"
         ]
       ]
+    },
+    {
+      "file": "tests/characterization/baselines/hdp_messages.json",
+      "old_sha256": "c1b36b80e94d41c2317165265218f7d173f2951af3008f176fee9270d39bcb03",
+      "new_sha256": "8a06cec665c4c3d740e44b262ebc245cabb77cee573a7d37277d772202852d6e",
+      "difference_counts": {
+        "dtype": 1
+      },
+      "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
+    },
+    {
+      "file": "tests/characterization/baselines/offline_dynamic.json",
+      "old_sha256": "57e33aa74139c20a02948c7e70e3118281cb1341a0bb2888b62eb3a6a787b8a5",
+      "new_sha256": "6627245091f1dfdb2bb7169cc601ab9d0d15be72837bb29f0795f8a67f79cdc4",
+      "difference_counts": {
+        "dtype": 31
+      },
+      "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
+    },
+    {
+      "file": "tests/characterization/baselines/offline_multi.json",
+      "old_sha256": "de689a159d2fb77df8a2ec8fe7de72fbfa4ecee05996bd9dda85c225957bebd5",
+      "new_sha256": "fe078a637472af84f1a6013c4adc7f1f8749502d8edbc6864fdb0ba4586c3879",
+      "difference_counts": {
+        "dtype": 31
+      },
+      "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
+    },
+    {
+      "file": "tests/characterization/baselines/offline_multi_snr.json",
+      "old_sha256": "0a10353af0617f70b891c408bcfd366344c4eb2832648bba5174216c78f86633",
+      "new_sha256": "92a79fe843af5cddaed3577ba9f5a91b4b532e5c72ffd04daf5949ec2a649de6",
+      "difference_counts": {
+        "dtype": 31
+      },
+      "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
+    },
+    {
+      "file": "tests/characterization/baselines/offline_static.json",
+      "old_sha256": "b00b0e227f84ab9e8e4e893f954ab6e492ec96c13dbc58bfde0de7f6df2b894f",
+      "new_sha256": "a06d80d8e0f040781b69a43e4b8f43f4e128b10de9c412568d35c661a23ea141",
+      "difference_counts": {
+        "dtype": 31
+      },
+      "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
+    },
+    {
+      "file": "tests/characterization/baselines/offline_warp.json",
+      "old_sha256": "4fe29e789cd7ddcb3ddfab6bf127cf492eeb907bb7eaa10d61ac42eeffb83f39",
+      "new_sha256": "441fb58546b1ecfbc9f8b570947f03f5382383c8f9ac593d998609901d8a2209",
+      "difference_counts": {
+        "dtype": 31
+      },
+      "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
+    },
+    {
+      "file": "tests/characterization/baselines/online_dynamic.json",
+      "old_sha256": "939501d8da9226e1e34bbebc1b64204b9afaa1f2ed1c5ab309ef3c3c3c1596bc",
+      "new_sha256": "1b171205e5b59629a890a28c8b93ffa7af6389ff8e09f5891a9aaf57c32d5c50",
+      "difference_counts": {
+        "dtype": 29
+      },
+      "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
+    },
+    {
+      "file": "tests/characterization/baselines/online_static.json",
+      "old_sha256": "eb8feb6d7f01b8bb268a516ae5431b3d0d5709ec0a89e99880b1fb287814e664",
+      "new_sha256": "c9f53c59eb31ccb9aa4cb070035a7fd9267c910b8cfd994d7c7ba8fc11d2b645",
+      "difference_counts": {
+        "dtype": 29
+      },
+      "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
+    },
+    {
+      "file": "tests/fixtures/inference_edge_reference.json.gz",
+      "old_sha256": "e18c1697b5147199c73dc695b5a5bff0823a8454cde6f85f86032a50c40bb9cc",
+      "new_sha256": "a6cb743a0f8e899ea388961018faa9057b1a5a6253f7c94106ae7b9d39d1e0f3",
+      "difference_counts": {
+        "dtype": 59
+      },
+      "review": "State and hard-pair dtype now match; all numerical values and labels match the previous fixture exactly."
+    },
+    {
+      "file": "tests/fixtures/inference_reference.json.gz",
+      "old_sha256": "9b663d0afdb3397dee590f02a69dee142fff948329033e1cae13b8461d256b52",
+      "new_sha256": "b49a0a14f5ae5d58af01eca58eb9b998789a4c3e4f036d9a19dee6fa6f850a63",
+      "difference_counts": {
+        "dtype": 2504
+      },
+      "review": "State and hard-pair dtype now match; all numerical values and labels match the previous fixture exactly."
     }
   ],
   "sha256": {
@@ -1386,22 +1477,22 @@
     "tests/fixtures/dynamics_reference.json": "0673db8a407f65e0ba6990044c1c54a0eebd93ee19ce7b15b1d0b2ed78ca8aaa",
     "tests/fixtures/emission_reference.json": "9b94abdfb42b3d8abf11e13c95e965725185c3fa08218bc9182ce8b5cdb62ce9",
     "tests/fixtures/hdp_reference.json": "9d33b7b8c9aa2857ac6e5973aea29468050f134a7e438d394120c83601fb6ee6",
-    "tests/fixtures/inference_edge_reference.json.gz": "e18c1697b5147199c73dc695b5a5bff0823a8454cde6f85f86032a50c40bb9cc",
-    "tests/fixtures/inference_reference.json.gz": "9b663d0afdb3397dee590f02a69dee142fff948329033e1cae13b8461d256b52",
+    "tests/fixtures/inference_edge_reference.json.gz": "a6cb743a0f8e899ea388961018faa9057b1a5a6253f7c94106ae7b9d39d1e0f3",
+    "tests/fixtures/inference_reference.json.gz": "b49a0a14f5ae5d58af01eca58eb9b998789a4c3e4f036d9a19dee6fa6f850a63",
     "tests/characterization/baselines/emission_dynamic.json": "4ed6aca09d30a363dde97388c62e6162bee2eb772e42032d7c541b90c65a980b",
     "tests/characterization/baselines/emission_static.json": "9049269ccaae508086d1f35b18f408ac530b5db3c9c363f86603b146834748c9",
-    "tests/characterization/baselines/hdp_messages.json": "c1b36b80e94d41c2317165265218f7d173f2951af3008f176fee9270d39bcb03",
+    "tests/characterization/baselines/hdp_messages.json": "8a06cec665c4c3d740e44b262ebc245cabb77cee573a7d37277d772202852d6e",
     "tests/characterization/baselines/known_failure_online_multi.json": "ff0bd95f8bfe01b7ac4b05feb653cdb146017d3ca64e23046a3f92436562ecb0",
     "tests/characterization/baselines/known_failure_online_warp.json": "18fdc0ada58f41670b683b46d6b4b938f41c15daf8ee25d0bb8a177c7ed470f2",
-    "tests/characterization/baselines/manifest.json": "376a60a2db06f032aeef90a8ac60d581b7b7c7186155e4b643ec02d95cef15c5",
-    "tests/characterization/baselines/offline_dynamic.json": "57e33aa74139c20a02948c7e70e3118281cb1341a0bb2888b62eb3a6a787b8a5",
-    "tests/characterization/baselines/offline_multi.json": "de689a159d2fb77df8a2ec8fe7de72fbfa4ecee05996bd9dda85c225957bebd5",
-    "tests/characterization/baselines/offline_multi_snr.json": "0a10353af0617f70b891c408bcfd366344c4eb2832648bba5174216c78f86633",
-    "tests/characterization/baselines/offline_static.json": "b00b0e227f84ab9e8e4e893f954ab6e492ec96c13dbc58bfde0de7f6df2b894f",
-    "tests/characterization/baselines/offline_warp.json": "4fe29e789cd7ddcb3ddfab6bf127cf492eeb907bb7eaa10d61ac42eeffb83f39",
-    "tests/characterization/baselines/online_dynamic.json": "939501d8da9226e1e34bbebc1b64204b9afaa1f2ed1c5ab309ef3c3c3c1596bc",
+    "tests/characterization/baselines/manifest.json": "ab536d1c12b8777c8660117ab6dada87c07c47cfc2f4a7a52bfd0ba44c06fb6b",
+    "tests/characterization/baselines/offline_dynamic.json": "6627245091f1dfdb2bb7169cc601ab9d0d15be72837bb29f0795f8a67f79cdc4",
+    "tests/characterization/baselines/offline_multi.json": "fe078a637472af84f1a6013c4adc7f1f8749502d8edbc6864fdb0ba4586c3879",
+    "tests/characterization/baselines/offline_multi_snr.json": "92a79fe843af5cddaed3577ba9f5a91b4b532e5c72ffd04daf5949ec2a649de6",
+    "tests/characterization/baselines/offline_static.json": "a06d80d8e0f040781b69a43e4b8f43f4e128b10de9c412568d35c661a23ea141",
+    "tests/characterization/baselines/offline_warp.json": "441fb58546b1ecfbc9f8b570947f03f5382383c8f9ac593d998609901d8a2209",
+    "tests/characterization/baselines/online_dynamic.json": "1b171205e5b59629a890a28c8b93ffa7af6389ff8e09f5891a9aaf57c32d5c50",
     "tests/characterization/baselines/online_fast.json": "69e071fdf0f481ee32bc77e3dca7c400f9fb18145b5dbb9865e0946c22fe86c5",
-    "tests/characterization/baselines/online_static.json": "eb8feb6d7f01b8bb268a516ae5431b3d0d5709ec0a89e99880b1fb287814e664",
+    "tests/characterization/baselines/online_static.json": "c9f53c59eb31ccb9aa4cb070035a7fd9267c910b8cfd994d7c7ba8fc11d2b645",
     "tests/characterization/baselines/warper_batch.json": "ef65a2af15dde57043fddfb19f135db0fb8b10a27fdc2e4e2b2ea1fa3046bd52",
     "tests/characterization/baselines/warper_scalar.json": "410f9c63b21e8e7994c81f59187b903aafcd085c0e2fd1c41abb5fe5fde7dade",
     "hdpgpc/hdpgpc/examples/reference_offline.json": "a5873491b0f37226781ff83b19599c1ad9e0150e3f209e9bb81bed281c1bd5d6"

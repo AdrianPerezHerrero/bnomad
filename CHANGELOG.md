@@ -1,5 +1,13 @@
 # 0.3.0 — native implementation migration
 
+- Fixed hard state/transition consistency through shared assignment helpers.
+  Offline and standard online pairs now follow the committed labels; forced
+  assignments update incoming pairs before learning, including fast online.
+  Reload/continuation and ordered decoding share the same construction, and
+  older hard fast-online caches are repaired once. Marginal label selection,
+  soft HMM calculations and model arguments are retained; corrected counts can
+  change learned transitions and clustering results.
+
 - Added opt-in sigma/gamma prior screening with one frozen representation,
   short native fits, pre-update predictive validation, adaptive refinement,
   fit/time budgets and shared experiment reports. Both priors default to a

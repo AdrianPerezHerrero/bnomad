@@ -7,6 +7,7 @@ import torch
 from ..alignment import _components as _alignment
 from ._birth_diagnostics import capture_seed, capture_refit
 from ._messages import assignment_messages
+from ._assignments import from_labels, from_log_marginals, hard_pairs
 
 
 def _reallocation_improves(baseline, proposal, *, atol=1e-6, rtol=1e-8):
@@ -248,12 +249,11 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     # Start loop of EM
     elbo = -np.inf
     resp = self.cond_cuda(torch.zeros((n_samples, M)))
-    respPair = self.cond_cuda(torch.zeros((n_samples, M, M)))
-    respPair[1:, 0, 0] = respPair[1:, 0, 0] + 1.0
+    resp[:, 0] = resp[:, 0] + 1.0
+    respPair = hard_pairs(resp)
     q = self.cond_cuda(torch.zeros((n_samples, M, n_outputs)))
     q_lat = self.cond_cuda(torch.zeros((n_samples, M, n_outputs)))
     snr = self.snr_norm
-    resp[:, 0] = resp[:, 0] + 1.0
     y_trains_w = torch.clone(y_trains)
     warp_computed = False
     previous_elbo = None
@@ -563,8 +563,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
         alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-        resp_temp = self._safe_exp(resplog_temp)
-        respPair_temp = self._safe_exp(respPairlog_temp)
+        resp_temp, respPair_temp = from_log_marginals(self, resplog_temp, respPairlog_temp)
         # resp_temp, respPair_temp = self.refill_resp(resp_temp, respPair_temp)
 
         resp_per_group_temp = torch.sum(resp_temp, axis=0)
@@ -853,8 +852,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
                     respPairlog_temp, _ = self.LogLik(
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-                    resp_temp = self._safe_exp(resplog_temp)
-                    respPair_temp = self._safe_exp(respPairlog_temp)
+                    resp_temp, respPair_temp = from_log_marginals(self, resplog_temp, respPairlog_temp)
                     if getattr(self, '_birth_diagnostic_limit', 0):
                         birth_record = capture_seed(
                             self, x_trains, y_trains, beat, int(m_chosen),
@@ -874,8 +872,7 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                     resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
                     respPairlog_temp, _ = self.LogLik(
                         self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-                    resp_temp = self._safe_exp(resplog_temp)
-                    respPair_temp = self._safe_exp(respPairlog_temp)
+                    resp_temp, respPair_temp = from_log_marginals(self, resplog_temp, respPairlog_temp)
 
                 # Reallocating resp to preserve order.
                 resp_per_group_temp = torch.sum(resp_temp, axis=0)
@@ -1096,8 +1093,7 @@ def estimate_q_all(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q_,
     alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
     logresp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
     logrespPair, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-    resp_temp = self._safe_exp(logresp)
-    respPair_temp = self._safe_exp(logrespPair)
+    resp_temp, respPair_temp = from_log_marginals(self, logresp, logrespPair)
 
     resp_per_group_temp = torch.sum(resp_temp, axis=0)
     reorder = torch.argsort(resp_per_group_temp, descending=True)
@@ -1267,14 +1263,17 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
         alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-        resp_new = self._safe_exp(resplog_temp)
-        respPair_new = self._safe_exp(respPairlog_temp)
+        resp_new, respPair_new = from_log_marginals(self, resplog_temp, respPairlog_temp)
         x_trains = torch.concatenate([self.x_train, x_trains])
         y_trains = torch.concatenate([self.y_train, y_trains])
         y_trains_w = y_trains
         self.T = y_trains.shape[0]
         resp, respPair = torch.concatenate([self.resp_last, resp_new]), torch.concatenate(
             [self.respPair_last, respPair_new])
+        if self.hard_assignments:
+            # The appended block now belongs to the same sequence: include its
+            # boundary transition and repair any pre-fix retained hard pairs.
+            respPair = hard_pairs(resp)
         self.snr_norm = torch.concatenate([self.snr_norm, self.normalize_snr(snr_new)])
         if point_warp:
             self.warp = True
@@ -1329,8 +1328,7 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
         alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
         resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
         respPairlog_temp, _ = self.LogLik(self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-        resp = self._safe_exp(resplog_temp)
-        respPair = self._safe_exp(respPairlog_temp)
+        resp, respPair = from_log_marginals(self, resplog_temp, respPairlog_temp)
 
         startStateCount = self.cond_cuda(resp[0])
         transStateCount = self.cond_cuda(self.hdp.transition_counts(respPair))
@@ -1445,10 +1443,7 @@ def fit_labels(self, x_trains, y_trains, labels, M, warp=False):
     self.x_train = x_trains
     self.y = y_trains
     self.model_type = [self.model_type[0]] * M
-    resp = torch.zeros(y_trains.shape[0], M)
-    resp[torch.arange(y_trains.shape[0]), labels] = 1.0
-    respPair = self.cond_cuda(torch.zeros((y_trains.shape[0], M, M)))
-    respPair[np.arange(1, y_trains.shape[0]), labels[:-1], labels[1:]] = 1.0
+    resp, respPair = from_labels(labels, M, y_trains)
     q = torch.zeros(y_trains.shape[0], M, self.n_outputs)
     q_lat = torch.zeros(y_trains.shape[0], M, self.n_outputs)
     snr = torch.zeros(y_trains.shape[0], M, self.n_outputs)

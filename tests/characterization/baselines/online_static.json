@@ -38,7 +38,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           1,
           2,
@@ -117,7 +117,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           1,
           1,
@@ -209,7 +209,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           2,
           2,
@@ -302,7 +302,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           1,
           1,
@@ -394,7 +394,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           2,
           2,
@@ -487,7 +487,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           1,
           1,
@@ -579,7 +579,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           2,
           2,
@@ -682,7 +682,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           2,
           2,
@@ -794,7 +794,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           2,
           2,
@@ -893,7 +893,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           2,
           1,
@@ -993,7 +993,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           2,
           2,
@@ -1092,234 +1092,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
-        "shape": [
-          2,
-          1,
-          1
-        ],
-        "values": [
-          [
-            [
-              0.0
-            ]
-          ],
-          [
-            [
-              1.0
-            ]
-          ]
-        ]
-      },
-      "post": false,
-      "responsibilities": {
         "dtype": "float64",
-        "shape": [
-          2,
-          1
-        ],
-        "values": [
-          [
-            1.0
-          ],
-          [
-            1.0
-          ]
-        ]
-      },
-      "result": [
-        {
-          "dtype": "float64",
-          "shape": [],
-          "values": -73.32877751656193
-        },
-        {
-          "dtype": "float64",
-          "shape": [],
-          "values": -8.043203153837826
-        }
-      ]
-    },
-    {
-      "M": 1,
-      "T": 3,
-      "log_pair_responsibilities": {
-        "dtype": "float64",
-        "shape": [
-          3,
-          2,
-          2
-        ],
-        "values": [
-          [
-            [
-              "-Infinity",
-              "-Infinity"
-            ],
-            [
-              "-Infinity",
-              "-Infinity"
-            ]
-          ],
-          [
-            [
-              0.0,
-              "-Infinity"
-            ],
-            [
-              "-Infinity",
-              "-Infinity"
-            ]
-          ],
-          [
-            [
-              0.0,
-              "-Infinity"
-            ],
-            [
-              "-Infinity",
-              "-Infinity"
-            ]
-          ]
-        ]
-      },
-      "log_responsibilities": {
-        "dtype": "float64",
-        "shape": [
-          3,
-          2
-        ],
-        "values": [
-          [
-            0.0,
-            "-Infinity"
-          ],
-          [
-            0.0,
-            "-Infinity"
-          ],
-          [
-            0.0,
-            "-Infinity"
-          ]
-        ]
-      },
-      "method": "variational_local_terms",
-      "pair_responsibilities": {
-        "dtype": "float32",
-        "shape": [
-          3,
-          2,
-          2
-        ],
-        "values": [
-          [
-            [
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ]
-          ],
-          [
-            [
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ]
-          ],
-          [
-            [
-              1.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0
-            ]
-          ]
-        ]
-      },
-      "responsibilities": {
-        "dtype": "float64",
-        "shape": [
-          3,
-          2
-        ],
-        "values": [
-          [
-            1.0,
-            0.0
-          ],
-          [
-            1.0,
-            0.0
-          ],
-          [
-            1.0,
-            0.0
-          ]
-        ]
-      }
-    },
-    {
-      "M": 1,
-      "T": 3,
-      "method": "elbo_Linears",
-      "result": -7.871457802556886
-    },
-    {
-      "M": 1,
-      "T": 3,
-      "method": "full_LDS_elbo",
-      "result": {
-        "dtype": "float64",
-        "shape": [],
-        "values": -0.17174535128093904
-      }
-    },
-    {
-      "M": 1,
-      "T": 3,
-      "emission_input": {
-        "dtype": "float64",
-        "shape": [
-          2,
-          1
-        ],
-        "values": [
-          [
-            -75.54750233885288
-          ],
-          [
-            2.218724822290957
-          ]
-        ]
-      },
-      "latent_input": {
-        "dtype": "float64",
-        "shape": [
-          2,
-          1
-        ],
-        "values": [
-          [
-            0.0
-          ],
-          [
-            0.0
-          ]
-        ]
-      },
-      "method": "compute_q_elbo",
-      "one_sample": true,
-      "pair_responsibilities": {
-        "dtype": "float32",
         "shape": [
           2,
           1,
@@ -1433,7 +1206,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           3,
           2,
@@ -1546,7 +1319,234 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
+        "shape": [
+          2,
+          1,
+          1
+        ],
+        "values": [
+          [
+            [
+              0.0
+            ]
+          ],
+          [
+            [
+              1.0
+            ]
+          ]
+        ]
+      },
+      "post": false,
+      "responsibilities": {
+        "dtype": "float64",
+        "shape": [
+          2,
+          1
+        ],
+        "values": [
+          [
+            1.0
+          ],
+          [
+            1.0
+          ]
+        ]
+      },
+      "result": [
+        {
+          "dtype": "float64",
+          "shape": [],
+          "values": -73.32877751656193
+        },
+        {
+          "dtype": "float64",
+          "shape": [],
+          "values": -8.043203153837826
+        }
+      ]
+    },
+    {
+      "M": 1,
+      "T": 3,
+      "log_pair_responsibilities": {
+        "dtype": "float64",
+        "shape": [
+          3,
+          2,
+          2
+        ],
+        "values": [
+          [
+            [
+              "-Infinity",
+              "-Infinity"
+            ],
+            [
+              "-Infinity",
+              "-Infinity"
+            ]
+          ],
+          [
+            [
+              0.0,
+              "-Infinity"
+            ],
+            [
+              "-Infinity",
+              "-Infinity"
+            ]
+          ],
+          [
+            [
+              0.0,
+              "-Infinity"
+            ],
+            [
+              "-Infinity",
+              "-Infinity"
+            ]
+          ]
+        ]
+      },
+      "log_responsibilities": {
+        "dtype": "float64",
+        "shape": [
+          3,
+          2
+        ],
+        "values": [
+          [
+            0.0,
+            "-Infinity"
+          ],
+          [
+            0.0,
+            "-Infinity"
+          ],
+          [
+            0.0,
+            "-Infinity"
+          ]
+        ]
+      },
+      "method": "variational_local_terms",
+      "pair_responsibilities": {
+        "dtype": "float64",
+        "shape": [
+          3,
+          2,
+          2
+        ],
+        "values": [
+          [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ],
+          [
+            [
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ],
+          [
+            [
+              1.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0
+            ]
+          ]
+        ]
+      },
+      "responsibilities": {
+        "dtype": "float64",
+        "shape": [
+          3,
+          2
+        ],
+        "values": [
+          [
+            1.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0
+          ],
+          [
+            1.0,
+            0.0
+          ]
+        ]
+      }
+    },
+    {
+      "M": 1,
+      "T": 3,
+      "method": "elbo_Linears",
+      "result": -7.871457802556886
+    },
+    {
+      "M": 1,
+      "T": 3,
+      "method": "full_LDS_elbo",
+      "result": {
+        "dtype": "float64",
+        "shape": [],
+        "values": -0.17174535128093904
+      }
+    },
+    {
+      "M": 1,
+      "T": 3,
+      "emission_input": {
+        "dtype": "float64",
+        "shape": [
+          2,
+          1
+        ],
+        "values": [
+          [
+            -75.54750233885288
+          ],
+          [
+            2.218724822290957
+          ]
+        ]
+      },
+      "latent_input": {
+        "dtype": "float64",
+        "shape": [
+          2,
+          1
+        ],
+        "values": [
+          [
+            0.0
+          ],
+          [
+            0.0
+          ]
+        ]
+      },
+      "method": "compute_q_elbo",
+      "one_sample": true,
+      "pair_responsibilities": {
+        "dtype": "float64",
         "shape": [
           2,
           1,
@@ -1660,7 +1660,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           3,
           2,
@@ -1785,7 +1785,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           3,
           2,
@@ -1925,7 +1925,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           3,
           2,
@@ -2044,7 +2044,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           3,
           1,
@@ -2164,7 +2164,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           3,
           2,
@@ -2350,7 +2350,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           4,
           3,
@@ -2521,7 +2521,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           3,
           2,
@@ -2707,7 +2707,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           4,
           3,
@@ -2878,7 +2878,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           3,
           2,
@@ -3064,7 +3064,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           4,
           3,
@@ -3251,7 +3251,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           4,
           3,
@@ -3483,7 +3483,7 @@
       },
       "method": "variational_local_terms",
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           4,
           3,
@@ -3662,7 +3662,7 @@
       "method": "compute_q_elbo",
       "one_sample": true,
       "pair_responsibilities": {
-        "dtype": "float32",
+        "dtype": "float64",
         "shape": [
           4,
           2,

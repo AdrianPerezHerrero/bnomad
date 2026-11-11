@@ -107,6 +107,12 @@ inference. GP filtering and Bayesian LDS sufficient statistics then use each
 observation's fractional responsibility. Cluster creation and reported labels
 still use a MAP choice. Soft assignments require `bayesian_params=True` and
 can cost substantially more because an observation may update several GPs.
+Hard inference constructs adjacent-state pairs from its committed labels, so
+HDP transition counts agree with that sequence. Forced current assignments are
+applied before learning. This uses marginal MAP labels for ordinary topology
+and the existing joint decoding for ordered topology. Soft HMM marginals keep
+their forward/backward calculation; no new configuration option is needed.
+
 `InferenceConfig.birth_lds_kl_per_dimension` defaults to `True`. When enabled,
 the local birth and absorb proposal score divides the summed LDS parameter
 KL by the latent LDS state dimension in every inference schedule. With an
