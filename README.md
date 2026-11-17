@@ -1,11 +1,10 @@
 # HDP-GPC
 
-**Bayesian clustering for waveform sequences, with Gaussian-process emissions,
-latent dynamics, and hard or soft assignments.**
+**Bayesian Non-parametric Aligned Dynamic clustering**
 
 Use HDP-GPC to group observations such as ECG beats, sensor windows, or image
 frames while modeling how their appearance changes over a sequence. The model
-can create clusters during inference, subject to your HDP prior and cluster cap.
+can create clusters during inference, subject to your HDP prior.
 Optional alignment helps separate waveform shape from timing variation.
 
 **Package:** `hdpgpc` · **Version:** 0.3.0 · **Python:** 3.10–3.12 ·
