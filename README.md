@@ -1,4 +1,4 @@
-# HDP-GPC
+# BNOMAD
 
 **Bayesian Non-parametric Aligned Dynamic clustering**
 
