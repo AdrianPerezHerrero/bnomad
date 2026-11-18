@@ -45,7 +45,8 @@ def full_pass(emission, grids, observations, resp, active):
     first_mean, first_cov = model.condition_batch(zero, first_prior, values[:1],
                                                  responsibilities=weights[:1], noise=sigma)
     if len(active) > 1:
-        means, covariances = model.condition_batch(zero, gamma, values[1:],
+        prior_mean = emission.b[-1] if getattr(emission, 'constant_input', False) else zero
+        means, covariances = model.condition_batch(prior_mean, gamma, values[1:],
                                                   responsibilities=weights[1:], noise=sigma)
         means = torch.cat((first_mean, means))
         covariances = torch.cat((first_cov, covariances))
@@ -115,7 +116,10 @@ def latent_scores(emission, count, h_ini=1.):
     logdet = 2 * factors.diagonal(dim1=-2, dim2=-1).log().sum(-1)
     factor = emission._chol_spd(emission.Gamma[-1])
     precision = torch.cholesky_inverse(factor)
-    quadratic = torch.einsum('ni,ij,nj->n', means, precision, means)
+    residuals = means
+    if getattr(emission, 'constant_input', False):
+        residuals = means-emission.b[-1].reshape(1,-1)
+    quadratic = torch.einsum('ni,ij,nj->n', residuals, precision, residuals)
     trace = torch.einsum('ij,nji->n', precision, covariances)
     scores = .5 * (means.shape[1] + logdet - 2 * factor.diag().log().sum() - quadratic - trace)
     # Retain the scalar first-state convention, including h_ini and prior mean.

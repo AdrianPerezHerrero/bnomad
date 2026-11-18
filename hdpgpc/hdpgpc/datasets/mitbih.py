@@ -47,7 +47,12 @@ def align_legacy_annotations(waveforms, annotations):
 
 
 def load_mitbih_record(directory, record) -> MITBIHRecord:
-    """Load one bundled record and apply the documented legacy tail rule."""
+    """Load paired windows/labels, plus optional WFDB annotation sample positions.
+
+    ``<record>_annotation_samples.npy`` has one strictly increasing, nonnegative
+    integer position per waveform. Records without this sidecar keep the legacy
+    tail rule and return ``annotation_samples=None``.
+    """
     record = str(record)
     if not record.isdigit():
         raise ValueError('MIT-BIH record must be a numeric record identifier')
@@ -55,7 +60,19 @@ def load_mitbih_record(directory, record) -> MITBIHRecord:
     waveforms = np.load(root / f'{record}.npy', allow_pickle=False)
     labels = np.load(root / f'{record}_labels.npy', allow_pickle=False)
     aligned, omitted = align_legacy_annotations(waveforms, labels)
-    return MITBIHRecord(waveforms, aligned, omitted_trailing_annotations=omitted)
+    samples_path = root / f'{record}_annotation_samples.npy'
+    samples = None
+    if samples_path.exists():
+        samples = np.load(samples_path, allow_pickle=False)
+        if (samples.ndim != 1 or samples.shape != (len(waveforms),)
+                or samples.dtype.kind not in 'iu' or np.any(samples < 0)
+                or np.any(samples[1:] <= samples[:-1])
+                or np.any(samples > np.iinfo(np.int64).max)):
+            raise ValueError('MIT-BIH annotation sample positions must be strictly increasing '
+                             'nonnegative integers, one per waveform')
+        samples = samples.astype(np.int64, copy=False)
+    return MITBIHRecord(waveforms, aligned, annotation_samples=samples,
+                        omitted_trailing_annotations=omitted)
 
 
 def extract_annotated_beats(signal, annotation_samples, annotation_symbols, *,

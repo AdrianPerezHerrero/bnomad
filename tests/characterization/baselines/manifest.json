@@ -148,6 +148,6 @@
     },
     "torch_num_threads": 1
   },
-  "reference_commit": "034c61b + pinned reference and HDP fallback fix (2026-10-27)",
+  "reference_commit": "034c61b + pinned reference and HDP fallback fix (2026-10-27); reviewed coherent hard state/pair assignment fix (2026-11-11)",
   "schema_version": 1
 }

@@ -67,7 +67,8 @@ def code_digest():
 def experiment_settings(args):
     return {key: value for key, value in vars(args).items()
             if key not in ('output_dir', 'resume', 'download', 'datasets', 'records', 'clutches',
-                           'list_records', 'single_dataset', 'archive_sha256') and not key.startswith('_')}
+                           'list_records', 'single_dataset', 'archive_sha256') and not key.startswith('_')
+            and (not key.startswith('screen_') or getattr(args, 'screen_priors', False))}
 
 
 class ExperimentRun:
@@ -156,12 +157,19 @@ def log_configuration(config, args, *, source='configured'):
           f'alignment={config.alignment.policy}; fit_gp={config.emission.fit_gp}')
     if args.schedule == 'offline':
         print(f'Offline strategy={config.inference.offline_strategy}; '
+              f'candidate search={config.inference.offline_candidate_search}; '
               f'proposal refinement steps={config.inference.split_merge_refine_steps}; '
               f'representer selection={config.inference.offline_representer_selection}')
+        if config.inference.offline_candidate_search == 'combined':
+            print('Candidate family weights (score_guided, noise_aware, dynamics)='
+                  f'{tuple(config.inference.proposal_family_weights)}')
         if config.inference.offline_strategy == 'split_merge':
             print(f'Split/merge stopping: score rtol={config.inference.split_merge_score_rtol:g}; '
                   f'stable iterations={config.inference.split_merge_stability_patience}')
     print(f'Dynamics clock={config.dynamics.clock}')
+    if config.dynamics.constant_input:
+        print('Latent transition: z_next = A z + b + noise; '
+              f'constant-input prior precision={config.dynamics.constant_input_strength:g}')
     print(f'LDS update={config.dynamics.lds_update}; scoring={config.dynamics.lds_scoring}; '
           f'hard assignments={config.inference.hard_assignments}; seed={args.seed}')
     print(format_lds_priors(dimension=len(config.x_basis), model_type=config.dynamics.model_type,
@@ -203,10 +211,10 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
     """Common report/plot schema; optional diagnostics never refit the model."""
     import matplotlib.pyplot as plt
     from ..diagnostics import (cluster_label_statistics, format_confusion_matrix,
-        plot_clustering_summary, plot_embedding_summary, model_lds_arrays,
+        plot_clustering_summary, plot_embedding_summary, plot_embedding_dynamics, model_lds_arrays,
         model_lds_dynamics, model_warp_arrays, plot_lds_diagnostics,
         plot_lds_dynamics, plot_warp_diagnostics, plot_birth_warp_diagnostic)
-    from ..diagnostics._plot_selection import cluster_plot_ids, empty_cluster_figure
+    from ..diagnostics._plot_selection import cluster_plot_ids, empty_cluster_figure, uses_physical_clock
     values = np.asarray(values)
     has_labels = labels is not None
     labels = np.asarray(labels) if has_labels else None
@@ -293,7 +301,7 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
     np.savez_compressed(run.path / 'lds_parameters.npz', **{
         f'output_{output}_cluster_{cluster}_{name}': matrix
         for output, group in enumerate(matrices) for cluster, parameters in group.items()
-        for name, matrix in parameters.items() if name in ('A', 'C', 'Gamma', 'Sigma')})
+        for name, matrix in parameters.items() if name in ('A', 'C', 'Gamma', 'Sigma', 'b')})
     failures = {}
     def save(figure, name):
         try:
@@ -316,10 +324,34 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
                 annotation_colors=annotation_colors,
                 **({'min_cluster_samples': min_cluster_samples} if min_cluster_samples > 1 else {}))):
             save(figure, f'clusters_output_{output}.png')
+        if (summary_plotter is plot_clustering_summary
+                and uses_physical_clock(model)):
+            for output, figure in enumerate(plot_clustering_summary(
+                    model, values, labels, grid=grid, record=run.dataset,
+                    metrics=scores if has_labels else None, ordered=ordered,
+                    warped=model.config.inference.warp,
+                    show_latent=ordered or args.lds_plots or args.lds_dynamics_plots,
+                    annotation_colors=annotation_colors,
+                    min_cluster_samples=min_cluster_samples, early_stop=True)):
+                save(figure, f'clusters_output_{output}_early_stop.png')
         if args.projection_plots and has_labels:
             projection = values.reshape(len(values), -1) if codes is None else codes
             save(plot_embedding_summary(projection, model.labels_, labels, scores,
                  title=run.dataset, projection_name=projection_name), 'projection.png')
+        observation = getattr(model.config, 'observation', None)
+        policy = getattr(observation, 'C_policy', None)
+        fixed_grid = getattr(observation, 'fixed_grid', None)
+        if fixed_grid is None:
+            fixed_grid = getattr(observation, 'pca_grid', None)
+        if (args.projection_plots and len(values)>=2 and values.shape[2]==1
+                and fixed_grid is not None and getattr(policy,'mode',None)=='fixed'
+                and getattr(observation,'family','linear')=='linear'):
+            # A acts in native LDS coordinates. Display features supplied by a
+            # workflow can instead be pre-projected observation coordinates.
+            decoder = model._backend.gpmodels[0][int(model.cluster_ids_[0])].fixed_observation_model
+            native_codes = (values[:,:,0]-decoder.offset) @ np.linalg.pinv(decoder.C).T
+            save(plot_embedding_dynamics(native_codes,model,labels,
+                 title=run.dataset,projection_name=projection_name), 'projection_dynamics.png')
         for output, group in enumerate(matrices):
             shown = {cluster: values for cluster, values in group.items() if cluster in plotted_ids}
             lds_title = (run.dataset if min_cluster_samples == 1 else
@@ -367,6 +399,7 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
               'metadata': metadata or {}, 'diagnostic_omissions': failures,
               'split_merge_history': getattr(model, 'split_merge_history_', []),
               'split_merge_convergence': getattr(model, 'split_merge_convergence_', {}),
+              'offline_candidate_search': getattr(model, 'offline_search_diagnostics_', {}),
               'seconds': round(time.perf_counter() - run.started, 3),
               'output_directory': str(run.path.resolve()),
               'artifacts': sorted(str(path.relative_to(run.path)) for path in run.path.rglob('*')

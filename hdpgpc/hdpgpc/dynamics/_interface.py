@@ -20,15 +20,15 @@ class DynamicsModel(Protocol):
 
     def filter(self, backend, mean_prior, cov_prior, y_train, A, Gamma, C, Sigma,
                warped_mean=None, x_train=None, x_warped=None, embedding=True,
-               h=1.0) -> tuple[Any, Any]:
+               h=1.0, b=None) -> tuple[Any, Any]:
         """Perform the original GP-conditioned prediction/Kalman update."""
         ...
 
-    def smooth(self, backend, A_prior, Gamma_prior, means, covars) -> tuple[Any, Any]:
+    def smooth(self, backend, A_prior, Gamma_prior, means, covars, b_prior=None) -> tuple[Any, Any]:
         """Mutate supplied lists using matrix histories and the full inverse pass."""
         ...
 
-    def smooth_pair(self, backend, A_prior, Gamma_prior, means, covars) -> tuple[Any, Any]:
+    def smooth_pair(self, backend, A_prior, Gamma_prior, means, covars, b_prior=None) -> tuple[Any, Any]:
         """Mutate supplied lists using fixed matrices and the solve-based pass."""
         ...
 

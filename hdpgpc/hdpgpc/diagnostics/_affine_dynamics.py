@@ -10,25 +10,41 @@ def _array(value):
 
 
 def transition_radius_samples(posterior, count, seed):
-    """Sample rho(A) from the native full MNIW variational posterior.
+    """Sample rho(A) from the fitted transition parameter posterior.
 
     Gamma ~ IW(n0+r+1, n0*scale); A|Gamma has row covariance Gamma and
-    column covariance precision^-1. These are conditional model diagnostics,
+    column covariance precision^-1. Diagonal noise uses independent inverse-gamma
+    rows, and fixed noise uses its supplied covariance. Constant-input posteriors
+    sample [A,b] jointly and report the radius of A, excluding the intercept.
+    These are conditional model diagnostics,
     not a physical-instability probability or model-selection uncertainty.
     """
     if count < 1:
         return np.empty(0)
+    fixed_A = getattr(posterior, 'fixed_transition', None)
+    if fixed_A is not None:
+        return np.repeat(max(abs(np.linalg.eigvals(_array(fixed_A)))), count)
     if getattr(posterior, 'fixed_matrix', False):
         return np.repeat(max(abs(np.linalg.eigvals(_array(posterior.m_mean)))), count)
     from ..dynamics._distributions import matrix_normal_inv_wishart
-    if not isinstance(posterior, matrix_normal_inv_wishart):
-        raise ValueError('Stability sampling currently requires the full MNIW transition posterior')
+    from ..dynamics._parameter_posterior import ConstrainedPairPosterior
+    if not isinstance(posterior, (matrix_normal_inv_wishart, ConstrainedPairPosterior)):
+        raise ValueError('Stability sampling requires a supported transition parameter posterior')
     mean, precision, scale = map(_array, (posterior.m_mean, posterior.m_r_cov, posterior.scale))
     dimension = len(mean)
     rng = np.random.default_rng(seed)
     degrees = float(posterior.n0)
-    covariances = invwishart.rvs(df=degrees+dimension+1, scale=degrees*scale,
-                               size=count, random_state=rng).reshape(count, dimension, dimension)
+    noise_family = getattr(posterior, 'noise', 'full')
+    if noise_family == 'fixed':
+        covariances = np.broadcast_to(scale, (count, dimension, dimension))
+    elif noise_family == 'diagonal':
+        variances = 1. / rng.gamma(degrees / 2 + 1,
+            scale=1. / (degrees * np.diag(scale) / 2), size=(count, dimension))
+        covariances = np.zeros((count, dimension, dimension))
+        covariances[:, np.arange(dimension), np.arange(dimension)] = variances
+    else:
+        covariances = invwishart.rvs(df=degrees+dimension+1, scale=degrees*scale,
+                                   size=count, random_state=rng).reshape(count, dimension, dimension)
     chol = np.linalg.cholesky(precision)
     result = []
     for covariance in covariances:
@@ -36,6 +52,8 @@ def transition_radius_samples(posterior, count, seed):
         # noise @ L_precision^-1 gives the required column covariance.
         right = np.linalg.solve(chol.T, noise.T).T
         A = mean+np.linalg.cholesky(covariance) @ right
+        if getattr(posterior, 'constant_input', False):
+            A = A[:, :-1]
         result.append(float(max(abs(np.linalg.eigvals(A)))))
     return np.asarray(result)
 

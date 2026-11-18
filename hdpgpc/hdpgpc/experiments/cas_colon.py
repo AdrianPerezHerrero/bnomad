@@ -270,6 +270,11 @@ def run_sequence(sequence, args, run, *, segment):
         calibration_description = f'explained variance={estimate.explained_variance_ratio:.4f}'
     calibration_metadata['calibration_seconds'] = perf_counter() - calibration_start
     dimension = decoder.latent_dim
+    from ._prior_screen import screen_experiment
+    screened = screen_experiment(values, grid, args, run,
+        lambda candidate: make_config(grid, candidate, decoder))
+    if screened is not None:
+        return screened
     config = make_config(grid, args, decoder)
     prior_state = decoder.state_dict()
     prior_state['Sigma'] = config.observation.Sigma_policy.value

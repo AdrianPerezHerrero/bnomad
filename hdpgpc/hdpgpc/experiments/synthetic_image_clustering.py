@@ -90,12 +90,17 @@ def make_config(args, decoder, gamma):
         # fit_gp=False and the observation likelihood uses the fixed decoder.
         emission=GPEmissionConfig(fit_gp=False, ini_lengthscale=1., bound_lengthscale=(.1, 10.),
             ini_outputscale=1., ini_sigma=sigma, bound_sigma=(1e-12, 1e8)),
-        dynamics=DynamicsConfig(clock=getattr(args,'dynamics_clock','cluster-clock'), ini_gamma=gamma, bound_gamma=(1e-12, 1e8), annealing=False,
+        dynamics=DynamicsConfig(clock=getattr(args,'dynamics_clock','cluster-clock'),
+            constant_input=getattr(args, 'constant_input', False),
+            constant_input_strength=getattr(args, 'constant_input_strength', 1.0),
+            ini_gamma=gamma, bound_gamma=(1e-12, 1e8), annealing=False,
             bayesian_params=True, free_deg_MNIV=args.lds_degrees, lds_update=lds_update(args),
             lds_scoring=args.lds_scoring, lds_step_size=args.lds_step_size),
         alignment=AlignmentConfig(policy='none'),
         inference=InferenceConfig(schedule='offline', warp=False,
             offline_strategy=args.offline_strategy, it_limit=args.iterations,
+            offline_candidate_search=getattr(args, 'offline_candidate_search', 'combined'),
+            proposal_family_weights=tuple(getattr(args, 'proposal_family_weights', (1.,1.,1.))),
             hard_assignments=args.hard_assignments, n_explore_steps=args.exploration_steps,
             offline_representer_selection=args.offline_representer_selection,
             split_merge_refine_steps=args.split_merge_refine_steps,
@@ -230,6 +235,17 @@ def run_synthetic_clustering(args):
                 sigma_prior_multiplier=args.sigma_prior,
                 sigma_prior_diagonal_mean=float(np.diag(decoder.Sigma).mean()),
                 source_state_matches_cluster_convention=data.state_mode == 'per_regime' and not args.shuffle)
+            from copy import copy
+            from ._prior_screen import screen_experiment
+            screen_args = copy(args)
+            # Screening must not use the generator's true process covariance.
+            screen_args.gamma_prior = gamma if args.gamma_prior is not None else DEFAULT_GAMMA_PRIOR
+            screened = screen_experiment(values, data.grid, screen_args, run,
+                lambda candidate: make_config(candidate, replace(decoder,
+                    Sigma=decoder.Sigma*candidate.sigma_prior/args.sigma_prior), candidate.gamma_prior))
+            if screened is not None:
+                append_summary(args.output_dir, screened)
+                return screened
             config = make_config(args, decoder, gamma)
             config.validate(for_build=True)
             (run.path / 'config.yaml').write_text(config.to_yaml(), encoding='utf-8')

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "record": "203",
+  "sampling_frequency_hz": 360,
+  "reference": "MIT-BIH Arrhythmia Database 1.0.0, corrected 203.atr (June 2010)",
+  "reference_url": "https://physionet.org/files/mitdb/1.0.0/203.atr",
+  "reference_sha256": "2573f948e54a538983a44bf946e3e61cdda60e898b4c65ca8559b57c4877c706",
+  "correction_log_url": "https://archive.physionet.org/cd-updates/mitdb-corrections-since-1987.txt",
+  "alignment": "Current reference labels matched to retained legacy waveform annotation samples",
+  "retained_observations": 2979,
+  "removed_legacy_rows_0_based": [
+    1965
+  ],
+  "removed_annotation_samples": [
+    418550
+  ],
+  "unavailable_reference_samples": [
+    318755
+  ],
+  "unavailable_reason": "The original filtered signal is unavailable; the missing window was not synthesized.",
+  "waveform_processing": "Original 90-point, two-channel, per-beat-centered filtered windows retained byte-for-byte.",
+  "sample_positions_file": "203_annotation_samples.npy",
+  "original_sha256": {
+    "203.npy": "c485dd84c5f09741454278da398e60c9a0913e77827ce9f9ae80f4e01292341d",
+    "203_labels.npy": "679b2f6b267ffaa7812ab654b39146e68d0c16241641144169187caa6a424928"
+  },
+  "corrected_sha256": {
+    "203.npy": "30a57c73d5865dac3e06df18f5e1207bdd49f325319d8d7f352efddc0c5088a6",
+    "203_labels.npy": "bdac52f670e6945987247309e10cb40cd865fb5702fc72bb7b2c3bf23543741f",
+    "203_annotation_samples.npy": "1f4af9ff564b0a5d996095389e06ea464920554341bf9ccd7485692278127404"
+  }
+}

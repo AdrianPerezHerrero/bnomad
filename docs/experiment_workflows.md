@@ -65,10 +65,11 @@ on the representation; see [noise prior defaults](noise_priors.md).
 | Purpose | Arguments |
 | --- | --- |
 | Inference | `--schedule offline/online/online_fast`, `--iterations`, `--hard-assignments` / `--no-hard-assignments` |
-| Offline optimizer | `--offline-strategy legacy/split_merge`, `--split-merge-refine-steps`, `--offline-representer-selection sorted/fixed` |
+| Offline optimizer | `--offline-strategy legacy/split_merge`, `--offline-candidate-search score_guided/noise_aware/dynamics/combined`, `--proposal-family-weights SCORE NOISE DYNAMICS`, `--split-merge-refine-steps`, `--offline-representer-selection sorted/fixed` |
 | Split/merge stopping | `--split-merge-stability-patience` (3), `--split-merge-score-rtol` (0.001) |
 | Exploration | `--hdp-preset`, `--max-clusters`, `--exploration-steps` |
 | LDS | `--dynamics-clock cluster-clock/physical-clock`, `--lds-update`, `--lds-scoring`, `--lds-degrees`, `--lds-step-size`, `--birth-lds-kl-per-dimension` |
+| Latent location | `--constant-input` / `--latent-equilibrium` (off), `--constant-input-strength` (1); [affine transition interpretation](latent_equilibrium.md) |
 | GP/alignment | `--fit-gp` / `--no-fit-gp`, `--alignment`, `--warp` / `--no-warp` |
 | Resolution/subset | `--max-points`, `--max-series` |
 | Calibration | `--components`, `--calibration-samples`; AE also `--epochs`, `--learning-rate` |
@@ -109,6 +110,11 @@ split_merge` for group split/merge search with the same GP/LDS and HDP tools.
 `--split-merge-refine-steps` controls local refinement and `--exploration-steps`
 limits candidate fits per outer iteration. See [offline split–merge inference](offline_split_merge.md)
 for scoring, caching and stopping semantics.
+Both optimizers default to `--offline-candidate-search combined` with equal
+`--proposal-family-weights 1 1 1` for score-guided, noise-aware and dynamics
+proposals. Select an individual family for comparisons; `legacy` remains a
+candidate-name alias for `score_guided`. The choice does not alter model
+coordinates, priors or the acceptance criterion. See [candidate search](offline_candidate_search.md).
 
 The scripts retain aliases for earlier CLI names, including `--latent-dim`,
 `--ae-beats`, `--ae-epochs`, `--pca-samples`, `--points`, `--max-windows`,
@@ -220,6 +226,7 @@ output_directory/
       lds_parameters.npz
       clusters_output_0.png
       projection.png
+      projection_dynamics.png         # common fixed-affine latent coordinates
       lds_parameters_output_0_01.png   # when requested
       lds_dynamics_output_0.png        # when requested
       warps_output_0.png               # when enabled/requested
@@ -228,6 +235,22 @@ output_directory/
 
 Calibration and normalization NPZs are saved when applicable. The AE also
 records training losses/indices and a calibration reconstruction plot.
+With `--projection-plots`, fixed-affine single-output runs (including MIT-BIH
+AE/PCA) also save `projection_dynamics.png`. It shows fitted clusters with shaded
+regions and LDS arrows, plus reference labels when available, without the class
+composition panel. The display uses a PCA of the native encoded coordinates;
+all full-dimensional changes `(A-I)z+b` contribute to one affine display field
+per fitted cluster. Omitted latent coordinates still contribute before
+projection. The field minimizes squared error over every assigned observation;
+it is a two-dimensional summary and does not re-estimate the model's A or b.
+Arrows evaluate the fitted field on a regular grid, using one reported display
+multiplier. Shaded empirical ellipses cover at least 90% of each cluster's
+observations; projected Gaussian density resolves overlapping regions. They are
+display regions, rather than the temporal/HMM model's decision boundaries.
+Sparse groups identify only the slopes supported by their observed span; a
+singleton has constant mean motion. The motion is a conditional mean summary, rather than
+an observed derivative or a forecast with uncertainty. One step follows the
+selected clock. `--no-projection-plots` or `--no-plots` suppresses this figure.
 Cluster summaries share the same function and fixed panel dimensions as the
 ECG report. Ordered summaries show transitions; unordered summaries show class
 composition. LDS and warp figures retain their existing detailed diagnostics.
@@ -316,3 +339,5 @@ All standard runners accept `--dynamics-clock cluster-clock` (default) or
 on the shared regular sampling grid even without a component observation.
 The XJTU-SY Fourier/Haar entry scripts default to physical-clock explicitly.
 See [clock semantics and limitations](dynamics_clocks.md).
+
+Use `--screen-priors` to calibrate once, run small budgeted prior candidates, save recommendations, and stop before the full fit. See [prior screening](prior_screening.md) for predictive validation, budgets, supported modes and output files.

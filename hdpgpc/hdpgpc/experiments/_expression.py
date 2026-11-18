@@ -123,6 +123,11 @@ def _run_configuration(data, values, projection, scores,
     grid = np.arange(scores.shape[1], dtype=float)[:, None]
     observations = scores[:, :, None]
     n = len(scores)
+    from ._prior_screen import screen_experiment
+    screened = screen_experiment(observations, grid, args, run,
+        lambda candidate: make_config(candidate, initialization, dynamic=dynamic))
+    if screened is not None:
+        return screened
     config = make_config(args, initialization, dynamic=dynamic)
     np.savez_compressed(run.path / 'prepared_data.npz', gene_ids=data.gene_ids,
         gene_names=data.gene_names, **data.prepared_arrays,
@@ -278,7 +283,7 @@ def run_expression_comparison(data, args, *, comparison_name='comparison'):
                'evaluated_observations': report.get('metadata', {}).get('evaluated_observations', {})}
             for report in reports]}
     write_json(Path(args.output_dir) / f'{comparison_name}.json', comparison)
-    if args.plots and all(report['status'] == 'ok' for report in reports):
+    if args.plots and not getattr(args, 'screen_priors', False) and all(report['status'] == 'ok' for report in reports):
         import matplotlib.pyplot as plt
         from ..diagnostics._expression_plots import plot_expression_comparison
         figure = plot_expression_comparison(reports, data.stage_names[:len(scores)], title=data.title)

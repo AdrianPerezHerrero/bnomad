@@ -5,6 +5,20 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 
+def _embedding_projection(codes):
+    """The shared two-dimensional display map, including degenerate inputs."""
+    if codes.shape[1] > 1 and np.var(codes, axis=0).sum() > 1e-15:
+        projection = PCA(n_components=2, random_state=0).fit(codes)
+        return (projection.transform(codes), projection.components_, projection.mean_,
+                np.nan_to_num(projection.explained_variance_ratio_))
+    components = np.zeros((2, codes.shape[1]))
+    components[:min(2, codes.shape[1]), :min(2, codes.shape[1])] = np.eye(min(2, codes.shape[1]))
+    if codes.shape[1] > 1:
+        return np.zeros((len(codes), 2)), components, codes.mean(0), np.zeros(2)
+    return (np.column_stack((codes[:, 0], np.zeros(len(codes)))), components,
+            np.zeros(1), np.array([1.0 if np.var(codes[:, 0]) > 1e-15 else 0.0, 0.0]))
+
+
 def plot_embedding_summary(codes, assignments, labels, metrics, *, title=None,
                            projection_name='Autoencoder'):
     """Plot every sample in a PCA view, assignments, and class composition.
@@ -22,16 +36,7 @@ def plot_embedding_summary(codes, assignments, labels, metrics, *, title=None,
             or not np.isfinite(codes).all()):
         raise ValueError('Codes must be finite rows with one cluster and label per row')
 
-    if codes.shape[1] > 1 and np.var(codes, axis=0).sum() > 1e-15:
-        projection = PCA(n_components=2).fit(codes)
-        xy = projection.transform(codes)
-        variance = np.nan_to_num(projection.explained_variance_ratio_)
-    elif codes.shape[1] > 1:
-        xy = np.zeros((len(codes), 2))
-        variance = (0.0, 0.0)
-    else:
-        xy = np.column_stack((codes[:, 0], np.zeros(len(codes))))
-        variance = (1.0 if np.var(codes[:, 0]) > 1e-15 else 0.0, 0.0)
+    xy, _, _, variance = _embedding_projection(codes)
     clusters, cluster_index = np.unique(assignments, return_inverse=True)
     classes, class_index = np.unique(labels, return_inverse=True)
     contingency = np.zeros((len(classes), len(clusters)), dtype=np.int64)

@@ -1,5 +1,6 @@
 """Banded ordered-chain messages and joint MAP decoding."""
 import torch
+from ._assignments import from_labels
 
 
 def decode(log_initial, log_transitions, unary):
@@ -83,7 +84,5 @@ def marginals(initial, transitions, unary, *, hard=False):
     pair[1:] /= pair[1:].sum((1, 2))[:, None, None]
     path = decode(initial, transitions, unary)
     if hard:
-        resp = torch.nn.functional.one_hot(path, count).to(unary)
-        pair.zero_()
-        pair[1:] = resp[:-1, :, None]*resp[1:, None, :]
+        resp, pair = from_labels(path, count, unary)
     return resp, pair, path

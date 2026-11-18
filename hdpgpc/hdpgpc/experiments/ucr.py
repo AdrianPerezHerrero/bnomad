@@ -94,12 +94,16 @@ def make_config(grid, args, decoder=None):
         emission=GPEmissionConfig(kernels=[kernel], fit_gp=args.fit_gp,
                                   ini_sigma=sigma, bound_sigma=(1e-8, 1e8)),
         dynamics=DynamicsConfig(clock=getattr(args,'dynamics_clock','cluster-clock'),
+            constant_input=getattr(args, 'constant_input', False),
+            constant_input_strength=getattr(args, 'constant_input_strength', 1.0),
             ini_gamma=gamma, bound_gamma=(1e-8, 1e8), annealing=False,
             bayesian_params=True, free_deg_MNIV=args.lds_degrees, lds_update=lds_update(args),
             lds_scoring=args.lds_scoring, lds_step_size=args.lds_step_size),
         inference=InferenceConfig(
             schedule=args.schedule, warp=policy != 'none', hard_assignments=args.hard_assignments,
             offline_strategy=getattr(args, 'offline_strategy', 'legacy'),
+            offline_candidate_search=getattr(args, 'offline_candidate_search', 'combined'),
+            proposal_family_weights=tuple(getattr(args, 'proposal_family_weights', (1.,1.,1.))),
             split_merge_refine_steps=getattr(args, 'split_merge_refine_steps', 1),
             split_merge_stability_patience=getattr(args, 'split_merge_stability_patience', 3),
             split_merge_score_rtol=getattr(args, 'split_merge_score_rtol', 1e-3),
@@ -184,6 +188,11 @@ def run_dataset(archive, name, pair, args, run):
                 if args.max_series and args.max_series < len(values) else np.arange(len(values)))
     selected = rng.permutation(selected)
     values, labels = values[selected, :, None], labels[selected]
+    from ._prior_screen import screen_experiment
+    screened = screen_experiment(values, grid, args, run,
+        lambda candidate: make_config(grid, candidate, decoder))
+    if screened is not None:
+        return screened
     config = make_config(grid, args, decoder)
     if decoder is not None:
         # Save the covariances actually installed in the recipe, including the

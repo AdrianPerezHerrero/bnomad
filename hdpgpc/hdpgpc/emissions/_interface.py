@@ -25,7 +25,7 @@ class EmissionModel(Protocol):
         """Fit/reset emission priors; return basis coordinates and covariance."""
         ...
 
-    def observe_last(self, x_post) -> tuple[Any, Any]:
+    def observe_last(self, x_post, *, observation_index=None) -> tuple[Any, Any]:
         """Return observation mean/covariance from the last smoothed state."""
         ...
 

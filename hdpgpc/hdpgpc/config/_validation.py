@@ -30,6 +30,14 @@ def validate_inference(c):
         raise ValueError('offline_representer_selection must be sorted or fixed')
     if c.offline_strategy not in ('legacy', 'split_merge'):
         raise ValueError('offline_strategy must be legacy or split_merge')
+    if c.offline_candidate_search not in ('score_guided', 'noise_aware', 'dynamics', 'combined'):
+        raise ValueError('offline_candidate_search must be score_guided, noise_aware, dynamics or combined')
+    weights = c.proposal_family_weights
+    if (not isinstance(weights, (tuple, list)) or len(weights) != 3
+            or any(isinstance(value, bool) or not isinstance(value, Real)
+                   or not math.isfinite(value) or value < 0 for value in weights)
+            or not any(value > 0 for value in weights)):
+        raise ValueError('proposal_family_weights must contain three finite nonnegative numbers with positive total')
     integer(c.split_merge_refine_steps, 'split_merge_refine_steps', 1)
     integer(c.split_merge_stability_patience, 'split_merge_stability_patience', 1)
     if (isinstance(c.split_merge_score_rtol, bool) or not isinstance(c.split_merge_score_rtol, Real)
@@ -266,6 +274,11 @@ def validate(c, *, for_build=False):
         raise ValueError('lds_update must be conjugate_sequential, conjugate_batch, natural_gradient, or legacy')
     if d.clock not in ('cluster-clock', 'physical-clock'):
         raise ValueError('dynamics.clock must be cluster-clock or physical-clock')
+    boolean(d.constant_input, 'dynamics.constant_input')
+    if (isinstance(d.constant_input_strength, bool)
+            or not isinstance(d.constant_input_strength, Real)
+            or not math.isfinite(d.constant_input_strength) or d.constant_input_strength <= 0):
+        raise ValueError('dynamics.constant_input_strength must be finite and positive')
     if d.lds_scoring not in ('final', 'historical'):
         raise ValueError('lds_scoring must be final or historical')
     if d.lds_update == 'conjugate_batch' and not d.bayesian_params:

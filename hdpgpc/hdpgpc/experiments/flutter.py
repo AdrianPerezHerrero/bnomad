@@ -125,6 +125,11 @@ def _fit_record(windows, args, run, configuration, calibration, calibration_name
     decoder = estimate.model
     values = ((windows.values.reshape(-1, args.window_samples, 2)-center)/scale).reshape(len(windows.values), -1)
     grid = decoder.grid
+    from ._prior_screen import screen_experiment
+    screened = screen_experiment(values[:, :, None], grid, args, run,
+        lambda candidate: make_config(candidate, decoder, dynamic=configuration == 'dynamic'))
+    if screened is not None:
+        return screened
     config = make_config(args, decoder, dynamic=configuration == 'dynamic')
     np.savez_compressed(run.path/'prepared_data.npz',
         source_times=windows.record.times[:windows.ends[-1]+1],
@@ -237,7 +242,7 @@ def run_flutter(args):
         runs=[{key: report.get(key) for key in ('dataset', 'run_id', 'experiment', 'status',
               'clusters', 'seconds', 'output_directory', 'error')} |
               {'diagnostics': report.get('metadata', {}).get('diagnostics', {})} for report in reports]))
-    if args.plots and all(report['status'] == 'ok' for report in reports):
+    if args.plots and not getattr(args, 'screen_priors', False) and all(report['status'] == 'ok' for report in reports):
         import matplotlib.pyplot as plt
         figure = plot_flutter_overview(reports)
         figure.savefig(args.output_dir/'comparison.png', dpi=150)

@@ -113,12 +113,17 @@ def make_config(grid, args, outputs=1, decoder=None, noise_scales=None):
             * RBF(args.lengthscale, tuple(args.lengthscale_bounds)) + WhiteKernel(args.gp_noise, tuple(args.gp_noise_bounds))],
             fit_gp=args.fit_gp, ini_lengthscale=args.lengthscale, bound_lengthscale=tuple(args.lengthscale_bounds),
             ini_sigma=sigma, bound_sigma=tuple(args.sigma_bounds), inducing_points=len(basis) < len(grid)),
-        dynamics=DynamicsConfig(clock=getattr(args,'dynamics_clock','cluster-clock'), ini_gamma=gamma, bound_gamma=tuple(args.gamma_bounds),
+        dynamics=DynamicsConfig(clock=getattr(args,'dynamics_clock','cluster-clock'),
+            constant_input=getattr(args, 'constant_input', False),
+            constant_input_strength=getattr(args, 'constant_input_strength', 1.0),
+            ini_gamma=gamma, bound_gamma=tuple(args.gamma_bounds),
             annealing=False, bayesian_params=True, free_deg_MNIV=args.lds_degrees,
             lds_update=lds_update(args), lds_scoring=args.lds_scoring, lds_step_size=args.lds_step_size),
         alignment=AlignmentConfig(policy=policy, x_basis_warp=grid if policy != 'none' else None),
         inference=InferenceConfig(schedule=args.schedule, warp=policy != 'none',
             offline_strategy=getattr(args, 'offline_strategy', 'legacy'),
+            offline_candidate_search=getattr(args, 'offline_candidate_search', 'combined'),
+            proposal_family_weights=tuple(getattr(args, 'proposal_family_weights', (1.,1.,1.))),
             split_merge_refine_steps=getattr(args, 'split_merge_refine_steps', 1),
             split_merge_stability_patience=getattr(args, 'split_merge_stability_patience', 2),
             split_merge_score_rtol=getattr(args, 'split_merge_score_rtol', 1e-3),
@@ -212,6 +217,11 @@ def run_record(values, labels, grid, args, run, metadata, row_metadata, colors=N
             raise ValueError('Calibrated pooled LDS variance is not positive')
         noise_scales = pooled, pooled
         metadata['calibrated_noise_prior'] = pooled
+    from ._prior_screen import screen_experiment
+    screened = screen_experiment(values, grid, args, run,
+        lambda candidate: make_config(grid, candidate, values.shape[2], decoder))
+    if screened is not None:
+        return screened
     config = make_config(grid, args, values.shape[2], decoder, noise_scales)
     if decoder is not None:
         prior_state = decoder.state_dict()
@@ -231,16 +241,21 @@ def run_record(values, labels, grid, args, run, metadata, row_metadata, colors=N
         figures = calibration_figures() if calibration_figures is not None else {}
         if getattr(args, 'trajectory_plots', False):
             from ..diagnostics import plot_latent_trajectories
+            from ..diagnostics._plot_selection import uses_physical_clock
             is_ecg = args.dataset == 'mitbih'
             times = row_metadata['source_row'] if is_ecg else row_metadata['start_seconds']
             for output in range(values.shape[2]):
                 name = ('latent_trajectories' if values.shape[2] == 1 else
                         f'latent_trajectories_output_{output}')
-                figures[name] = plot_latent_trajectories(model, times=times, output=output,
+                options = dict(times=times, output=output,
                     title=f'{run.dataset}: {args.representation}, output {output}; {config.dynamics.clock}',
                     min_cluster_samples=args.min_cluster_samples,
                     time_label='Beat index' if is_ecg else 'Window start time (s)',
                     time_unit='' if is_ecg else 's', observation_label='beats' if is_ecg else 'windows')
+                figures[name] = plot_latent_trajectories(model, **options)
+                if uses_physical_clock(model):
+                    figures[name + '_early_stop'] = plot_latent_trajectories(
+                        model, early_stop=True, **options)
         return figures
 
     return save_results(run, model, values, labels, grid, args, ordered=True,
@@ -323,8 +338,12 @@ def _record_jobs(args):
         for name in dict.fromkeys(names):
             record = load_mitbih_record(args.data_dir, name)
             values, grid = prepare_sequences(record.waveforms, channels=channels, unit_grid=args.unit_grid)
-            fingerprint = hashlib.sha256((source_digest(args.data_dir / f'{name}.npy')
-                + source_digest(args.data_dir / f'{name}_labels.npy')).encode()).hexdigest()
-            yield (name, values, record.annotations, grid,
-                {'channels': channels, 'omitted_trailing_annotations': record.omitted_trailing_annotations},
-                {'source_row': np.arange(len(values))}, fingerprint, None)
+            source_files = [args.data_dir / f'{name}.npy', args.data_dir / f'{name}_labels.npy']
+            metadata = {'channels': channels, 'omitted_trailing_annotations': record.omitted_trailing_annotations}
+            row_metadata = {'source_row': np.arange(len(values))}
+            if record.annotation_samples is not None:
+                row_metadata['annotation_sample'] = record.annotation_samples
+                source_files.append(args.data_dir / f'{name}_annotation_samples.npy')
+                metadata['annotation_samples_available'] = True
+            fingerprint = hashlib.sha256(''.join(source_digest(path) for path in source_files).encode()).hexdigest()
+            yield (name, values, record.annotations, grid, metadata, row_metadata, fingerprint, None)

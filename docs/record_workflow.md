@@ -69,7 +69,11 @@ labels; it is descriptive clustering evaluation, not held-out classification.
 The ECG script uses the [MIT-BIH loader](mitbih_annotations.md) to align the
 archived annotation labels with waveform windows before fitting. The loader
 removes one extra trailing annotation when the legacy extractor omitted its
-waveform window.
+waveform window. When `<record>_annotation_samples.npy` is available, the loader
+returns its paired WFDB positions and the runner preserves them in the
+`annotation_sample` column of `assignments.csv`. Those positions also enter the
+data fingerprint. They provide source coordinates; they do not change the
+model's clock or introduce irregular-time propagation.
 
 `hdpgpc.diagnostics.format_lds_priors` formats selected LDS prior centers and
 strengths for a run log; `Tee` duplicates output into a log stream. Plotting

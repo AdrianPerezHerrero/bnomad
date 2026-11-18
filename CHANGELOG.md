@@ -1,5 +1,38 @@
 # 0.3.0 — native implementation migration
 
+- Added default combined offline candidate search with per-family quotas for
+  `score_guided` (the original fit-score search), `noise_aware`, and `dynamics`.
+  Dynamics screening compares regularized conditional operators and innovation
+  covariance, using clock-correct transitions in a common coordinate frame.
+  Quotas deduplicate proposals, redistribute unused slots and respect the total
+  exploration budget. `proposal_family_weights` controls relative allocation;
+  old candidate name `legacy` aliases `score_guided`. Optimizer names, posterior
+  updates, configured model dimensions and native acceptance scores are retained.
+  Reports include screening dimensions and family allocation diagnostics.
+
+- Fixed hard state/transition consistency through shared assignment helpers.
+  Offline and standard online pairs now follow the committed labels; forced
+  assignments update incoming pairs before learning, including fast online.
+  Reload/continuation and ordered decoding share the same construction, and
+  older hard fast-online caches are repaired once. Marginal label selection,
+  soft HMM calculations and model arguments are retained; corrected counts can
+  change learned transitions and clustering results.
+
+- Added opt-in sigma/gamma prior screening with one frozen representation,
+  short native fits, pre-update predictive validation, adaptive refinement,
+  fit/time budgets and shared experiment reports. Both priors default to a
+  five-point logarithmic grid over 1e-3–10.0, with five clips of up to 128 training
+  and 32 validation observations, 60 total pilot fits and a 120-second budget
+  including local refinement and repeat checks. Explicit
+  ranges and budgets remain available. Plots use a common first-clip score for
+  grid colors and a separate confirmation/selection panel. Normal inference is
+  unchanged.
+
+- Reconciled bundled MIT-BIH record 203 with the corrected reference by source
+  sample: removed one obsolete artifact window/label and retained 2,979 paired
+  beats. Saved annotation sample positions now propagate into record reports
+  and data fingerprints; the unavailable filtered beat is documented.
+
 - Fixed determinism verification to use the same case-relative baseline paths
   as unit tests and report exact per-case differences. Repeated captures still
   require byte-for-byte equality.

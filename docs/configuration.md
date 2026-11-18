@@ -107,6 +107,12 @@ inference. GP filtering and Bayesian LDS sufficient statistics then use each
 observation's fractional responsibility. Cluster creation and reported labels
 still use a MAP choice. Soft assignments require `bayesian_params=True` and
 can cost substantially more because an observation may update several GPs.
+Hard inference constructs adjacent-state pairs from its committed labels, so
+HDP transition counts agree with that sequence. Forced current assignments are
+applied before learning. This uses marginal MAP labels for ordinary topology
+and the existing joint decoding for ordered topology. Soft HMM marginals keep
+their forward/backward calculation; no new configuration option is needed.
+
 `InferenceConfig.birth_lds_kl_per_dimension` defaults to `True`. When enabled,
 the local birth and absorb proposal score divides the summed LDS parameter
 KL by the latent LDS state dimension in every inference schedule. With an
@@ -121,6 +127,19 @@ provides `--no-birth-lds-kl-per-dimension` to restore ordinary proposal scoring.
 Set `birth_lds_kl_per_dimension=False` in a package configuration to disable it.
 Saved configurations containing the old `birth_lds_kl_per_sqrt_point` key
 are read with that value preserved; newly saved configurations use the new key.
+`InferenceConfig.offline_candidate_search` defaults to `"combined"` for both
+offline strategies. Its three candidate families are `"score_guided"` (the original
+fit-score rules), `"noise_aware"` (calibrated affine screening), and `"dynamics"`
+(local conditional transition comparisons). `proposal_family_weights=(1,1,1)`
+sets equal relative quotas; CLI controls are `--offline-candidate-search` and
+`--proposal-family-weights SCORE NOISE DYNAMICS`. The old candidate value
+`"legacy"` aliases `"score_guided"`; optimizer names remain unchanged. Default
+combined selection and default weights are omitted from serialized recipes;
+explicit alternatives round-trip. See [offline candidate search](offline_candidate_search.md)
+for budget allocation, gaps, fallbacks, diagnostics and approximation details.
+All candidate decisions retain the native complete acceptance criterion and
+the existing LDS-KL/d setting.
+
 `InferenceConfig.offline_representer_selection` controls the representative
 beat indices in `f_ind_old`. The default `"sorted"` retains the existing
 behavior: after an accepted reallocation or birth, each cluster selects its

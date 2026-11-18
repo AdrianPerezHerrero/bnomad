@@ -1,5 +1,9 @@
 # Cluster-clock and physical-clock dynamics
 
+Both clocks support the optional [constant latent input](latent_equilibrium.md),
+enabled with `--constant-input` or `--latent-equilibrium`. This adds an affine
+transition intercept without changing which observations define a clock step.
+
 The default remains **cluster-clock**. Select the optional shared sampling clock
 through the ordinary typed configuration:
 
@@ -126,6 +130,26 @@ conjugate-batch learning with uncertain GP-flow input warps).
 
 ## Diagnostics and practical limits
 
+Physical-clock inference reuses historical smoother gains and reverse covariances
+across smoothing, transition statistics and latent scoring. Repeated requests for
+unchanged statistics or scores reuse their results; covariance factorizations are
+also reused when their inputs are equal. Retained-observation views update as
+measurements arrive rather than being rebuilt at every missing-observation tick.
+Local parameter updates skip statistics owned entirely by shared/fixed policies.
+
+These are exact-work optimizations. They preserve covariance regularization,
+parameter-update timing, all missing-transition statistics, and the complete
+backward smoother after a new measurement. Sequential physical-clock inference
+can therefore still require quadratic total smoothing work over a growing
+record. There is no fixed-lag approximation or collapsed-gap learning rule.
+
+Work caches are private, associated with one emission and trajectory, and are
+excluded from configurations, checkpoints and proposal copies. Tensor replacement,
+ordinary in-place updates, trajectory resets and device conversions invalidate
+dependent work. Differentiable tensors and tensors without mutation versions use
+uncached calculations. The historical smoother-factor cache has a 16 MiB limit
+per emission; reaching it causes recomputation and never truncates the trajectory.
+
 `model_latent_trajectories` returns every sampling tick in physical-clock mode,
 with `observation_indices`, an `observed` mask and the clock name. Its default
 cluster-clock arrays keep their existing format. Latent trajectory plots show the
@@ -137,6 +161,25 @@ mode, including when another cluster supplied the last measurement. Its fields
 and shapes are unchanged. In cluster mode it continues to report the last
 observation retained by that cluster. `predictive()` remains the current observation
 distribution rather than adding another forecast step.
+
+For physical-clock histories, `posterior(cluster, observation_index=t)` and
+`predictive(cluster, observation_index=t)` read a saved global tick without
+advancing the model. Predictions use the final fitted observation parameters.
+Explicit indices are rejected for cluster-clock and outside the saved history.
+
+The shared record experiments (including MIT-BIH) additionally save
+`clusters_output_0_early_stop.png` when plotting physical-clock runs, and
+`latent_trajectories_early_stop.png` when `--trajectory-plots` is enabled.
+Multiple outputs receive separate numbered files. The trajectory starts at
+observation 0 and ends at that cluster’s last final MAP assignment, retaining
+unobserved gaps before that endpoint. The gallery evaluates each cluster’s
+distribution at its own endpoint, rather than at the end of the record. The
+original full-record plots are also saved. `--no-plots` suppresses both versions.
+These are read-only views of the fitted smoothed posterior, not separate fits or
+causal early-stopping estimates. Other observations can still have informed the
+final fitted parameters. For direct diagnostic calls, pass `early_stop=True` to
+`plot_latent_trajectories` or `plot_clustering_summary`; this option requires
+physical-clock dynamics.
 
 Flutter/bearing diagnostics distinguish retained observations from total trajectory
 steps and report propagation-only counts. Conversion to growth per second is

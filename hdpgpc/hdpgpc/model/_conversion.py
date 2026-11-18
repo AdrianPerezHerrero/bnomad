@@ -38,6 +38,8 @@ def _convert_observation_owners(self, target):
         for emission in self.gpmodels[output]:
             emission.A_def = owner.prior.get_mean()
             emission.Gamma_def = owner.prior.get_scale()
+            if getattr(owner, 'constant_input', False):
+                emission.b_def = owner.prior.get_intercept() if hasattr(owner.prior, 'get_intercept') else owner.b
             emission.internal_params = owner.posterior
 
 

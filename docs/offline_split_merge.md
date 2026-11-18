@@ -32,7 +32,8 @@ python examples/ucr_pca_clustering.py --datasets CinCECGTorso --offline-strategy
 python examples/mitbih_waveform_clustering.py --records 100 --offline-strategy split_merge --split-merge-refine-steps 5 --exploration-steps 6
 ```
 
-Use `--offline-strategy legacy` to select the original algorithm. The strategy
+Use `--offline-strategy legacy` to select the sequential birth/deletion optimizer.
+Candidate screening is configured separately with `--offline-candidate-search`. The strategy
 does not choose the LDS update rule: sequential, batch, natural-gradient and
 legacy LDS estimation remain separate options with their existing restrictions.
 Selecting split–merge for online/online_fast is rejected.
@@ -78,18 +79,53 @@ guarantee that the best possible partition is examined.
 
 ## Fast split selection
 
-Split ranking uses common fixed coordinates independent of each cluster's
-learned C, Sigma or Gamma. For fixed affine observations (PCA, the affine
-autoencoder, Fourier and wavelets), the analysis map is the pseudoinverse of
-the calibrated decoder, applied after subtracting its offset. For PCA this is
-the PCA projection. It is used only to propose groups, not to replace Gaussian
-latent inference. Other emissions use waveforms. Outputs are concatenated,
-constant coordinates removed and features standardized across the entire batch.
-Above 20 coordinates, a deterministic orthogonal random projection reduces
-them to 20, followed by global standardization. This projection uses a local
-generator and leaves inference's random state untouched. Feature construction
-and affine pseudoinverses are computed once per fit; merge ranking continues
-using its original standardized waveform features.
+Both offline strategies default to
+`InferenceConfig.offline_candidate_search='combined'`. Its quota-controlled
+score-guided, noise-aware and dynamics families are described in
+[offline candidate search](offline_candidate_search.md). Select
+`--offline-candidate-search score_guided` to reproduce the original candidate
+search, or `noise_aware` for the preceding affine screen alone. The old candidate
+name `legacy` is an alias for `score_guided`. Online schedules ignore it.
+
+For a calibrated common affine decoder `y = offset + C z + noise`, form
+`H = C.T @ inverse(R) @ C` and the noise-whitened information coordinates
+`u = (y-offset) @ inverse(R) @ C @ H**(-1/2)`, with the inverse square root on
+H's observable range. Observation directions orthogonal to the decoder do not
+enter this search. Each output's centered covariance spectrum is screened against
+`(1 + sqrt(rank(H)/(T-1)) + sqrt(2*log(200)/(T-1)))**2`. Retain at most 20
+above-threshold directions per output. If none pass, retain the leading
+`min(20, rank(H))` directions so exploration remains possible. Constant data
+produce finite zero features. Concatenated output features use one scalar scale;
+weak coordinates are not individually inflated to unit variance. The Gaussian
+noise reference is a proposal heuristic, not an assertion that time samples are
+independent or a test proving weak regimes absent.
+
+Split and merge ranking use this fixed geometry. Observation-loss ranking uses
+projected expected Gaussian scores from the current latent moments, excluding
+common orthogonal density. Physical-clock moments come from the global smoothed
+trajectory; cluster-clock moments use the latest retained state at each row.
+Latent transition scores and worst-latent-window proposals retain their native
+values. For learned C/Sigma, including MFA, the initial common affine decoder
+and noise remain the screening reference; these projected scores are auxiliary
+proxies, not the learned cluster likelihoods.
+
+Geometry is computed once per fit and reset for every new batch. All model
+coordinates, full waveform inputs, likelihood normalizers, posterior updates and
+acceptance terms are retained. No labels enter screening. Neither high-dimensional
+recovery nor insensitivity to every kind of added noise is guaranteed: noise in
+an informative direction, decoder misspecification and the configured parameter
+penalty can still alter the result. In particular, improved proposals do not
+remove the difference between raw ELBO and LDS-KL/d proposal scoring.
+
+With `offline_candidate_search='score_guided'`, affine proposal coordinates use the
+calibrated decoder pseudoinverse, followed by coordinate-wise standardization
+and a deterministic local-RNG projection above 20 coordinates; merge ranking
+uses standardized waveforms. Ordinary GP observations use waveform coordinates for score-guided
+and dynamics screening; the noise-aware family is unavailable without a
+calibrated common affine information map. Their posterior, warping and inducing-point paths are unchanged.
+
+`model.offline_search_diagnostics_` and dataset `results.json` record the active
+search, retained dimensions, reference thresholds and fallbacks.
 
 Every parent with at least two MAP members gets up to two cheap appearance partitions,
 starting respectively from its worst-scoring member and the member farthest

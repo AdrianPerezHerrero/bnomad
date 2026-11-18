@@ -6,9 +6,18 @@ NOISE_MODES = ('fixed', 'cluster', 'cluster_diagonal', 'shared', 'shared_diagona
 
 
 def add_common_arguments(parser, *, defaults=None, ordered=False):
+    from ._prior_screen import add_screen_arguments
+    add_screen_arguments(parser)
     parser.add_argument('--schedule', choices=('offline', 'online', 'online_fast'), default='offline')
     parser.add_argument('--offline-strategy', choices=('legacy', 'split_merge'), default='legacy',
-                        help='Offline optimizer; legacy preserves the current birth/deletion search.')
+                        help='Offline optimizer: sequential birth/deletion or transactional group split/merge.')
+    from ..inference._proposal_quotas import canonical_name
+    parser.add_argument('--offline-candidate-search', type=canonical_name,
+                        choices=('score_guided', 'noise_aware', 'dynamics', 'combined'), default='combined',
+                        help='Candidate screening family; combined shares quotas (default). legacy aliases score_guided.')
+    parser.add_argument('--proposal-family-weights', type=float, nargs=3, default=(1.,1.,1.),
+                        metavar=('SCORE', 'NOISE', 'DYNAMICS'),
+                        help='Combined screening quotas in family order (default: 1 1 1); zero disables a family.')
     parser.add_argument('--offline-representer-selection', choices=('sorted', 'fixed'), default='sorted',
                         help='Reselect offline representatives by score, or preserve their initial seeds.')
     parser.add_argument('--split-merge-refine-steps', type=int, default=3,
@@ -31,6 +40,12 @@ def add_common_arguments(parser, *, defaults=None, ordered=False):
     parser.add_argument('--lds-step-size', type=float, default=.2)
     parser.add_argument('--dynamics-clock', choices=('cluster-clock','physical-clock'),
                         default='cluster-clock', help='Retained observations or a shared regular sampling clock.')
+    parser.add_argument('--constant-input', '--latent-equilibrium', dest='constant_input',
+                        action=argparse.BooleanOptionalAction, default=False,
+                        help='Learn an affine latent transition A z + b; a stable A permits a learned equilibrium.')
+    parser.add_argument('--constant-input-strength', '--latent-equilibrium-strength',
+                        dest='constant_input_strength', type=float, default=1.0,
+                        help='Zero-centered latent intercept prior precision (default: 1).')
     parser.add_argument('--exploration-steps', type=int, default=10)
     parser.add_argument('--hard-assignments', action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument('--birth-lds-kl-per-dimension', action=argparse.BooleanOptionalAction, default=True)
@@ -71,6 +86,14 @@ def lds_update(args):
 
 
 def validate_common(args):
+    from ._prior_screen import validate_screen_arguments
+    validate_screen_arguments(args)
+    weights = getattr(args, 'proposal_family_weights', (1.,1.,1.))
+    if len(weights) != 3 or any(not math.isfinite(value) or value < 0 for value in weights) or not any(weights):
+        raise ValueError('proposal-family-weights requires three finite nonnegative values with positive total')
+    strength = getattr(args, 'constant_input_strength', 1.0)
+    if not math.isfinite(strength) or strength <= 0:
+        raise ValueError('constant-input-strength must be finite and positive')
     if getattr(args, 'transition_topology', 'ergodic') == 'left_to_right' and (
             args.schedule != 'offline' or args.offline_strategy != 'split_merge'):
         raise ValueError('left_to_right requires --schedule offline --offline-strategy split_merge')

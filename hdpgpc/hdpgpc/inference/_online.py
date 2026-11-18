@@ -5,6 +5,7 @@ orders, proposal loops, and acceptance checks unchanged."""
 import numpy as np
 import torch
 from ..alignment import _components as _alignment
+from ._assignments import append_hard, force_last, from_labels, hard_pairs
 
 
 def _flow_grid(self, candidate, original):
@@ -44,12 +45,7 @@ def _include_with_alignment(self, gp, index, candidate, original, observation, h
 
 def _force_soft_step(resp, resp_pair, state):
     """Condition the final state and pair marginal on an explicit assignment."""
-    previous = resp[-2].clone() if resp.shape[0] > 1 else None
-    resp[-1].zero_()
-    resp[-1, state] = 1.0
-    resp_pair[-1].zero_()
-    if previous is not None:
-        resp_pair[-1, :previous.shape[0], state] = previous
+    force_last(resp, resp_pair, state)
 
 
 def _report_assignment(self, sample_index, model, birth):
@@ -355,8 +351,7 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
         resp_mod[:] = 0.0
         resp_mod[force_model] = 1.0
         model = np.argmax(resp_mod)
-        if not self.hard_assignments:
-            _force_soft_step(resp, respPair, model)
+        force_last(resp, respPair, model)
         # resp = self.normalize_log(resp_mod)
 
     # Birth of new model
@@ -429,22 +424,12 @@ def update(self, x_train, y, warp=False, force_model=None, minibatch=0, classify
         resp_mod[h_argmax] = 1.0
 
     model = np.argmax(resp_mod)
-    if self.max_models is not None and model >= self.max_models:
-        force_model = np.argmax(resp_modlog[:-1])
-        model = force_model
-
-    # When converged apply all transformations to real models.
+    # The forced assignment was committed before HDP counts and then permuted
+    # with the whole chain. Its current slot is the label in resp, not the
+    # pre-reorder force_model index.
     if not force_model is None:
-        resp_mod[:] = 0.0
-        resp_mod[force_model] = 1.0
-        model = force_model
         q_chos[-1, model] = torch.max(q_chos[-1])
         q_lat_chos[-1, model] = torch.max(q_lat_chos[-1])
-        resp[-1, :] = 0.0
-        resp[-1, model] = 1.0
-        respPair[-1, model, :] = 0.0
-        respPair[-1, :, model] = 0.0
-        respPair[-1, model, model] = 1.0
 
     # Assign and update GP model
     self.actual_state = model
@@ -505,11 +490,11 @@ def _init_resp_cache_cold_start(self, init_state: int = 0):
     resp = self.cond_cuda(torch.zeros((T, M), device=device, dtype=torch.float64))
     resp[0, init_state] = 1.0
 
-    respPair = self.cond_cuda(torch.zeros((T, M, M), device=device, dtype=torch.float64))
-    # The first state has no incoming transition.
+    respPair = hard_pairs(resp)
 
     self.resp_last = resp
     self.respPair_last = respPair
+    self._hard_pair_cache_consistent = True
 
 
 def _ensure_fast_cache_online(self):
@@ -534,11 +519,8 @@ def _ensure_fast_cache_online(self):
         if len(self.resp_assigned) > 0:
             labels = self.resp_assigned[-1].detach().to(device)
             T = labels.shape[0]
-            resp = torch.zeros((T, self.M), device=device, dtype=torch.float64)
-            resp[torch.arange(T, device=device), labels] = 1.0
-            respPair = torch.zeros((T, self.M, self.M), device=device, dtype=torch.float64)
-            if T > 1:
-                respPair[torch.arange(1, T, device=device), labels[:-1], labels[1:]] = 1.0
+            resp, respPair = from_labels(labels, self.M,
+                                        torch.empty(0, device=device, dtype=torch.float64))
             self.resp_last = resp
             self.respPair_last = respPair
         else:
@@ -546,7 +528,12 @@ def _ensure_fast_cache_online(self):
             self.respPair_last = torch.zeros((self.T, self.M, self.M), device=device, dtype=torch.float64)
             if self.T > 0:
                 self.resp_last[0, 0] = 1.0
-                self.respPair_last[0, 0, 0] = 1.0
+
+    if self.hard_assignments and not getattr(self, '_hard_pair_cache_consistent', False):
+        # Heal hard caches loaded from versions that stored independently
+        # hardened pairs. Normal appends keep the prefix coherent thereafter.
+        self.respPair_last = hard_pairs(self.resp_last)
+        self._hard_pair_cache_consistent = True
 
     # q_lat_last (if missing: one-time fill; afterwards we only patch tail indices)
     if not hasattr(self, "q_lat_last") or self.q_lat_last is None:
@@ -578,23 +565,7 @@ def _append_hard_step(self, resp_prev, respPair_prev, new_state, K):
     Build (T+1,K) resp and (T+1,K,K) respPair by reusing previous tensors and
     appending the last hard state + last transition.
     """
-    T_prev = resp_prev.shape[0]
-    device = resp_prev.device
-    dtype = resp_prev.dtype
-
-    resp = torch.zeros((T_prev + 1, K), device=device, dtype=dtype)
-    resp[:T_prev, :resp_prev.shape[1]] = resp_prev
-    resp[T_prev, new_state] = 1.0
-
-    respPair = torch.zeros((T_prev + 1, K, K), device=device, dtype=dtype)
-    if respPair_prev is not None and respPair_prev.numel() > 0:
-        respPair[:T_prev, :respPair_prev.shape[1], :respPair_prev.shape[2]] = respPair_prev
-
-    if T_prev > 0:
-        prev_state = int(torch.argmax(resp_prev[-1]).item())
-        respPair[T_prev, prev_state, new_state] = 1.0
-
-    return resp, respPair
+    return append_hard(resp_prev, respPair_prev, new_state, K)
 
 
 def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, classify=False):
@@ -689,8 +660,7 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         resp = torch.zeros((self.T, M + 1), device=self.device, dtype=torch.float64)
         resp[0, init_state] = 1.0
 
-        respPair = torch.zeros((self.T, M + 1, M + 1), device=self.device, dtype=torch.float64)
-        # The first state has no incoming transition.
+        respPair = hard_pairs(resp)
 
         q_chos, q_lat_chos = q_aux, q_lat
 
@@ -915,8 +885,7 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         resp_mod[:] = 0.0
         resp_mod[force_model] = 1.0
         model = int(np.argmax(resp_mod))
-        if not self.hard_assignments:
-            _force_soft_step(resp, respPair, model)
+        force_last(resp, respPair, model)
 
     birth = (model == self.M)
     if birth:
@@ -934,11 +903,10 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
         self.x_basis.append(self.x_basis_ini)
     if force_model is None:
         resp, respPair, q_chos, q_lat_chos, reorder = self.reorder(resp, respPair, q_chos, q_lat_chos)
-        if not self.hard_assignments:
-            # The MAP label and fractional weights now refer to the reordered
-            # cluster list used by the emission update below.
-            resp_mod = self.cond_to_numpy(self.cond_cpu(resp[-1]))
-            model = int(np.argmax(resp_mod))
+        # Emission ownership and the reported state must use the same slots as
+        # the reordered assignments, in both hard and soft inference.
+        resp_mod = self.cond_to_numpy(self.cond_cpu(resp[-1]))
+        model = int(np.argmax(resp_mod))
     else:
         reorder = torch.arange(self.M, device=resp.device)
 
@@ -1008,6 +976,8 @@ def update_fast(self, x_train, y, warp=False, force_model=None, minibatch=0, cla
     self.q_lat_last = q_lat_chos[:, :self.M, :].detach()
     self.resp_last = resp[:, :self.M].detach()
     self.respPair_last = respPair[:, :self.M, :self.M].detach()
+    if self.hard_assignments:
+        self._hard_pair_cache_consistent = True
 
     if t == 0 and self.verbose:
         initial_q, initial_elbo, initial_parts = _online_objective(

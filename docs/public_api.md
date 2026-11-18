@@ -61,6 +61,7 @@ properties on `HDPGPC` are:
 | `n_clusters_` | Number of represented clusters, excluding empty reserved slots |
 | `observation_parameters_` | Fitted C/Sigma snapshots; MFA additionally reports cluster offsets and observation-posterior snapshots |
 | `split_merge_history_`, `split_merge_convergence_` | Offline proposal and stopping diagnostics; empty for the legacy strategy |
+| `offline_search_diagnostics_` | Detached candidate-screen dimensions, noise thresholds and fallback information |
 | `birth_diagnostics_` | Captured offline proposal diagnostics when requested |
 | `predictive(cluster, *, grid=None)` | Read a component's current observation distribution |
 | `posterior(cluster)` | Copy its latest stored latent state for each output |
@@ -98,6 +99,11 @@ Serialized affine state dictionaries and configuration arrays are unchanged.
 Python pickles referring to the removed module paths require migration; no
 legacy module aliases are retained.
 Latent filtering, smoothing and parameter estimation remain in `dynamics`.
+`DynamicsConfig(constant_input=True)` enables the affine latent transition
+`z_next = A z + b`; `constant_input_strength` sets its zero-centered intercept
+prior precision (default 1). The default remains `False` and old serialized
+recipes retain zero input. See [constant input and latent equilibrium](latent_equilibrium.md)
+for fixed-point, random-walk and shared-policy interpretations.
 
 `SFAObservationEstimate` and `estimate_sfa_observation` are exported from
 `hdpgpc.emissions` (implementation `emissions._sfa`). Temporal calibration
@@ -202,6 +208,20 @@ Soft mode requires Bayesian parameter updates; cluster creation and reported
 labels still use a discrete choice. With ordered topology, the reported path
 obeys the configured transitions.
 
+Hard state labels and transition counts use the same assignment sequence.
+Ordinary inference keeps marginal MAP labels; incoming pairs are constructed
+from consecutive labels, with no incoming pair for observation zero. Ordered
+topology retains its feasible joint decoding. Forced online assignments update
+the current label and incoming pair before learning. Standard online inference
+can still revise earlier marginal assignments; a forced current label does not
+freeze the entire past sequence.
+
+The shared commit logic is used by offline proposals, both online engines,
+label reload and hard continuation. Older hard fast-online pair caches are
+rebuilt from retained states once when first used. Corrected transition counts
+can change learned transitions, structural decisions and clustering results
+where the former independent pair maximum disagreed with the hard labels.
+
 ```python
 from dataclasses import replace
 from hdpgpc import HDPGPC
@@ -238,7 +258,9 @@ NumPy snapshots:
 | `posterior` | Optional tuple of `LatentState`, one per output, after the update |
 
 The native `_safe_exp` respects `hard_assignments`: it hardens log marginals in
-hard mode and normalizes them in soft mode. The facade's streaming result is a
+hard mode and normalizes them in soft mode. Learning paths construct hard
+transition pairs from the chosen state sequence instead of separately hardening
+the pair marginals. Soft HMM pairs retain their forward/backward values. The facade's streaming result is a
 separate one-hot summary, not the native responsibility tensor. Neither that
 one-hot vector nor an ad hoc softmax of raw emission scores should be presented
 as calibrated assignment uncertainty.
@@ -275,6 +297,10 @@ With `dynamics.clock='physical-clock'`, `observation_index` instead identifies t
 latest propagated global tick, including for an unobserved component. The current
 prediction uses that propagated state. Cluster-clock retains the last-included
 observation convention. See [dynamics clocks](dynamics_clocks.md).
+For physical-clock histories, both methods accept `observation_index=t` to read
+a saved global tick. This does not advance the model; `predictive` uses final
+fitted observation parameters with the state at `t`. Negative, noninteger or
+out-of-history indices, and explicit indices for cluster-clock, are rejected.
 Means are one-dimensional; covariance matrices remain two-dimensional. These are
 the existing stored values, with no fresh smoothing or covariance correction.
 Output ordering follows the backend; configured output reduction retains its
@@ -289,6 +315,13 @@ so normal streaming does not pay for their computation and matrix copies.
 through `model.split_merge_history_`; legacy fits return an empty list.
 `model.split_merge_convergence_` reports the stopping reason, iteration and
 final assignment/score stability checks (an empty dictionary for legacy fits).
+Both offline strategies default to
+`InferenceConfig.offline_candidate_search='combined'`. This allocates quotas to
+`score_guided`, `noise_aware` and `dynamics`; `proposal_family_weights=(1,1,1)`
+sets their relative allocation. The former candidate name `legacy` aliases
+`score_guided`. `model.offline_search_diagnostics_` returns detached screening
+and quota information; online fits return an empty dictionary. Dataset reports
+save it under `offline_candidate_search`. See [candidate search](offline_candidate_search.md).
 Split/merge outer stopping uses `split_merge_stability_patience=3` consecutive
 stable iterations and `split_merge_score_rtol=1e-3` by default. See
 [offline split–merge inference](offline_split_merge.md) for its controls and

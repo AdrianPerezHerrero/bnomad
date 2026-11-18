@@ -135,6 +135,11 @@ class DynamicsConfig:
     reest_conditions: list[int] = field(default_factory=lambda: [1, 20, 5])
     # Physical mode advances all component states on the shared observation grid.
     clock: Literal['cluster-clock', 'physical-clock'] = 'cluster-clock'
+    # Affine latent transition z_next = A z + b; b is zero when disabled.
+    # When I-A is invertible its equilibrium is solve(I-A, b).
+    constant_input: bool = False
+    # Zero-centered Gaussian/matrix-normal intercept column prior precision.
+    constant_input_strength: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -186,9 +191,16 @@ class InferenceConfig:
     # Raw ELBO reporting remains unscaled.
     birth_lds_kl_per_dimension: bool = True
     offline_strategy: Literal['legacy', 'split_merge'] = 'legacy'
+    offline_candidate_search: Literal['score_guided', 'noise_aware', 'dynamics', 'combined', 'legacy'] = 'combined'
+    # Relative split/merge screening quotas: score_guided, noise_aware, dynamics.
+    proposal_family_weights: tuple[float, float, float] = (1., 1., 1.)
     split_merge_refine_steps: int = 3
     split_merge_stability_patience: int = 3
     split_merge_score_rtol: float = 1e-3
+
+    def __post_init__(self):
+        if self.offline_candidate_search == 'legacy':
+            object.__setattr__(self, 'offline_candidate_search', 'score_guided')
 
     def run(self, model, x, y):
         """Run one existing entry point; never combine or reorder schedules."""
@@ -331,8 +343,14 @@ class HDPGPCConfig:
         memo = {}
         return {'schema_version': 1, 'x_basis': encode(self.x_basis, memo), 'verbose': encode(self.verbose, memo),
                 **{name: {f.name: encode(getattr(getattr(self, name), f.name), memo) for f in fields(typ)
-                       if not (name == 'dynamics' and f.name == 'clock'
-                               and self.dynamics.clock == 'cluster-clock')}
+                       if not (name == 'inference' and (
+                           (f.name == 'offline_candidate_search' and self.inference.offline_candidate_search == 'combined')
+                           or (f.name == 'proposal_family_weights' and tuple(self.inference.proposal_family_weights) == (1.,1.,1.))))
+                       and not (name == 'dynamics' and (
+                           (f.name == 'clock' and self.dynamics.clock == 'cluster-clock')
+                           or (f.name == 'constant_input' and not self.dynamics.constant_input)
+                           or (f.name == 'constant_input_strength'
+                               and self.dynamics.constant_input_strength == 1.0)))}
                    for name, typ in SECTIONS.items()}}
 
     @classmethod
