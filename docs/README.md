@@ -38,6 +38,7 @@
 - [Public API reference](public_api.md)
 - [Typed configuration](configuration.md)
 - [Noise prior defaults, previous values and covariance scaling](noise_priors.md)
+- [Offline candidate families, dynamics screening and exploration quotas](offline_candidate_search.md)
 - [Reproducibility and testing](reproducibility.md)
 - [Migration from the research API](migration.md)
 - [Architecture](architecture.md)

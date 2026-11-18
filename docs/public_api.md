@@ -61,6 +61,7 @@ properties on `HDPGPC` are:
 | `n_clusters_` | Number of represented clusters, excluding empty reserved slots |
 | `observation_parameters_` | Fitted C/Sigma snapshots; MFA additionally reports cluster offsets and observation-posterior snapshots |
 | `split_merge_history_`, `split_merge_convergence_` | Offline proposal and stopping diagnostics; empty for the legacy strategy |
+| `offline_search_diagnostics_` | Detached candidate-screen dimensions, noise thresholds and fallback information |
 | `birth_diagnostics_` | Captured offline proposal diagnostics when requested |
 | `predictive(cluster, *, grid=None)` | Read a component's current observation distribution |
 | `posterior(cluster)` | Copy its latest stored latent state for each output |
@@ -314,6 +315,13 @@ so normal streaming does not pay for their computation and matrix copies.
 through `model.split_merge_history_`; legacy fits return an empty list.
 `model.split_merge_convergence_` reports the stopping reason, iteration and
 final assignment/score stability checks (an empty dictionary for legacy fits).
+Both offline strategies default to
+`InferenceConfig.offline_candidate_search='combined'`. This allocates quotas to
+`score_guided`, `noise_aware` and `dynamics`; `proposal_family_weights=(1,1,1)`
+sets their relative allocation. The former candidate name `legacy` aliases
+`score_guided`. `model.offline_search_diagnostics_` returns detached screening
+and quota information; online fits return an empty dictionary. Dataset reports
+save it under `offline_candidate_search`. See [candidate search](offline_candidate_search.md).
 Split/merge outer stopping uses `split_merge_stability_patience=3` consecutive
 stable iterations and `split_merge_score_rtol=1e-3` by default. See
 [offline split–merge inference](offline_split_merge.md) for its controls and

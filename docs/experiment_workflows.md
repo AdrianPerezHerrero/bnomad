@@ -65,7 +65,7 @@ on the representation; see [noise prior defaults](noise_priors.md).
 | Purpose | Arguments |
 | --- | --- |
 | Inference | `--schedule offline/online/online_fast`, `--iterations`, `--hard-assignments` / `--no-hard-assignments` |
-| Offline optimizer | `--offline-strategy legacy/split_merge`, `--split-merge-refine-steps`, `--offline-representer-selection sorted/fixed` |
+| Offline optimizer | `--offline-strategy legacy/split_merge`, `--offline-candidate-search score_guided/noise_aware/dynamics/combined`, `--proposal-family-weights SCORE NOISE DYNAMICS`, `--split-merge-refine-steps`, `--offline-representer-selection sorted/fixed` |
 | Split/merge stopping | `--split-merge-stability-patience` (3), `--split-merge-score-rtol` (0.001) |
 | Exploration | `--hdp-preset`, `--max-clusters`, `--exploration-steps` |
 | LDS | `--dynamics-clock cluster-clock/physical-clock`, `--lds-update`, `--lds-scoring`, `--lds-degrees`, `--lds-step-size`, `--birth-lds-kl-per-dimension` |
@@ -110,6 +110,11 @@ split_merge` for group split/merge search with the same GP/LDS and HDP tools.
 `--split-merge-refine-steps` controls local refinement and `--exploration-steps`
 limits candidate fits per outer iteration. See [offline split–merge inference](offline_split_merge.md)
 for scoring, caching and stopping semantics.
+Both optimizers default to `--offline-candidate-search combined` with equal
+`--proposal-family-weights 1 1 1` for score-guided, noise-aware and dynamics
+proposals. Select an individual family for comparisons; `legacy` remains a
+candidate-name alias for `score_guided`. The choice does not alter model
+coordinates, priors or the acceptance criterion. See [candidate search](offline_candidate_search.md).
 
 The scripts retain aliases for earlier CLI names, including `--latent-dim`,
 `--ae-beats`, `--ae-epochs`, `--pca-samples`, `--points`, `--max-windows`,

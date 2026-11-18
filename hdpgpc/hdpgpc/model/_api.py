@@ -140,6 +140,12 @@ class HDPGPC:
         self._require_fitted()
         return deepcopy(getattr(self._backend, '_split_merge_convergence', {}))
 
+    @property
+    def offline_search_diagnostics_(self):
+        """Detached candidate-search dimensions, noise references and fallbacks."""
+        self._require_fitted()
+        return deepcopy(getattr(self._backend, 'offline_search_diagnostics', {}))
+
     def _include(self, grid, values):
         inference = self._config.inference
         method = (self._backend.online.update_fast if self._mode == 'online_fast'

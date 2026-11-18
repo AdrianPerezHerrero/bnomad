@@ -191,9 +191,16 @@ class InferenceConfig:
     # Raw ELBO reporting remains unscaled.
     birth_lds_kl_per_dimension: bool = True
     offline_strategy: Literal['legacy', 'split_merge'] = 'legacy'
+    offline_candidate_search: Literal['score_guided', 'noise_aware', 'dynamics', 'combined', 'legacy'] = 'combined'
+    # Relative split/merge screening quotas: score_guided, noise_aware, dynamics.
+    proposal_family_weights: tuple[float, float, float] = (1., 1., 1.)
     split_merge_refine_steps: int = 3
     split_merge_stability_patience: int = 3
     split_merge_score_rtol: float = 1e-3
+
+    def __post_init__(self):
+        if self.offline_candidate_search == 'legacy':
+            object.__setattr__(self, 'offline_candidate_search', 'score_guided')
 
     def run(self, model, x, y):
         """Run one existing entry point; never combine or reorder schedules."""
@@ -336,7 +343,10 @@ class HDPGPCConfig:
         memo = {}
         return {'schema_version': 1, 'x_basis': encode(self.x_basis, memo), 'verbose': encode(self.verbose, memo),
                 **{name: {f.name: encode(getattr(getattr(self, name), f.name), memo) for f in fields(typ)
-                       if not (name == 'dynamics' and (
+                       if not (name == 'inference' and (
+                           (f.name == 'offline_candidate_search' and self.inference.offline_candidate_search == 'combined')
+                           or (f.name == 'proposal_family_weights' and tuple(self.inference.proposal_family_weights) == (1.,1.,1.))))
+                       and not (name == 'dynamics' and (
                            (f.name == 'clock' and self.dynamics.clock == 'cluster-clock')
                            or (f.name == 'constant_input' and not self.dynamics.constant_input)
                            or (f.name == 'constant_input_strength'

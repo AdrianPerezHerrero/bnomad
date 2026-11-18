@@ -99,6 +99,8 @@ def make_config(args, decoder, gamma):
         alignment=AlignmentConfig(policy='none'),
         inference=InferenceConfig(schedule='offline', warp=False,
             offline_strategy=args.offline_strategy, it_limit=args.iterations,
+            offline_candidate_search=getattr(args, 'offline_candidate_search', 'combined'),
+            proposal_family_weights=tuple(getattr(args, 'proposal_family_weights', (1.,1.,1.))),
             hard_assignments=args.hard_assignments, n_explore_steps=args.exploration_steps,
             offline_representer_selection=args.offline_representer_selection,
             split_merge_refine_steps=args.split_merge_refine_steps,

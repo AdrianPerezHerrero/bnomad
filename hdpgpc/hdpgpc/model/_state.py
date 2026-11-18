@@ -78,6 +78,8 @@ class ModelState:
         n_explore_steps = options['n_explore_steps']
         self.offline_representer_selection = options['offline_representer_selection']
         self.offline_strategy = options['offline_strategy']
+        self.offline_candidate_search = options['offline_candidate_search']
+        self.proposal_family_weights = options['proposal_family_weights']
         self.transition_topology = config.hdp.transition_topology
         self.hdp_concentrations = {target: getattr(config.hdp, field)
             for field, target in (('gamma', 'gamma'), ('trans_alpha', 'transAlpha'),

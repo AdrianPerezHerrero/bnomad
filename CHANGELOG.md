@@ -1,5 +1,15 @@
 # 0.3.0 — native implementation migration
 
+- Added default combined offline candidate search with per-family quotas for
+  `score_guided` (the original fit-score search), `noise_aware`, and `dynamics`.
+  Dynamics screening compares regularized conditional operators and innovation
+  covariance, using clock-correct transitions in a common coordinate frame.
+  Quotas deduplicate proposals, redistribute unused slots and respect the total
+  exploration budget. `proposal_family_weights` controls relative allocation;
+  old candidate name `legacy` aliases `score_guided`. Optimizer names, posterior
+  updates, configured model dimensions and native acceptance scores are retained.
+  Reports include screening dimensions and family allocation diagnostics.
+
 - Fixed hard state/transition consistency through shared assignment helpers.
   Offline and standard online pairs now follow the committed labels; forced
   assignments update incoming pairs before learning, including fast online.

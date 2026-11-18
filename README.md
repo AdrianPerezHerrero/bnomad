@@ -175,6 +175,7 @@ config = HDPGPCConfig(
     hdp=HDPConfig(max_models=12),
     inference=InferenceConfig(
         schedule='offline', offline_strategy='split_merge',
+        offline_candidate_search='combined', proposal_family_weights=(1., 1., 1.),
         hard_assignments=False, it_limit=20,
     ),
     numerics=NumericalConfig(seed=42, num_threads=1),

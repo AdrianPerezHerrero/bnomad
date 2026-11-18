@@ -26,6 +26,8 @@ def make_config(args, initialization, *, dynamic):
             max_models=args.max_clusters, transition_topology=args.transition_topology),
         inference=InferenceConfig(schedule='offline', warp=False, it_limit=args.iterations,
             offline_strategy=args.offline_strategy, n_explore_steps=args.exploration_steps,
+            offline_candidate_search=getattr(args, 'offline_candidate_search', 'combined'),
+            proposal_family_weights=tuple(getattr(args, 'proposal_family_weights', (1.,1.,1.))),
             offline_representer_selection=args.offline_representer_selection,
             split_merge_refine_steps=args.split_merge_refine_steps,
             split_merge_stability_patience=args.split_merge_stability_patience,

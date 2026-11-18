@@ -157,8 +157,12 @@ def log_configuration(config, args, *, source='configured'):
           f'alignment={config.alignment.policy}; fit_gp={config.emission.fit_gp}')
     if args.schedule == 'offline':
         print(f'Offline strategy={config.inference.offline_strategy}; '
+              f'candidate search={config.inference.offline_candidate_search}; '
               f'proposal refinement steps={config.inference.split_merge_refine_steps}; '
               f'representer selection={config.inference.offline_representer_selection}')
+        if config.inference.offline_candidate_search == 'combined':
+            print('Candidate family weights (score_guided, noise_aware, dynamics)='
+                  f'{tuple(config.inference.proposal_family_weights)}')
         if config.inference.offline_strategy == 'split_merge':
             print(f'Split/merge stopping: score rtol={config.inference.split_merge_score_rtol:g}; '
                   f'stable iterations={config.inference.split_merge_stability_patience}')
@@ -395,6 +399,7 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
               'metadata': metadata or {}, 'diagnostic_omissions': failures,
               'split_merge_history': getattr(model, 'split_merge_history_', []),
               'split_merge_convergence': getattr(model, 'split_merge_convergence_', {}),
+              'offline_candidate_search': getattr(model, 'offline_search_diagnostics_', {}),
               'seconds': round(time.perf_counter() - run.started, 3),
               'output_directory': str(run.path.resolve()),
               'artifacts': sorted(str(path.relative_to(run.path)) for path in run.path.rglob('*')

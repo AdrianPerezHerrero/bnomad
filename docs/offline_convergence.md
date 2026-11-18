@@ -4,6 +4,14 @@ This page describes `offline_strategy='legacy'`, the default. The alternative
 [split–merge optimizer](offline_split_merge.md) is selected independently and
 keeps its own structural search loop.
 
+Both strategies share default `offline_candidate_search='combined'`
+[family screening](offline_candidate_search.md). Legacy births selected by the
+noise-aware/dynamics families initialize from screened group allocations, with
+coherent pair tensors constructed lazily. Score-guided candidates retain their
+original seed initialization. Native messages, re-estimation and full-score
+acceptance refine each proposal. Select `--offline-candidate-search score_guided`
+(the old name `legacy` remains an alias) to recover original candidate selection.
+
 Existing-cluster reallocations require a proposal-score gain greater than
 `1e-6 + 1e-8 * max(abs(baseline), abs(proposal))`. This rejects numerical
 roundoff without changing the final birth acceptance rule.

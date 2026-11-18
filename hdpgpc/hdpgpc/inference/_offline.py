@@ -8,6 +8,7 @@ from ..alignment import _components as _alignment
 from ._birth_diagnostics import capture_seed, capture_refit
 from ._messages import assignment_messages
 from ._assignments import from_labels, from_log_marginals, hard_pairs
+from . import _proposal_search
 
 
 def _reallocation_improves(baseline, proposal, *, atol=1e-6, rtol=1e-8):
@@ -201,6 +202,64 @@ def _point_warp_classification_scores(self, x_trains, y_trains):
     return scores
 
 
+def _score_guided_birth_seeds(self, resp, q_simple, q_, q_lat_, f_ind_old, indexes_, M):
+    """Original low-fit-score seed ranking, retained without numerical changes."""
+    q_sim_s = _owned_scores(self.weight_mean(q_simple), resp)
+    q_sim_s = (q_sim_s - torch.max(q_sim_s)) / (torch.max(q_sim_s) - torch.min(q_sim_s))
+    q_s = _owned_scores(self.weight_mean(q_), resp)
+    q_s = (q_s - torch.max(q_s)) / (torch.max(q_s) - torch.min(q_s))
+    q_lat_s = _owned_scores(self.weight_mean(q_lat_), resp)
+    q_lat_s = (q_lat_s - torch.max(q_lat_s)) / (torch.max(q_lat_s) - torch.min(q_lat_s))
+    f_ind_new_potential = torch.argsort(q_sim_s)
+    q_rank = q_sim_s
+    potential_ind = {}
+    n_steps = min(self.n_explore_steps, len(f_ind_new_potential))
+    selected_candidates = []
+    selected_beats = set()
+
+    def eligible_birth_seed(beat):
+        if beat in selected_beats:
+            return False
+        m_chosen = -1
+        for m in range(M - 1):
+            if beat in indexes_[m]:
+                m_chosen = m
+                break
+        if m_chosen == -1:
+            m_chosen = int(torch.argmax(resp[beat]).item())
+        return beat != int(f_ind_old[m_chosen].item())
+
+    def add_ranked_candidates(ranking, target, *, distinct_score_groups=True):
+        last_indexes = torch.tensor([-1], device=resp.device)
+        for candidate in ranking:
+            if len(selected_candidates) >= target:
+                break
+            beat = int(candidate.item())
+            if not eligible_birth_seed(beat):
+                continue
+            if beat not in potential_ind:
+                potential_ind[beat] = torch.where(torch.isclose(q_rank, q_rank[beat], rtol=0.01))[0]
+            group = potential_ind[beat]
+            if distinct_score_groups and not any(old not in group for old in last_indexes):
+                continue
+            selected_candidates.append(beat)
+            selected_beats.add(beat)
+            last_indexes = group
+
+    # Give each criterion its historical half of the pool, then fill unused
+    # positions from the other ranking. A beat selected earlier cannot recur.
+    first_quota = min(n_steps, max(n_steps // 2, 1))
+    add_ranked_candidates(f_ind_new_potential, first_quota)
+    f_ind_new_q = torch.argsort(q_s + q_lat_s)
+    add_ranked_candidates(f_ind_new_q, n_steps)
+    if len(selected_candidates) < n_steps:
+        # Near-equal-score groups may exhaust both diverse lists. Fill the
+        # remaining slots with distinct eligible beats, never zero padding.
+        add_ranked_candidates(f_ind_new_potential, n_steps, distinct_score_groups=False)
+        add_ranked_candidates(f_ind_new_q, n_steps, distinct_score_groups=False)
+    return selected_candidates
+
+
 def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     """
     Include the batch of samples received and restimate all the parameters of the
@@ -240,6 +299,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     y_trains = self.cond_cuda(self.cond_to_torch(y_trains))
     x_trains = self.cond_cuda(self.cond_to_torch(x_trains))
     self.x_train = self.cond_cuda(self.cond_to_torch(x_trains))
+    _proposal_search.initialize(self, y_trains)
     if self.warp and getattr(self.alignment, 'supports_batch_lds_input_warp', False):
         # Input-grid alignment retains the raw waveform for later batch
         # classification with learning; each candidate owns its warped grid.
@@ -286,6 +346,7 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         self._iteration_birth_search_complete = False
         self._iteration_reallocation_accepted = False
         self._birth_iteration = iteration + 1
+        self._proposal_iteration = iteration
         _log(self, f'\n=== Offline iteration {iteration + 1} ===', flush=True)
         resp, respPair, q, q_lat, snr, y_trains_w, reallocate = self.variational_local_terms_batch(M, x_trains,
                                                                                                    y_trains,
@@ -499,6 +560,9 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
     """ Smart and complex computation of new group assignation and compare with the last iteration then decides if generate group or not.
         First, it computes if a reallocation of the samples is better, if not, proposes a new birth group and computes the ELBO to measure the goodness.
     """
+    if (getattr(self, '_offline_observations', None) is None
+            or len(self._offline_observations) != len(y_trains)):
+        _proposal_search.initialize(self, y_trains)
     empty_estimation = False
     y_trains_w, x_w, liks = self.warp_batch_by_resp_amtgp_cached(
         x_trains=x_trains,
@@ -716,64 +780,15 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                 _log(self, "Bad estimation")
                 empty_estimation = False
     # f_ind_new_potential = torch.argsort(self.weight_mean(q_simple)[torch.where(resp == 1.0)])
-    q_sim_s = _owned_scores(self.weight_mean(q_simple), resp)
-    q_sim_s = (q_sim_s - torch.max(q_sim_s)) / (torch.max(q_sim_s) - torch.min(q_sim_s))
-    q_s = _owned_scores(self.weight_mean(q_), resp)
-    q_s = (q_s - torch.max(q_s)) / (torch.max(q_s) - torch.min(q_s))
-    q_lat_s = _owned_scores(self.weight_mean(q_lat_), resp)
-    q_lat_s = (q_lat_s - torch.max(q_lat_s)) / (torch.max(q_lat_s) - torch.min(q_lat_s))
-    f_ind_new_potential = torch.argsort(q_sim_s)
-    q_rank = q_sim_s
-    potential_weight = torch.zeros(f_ind_new_potential.shape[0])
-    potential_ind = {}
-    potential_q = torch.zeros(f_ind_new_potential.shape[0])
-    for j, ind in enumerate(f_ind_new_potential):
-        potential_ind[ind.item()] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0]
-        potential_weight[ind] = torch.where(torch.isclose(q_rank, q_rank[ind], rtol=0.01))[0].shape[0]
-        potential_q[ind] = torch.sum(q_rank[potential_ind[ind.item()]])
-    n_steps = min(self.n_explore_steps, len(f_ind_new_potential))
-    selected_candidates = []
-    selected_beats = set()
-
-    def eligible_birth_seed(beat):
-        if beat in selected_beats:
-            return False
-        m_chosen = -1
-        for m in range(M - 1):
-            if beat in indexes_[m]:
-                m_chosen = m
-                break
-        if m_chosen == -1:
-            m_chosen = int(torch.argmax(resp[beat]).item())
-        return beat != int(f_ind_old[m_chosen].item())
-
-    def add_ranked_candidates(ranking, target, *, distinct_score_groups=True):
-        last_indexes = torch.tensor([-1], device=resp.device)
-        for candidate in ranking:
-            if len(selected_candidates) >= target:
-                break
-            beat = int(candidate.item())
-            if not eligible_birth_seed(beat):
-                continue
-            group = potential_ind[beat]
-            if distinct_score_groups and not any(old not in group for old in last_indexes):
-                continue
-            selected_candidates.append(beat)
-            selected_beats.add(beat)
-            last_indexes = group
-
-    # Give each criterion its historical half of the pool, then fill unused
-    # positions from the other ranking. A beat selected earlier cannot recur.
-    first_quota = min(n_steps, max(n_steps // 2, 1))
-    add_ranked_candidates(f_ind_new_potential, first_quota)
+    from ._proposal_quotas import canonical_name
+    mode = canonical_name(getattr(self, 'offline_candidate_search', 'combined'))
+    original_seeds = (_score_guided_birth_seeds(self, resp, q_simple, q_, q_lat_, f_ind_old, indexes_, M)
+                      if mode in ('score_guided', 'combined') or self._offline_proposal_geometry is None else [])
+    selected_candidates = _proposal_search.birth_seeds(
+        self, resp, q_lat_, snr_, f_ind_old, original_seeds=original_seeds)
+    if selected_candidates is None:
+        selected_candidates = original_seeds
     q_aux = torch.clone(q_simple)
-    f_ind_new_q = torch.argsort(q_s + q_lat_s)
-    add_ranked_candidates(f_ind_new_q, n_steps)
-    if len(selected_candidates) < n_steps:
-        # Near-equal-score groups may exhaust both diverse lists. Fill the
-        # remaining slots with distinct eligible beats, never zero padding.
-        add_ranked_candidates(f_ind_new_potential, n_steps, distinct_score_groups=False)
-        add_ranked_candidates(f_ind_new_q, n_steps, distinct_score_groups=False)
     f_ind_new_potential_def = torch.tensor(
         selected_candidates, dtype=torch.long, device=resp.device)
     baseline_warp_results = (dict(getattr(self, '_flow_offline_posteriors', {}))
@@ -845,14 +860,22 @@ def estimate_q_first(self, M, x_trains, y_trains, y_trains_w_, resp, respPair, q
                         snr_aux[:, -1, ld] = self.compute_snr(y_trains_w[:, :, ld, -1], gp)
                         if ld == 0:
                             provisional_birth_gp = gp
-                    # Compute resp
-                    q_mean = self.weight_mean(q_simple_, snr_aux)
-                    q_norm, _ = self.LogLik(q_mean)
-                    alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
-                    resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
-                    respPairlog_temp, _ = self.LogLik(
-                        self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
-                    resp_temp, respPair_temp = from_log_marginals(self, resplog_temp, respPairlog_temp)
+                    partition = self._offline_birth_allocations.get(beat)
+                    if partition is not None:
+                        # This is the proposed group's initialization, not a
+                        # replacement for the native messages in refinement.
+                        parent, allocation = partition
+                        resp_temp, respPair_temp = _proposal_search.split_partition(
+                            resp, respPair, parent, allocation)
+                    else:
+                        # Compute resp
+                        q_mean = self.weight_mean(q_simple_, snr_aux)
+                        q_norm, _ = self.LogLik(q_mean)
+                        alpha, beta, margprob = assignment_messages(self, startPi, transPi, q_norm)
+                        resplog_temp, _ = self.LogLik(torch.log(alpha * beta), axis=1)
+                        respPairlog_temp, _ = self.LogLik(
+                            self.coupled_state_coef(alpha, beta, transPi, q_norm, margprob), axis=1)
+                        resp_temp, respPair_temp = from_log_marginals(self, resplog_temp, respPairlog_temp)
                     if getattr(self, '_birth_diagnostic_limit', 0):
                         birth_record = capture_seed(
                             self, x_trains, y_trains, beat, int(m_chosen),
@@ -1266,6 +1289,7 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
         resp_new, respPair_new = from_log_marginals(self, resplog_temp, respPairlog_temp)
         x_trains = torch.concatenate([self.x_train, x_trains])
         y_trains = torch.concatenate([self.y_train, y_trains])
+        _proposal_search.initialize(self, y_trains)
         y_trains_w = y_trains
         self.T = y_trains.shape[0]
         resp, respPair = torch.concatenate([self.resp_last, resp_new]), torch.concatenate(
@@ -1336,6 +1360,7 @@ def classify_batch(self, x_trains, y_trains, learning=False, it_limit=None, warp
         elbo = self.elbo_last
         iteration = 0
         while True:
+            self._proposal_iteration = iteration
             resp, respPair, q, q_lat, snr, end = self.refill(resp, respPair, startStateCount, transStateCount, q,
                                                              q_lat, snr)
             M = self.M
