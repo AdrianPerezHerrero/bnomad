@@ -1,31 +1,19 @@
 {
-  "schema_version": 2,
-  "source_revision": "034c61b + reviewed reference fixes (2026-10-27); reviewed hard-assignment coherence fix (2026-11-11)",
-  "reason": "Version 2: explicit reference concentrations and birth-score policy; current normalized Gaussian score, corrected conjugate posterior and soft weighting, current HMM transitions, current warp derivatives. Existing array comparison tolerances are unchanged; discrete scientific expectations reviewed separately. Hard pairs now follow committed marginal labels; native pair dtype matches state dtype. The reviewed old scientific captures change only pair dtype metadata. New independent invariants cover ambiguous posteriors, forced state changes, reload and both clocks; tolerances are unchanged.",
   "comparison": {
-    "structure_and_discrete": "exact",
+    "float_atol": 1e-09,
     "float_rtol": 1e-07,
-    "float_atol": 1e-09
+    "structure_and_discrete": "exact"
   },
-  "invariants": [
-    "Offline fixtures retain 2 occupied clusters in each output",
-    "Online static growth remains [1,1,2,2]",
-    "Known online warp and multi-output failures retain their exception types",
-    "Forced online reuse now succeeds without creating clusters or losing history",
-    "Hard pairs have zero incoming mass at observation zero and source/destination marginals matching adjacent committed states."
-  ],
   "files": [
     {
-      "file": "tests/characterization/baselines/warper_batch.json",
-      "old_sha256": "26f297aaaa1084101ee8e9f8ba9437e4fc04ec8fb5144a403c7b8a12381bd6a3",
-      "new_sha256": "ef65a2af15dde57043fddfb19f135db0fb8b10a27fdc2e4e2b2ea1fa3046bd52",
       "difference_counts": {
-        "float": 126,
         "discrete": 0,
-        "type": 0,
+        "float": 126,
         "key": 0,
-        "length": 0
+        "length": 0,
+        "type": 0
       },
+      "file": "tests/characterization/baselines/warper_batch.json",
       "first_changed_fields": [
         [
           ".calls[0].warm_start.values[0]",
@@ -75,19 +63,19 @@
           ".calls[0].result[2].values[0]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "ef65a2af15dde57043fddfb19f135db0fb8b10a27fdc2e4e2b2ea1fa3046bd52",
+      "old_sha256": "26f297aaaa1084101ee8e9f8ba9437e4fc04ec8fb5144a403c7b8a12381bd6a3"
     },
     {
-      "file": "tests/characterization/baselines/online_static.json",
-      "old_sha256": "6e7ddb83137d36efefe195654b934393c07b12a6e9445cfd7bbffa218261e79d",
-      "new_sha256": "eb8feb6d7f01b8bb268a516ae5431b3d0d5709ec0a89e99880b1fb287814e664",
       "difference_counts": {
-        "float": 1638,
         "discrete": 0,
-        "type": 35,
+        "float": 1638,
         "key": 0,
-        "length": 30
+        "length": 30,
+        "type": 35
       },
+      "file": "tests/characterization/baselines/online_static.json",
       "first_changed_fields": [
         [
           ".steps[0].gpmodels[0][0].f_star[1].values[0][0]",
@@ -137,19 +125,19 @@
           ".steps[0].gpmodels[0][0].cov_f_sm[0].values[1][1]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "eb8feb6d7f01b8bb268a516ae5431b3d0d5709ec0a89e99880b1fb287814e664",
+      "old_sha256": "6e7ddb83137d36efefe195654b934393c07b12a6e9445cfd7bbffa218261e79d"
     },
     {
-      "file": "tests/characterization/baselines/manifest.json",
-      "old_sha256": "4cf6a3706ef39a06076673446a5913cf2c4d8b314500371a94fcf1abe6ad2d24",
-      "new_sha256": "376a60a2db06f032aeef90a8ac60d581b7b7c7186155e4b643ec02d95cef15c5",
       "difference_counts": {
-        "float": 0,
         "discrete": 3,
-        "type": 0,
+        "float": 0,
         "key": 117,
-        "length": 0
+        "length": 0,
+        "type": 0
       },
+      "file": "tests/characterization/baselines/manifest.json",
       "first_changed_fields": [
         [
           ".reference_commit",
@@ -199,19 +187,19 @@
           ".environment.source_sha256.datasets/__init__.py",
           "key"
         ]
-      ]
+      ],
+      "new_sha256": "376a60a2db06f032aeef90a8ac60d581b7b7c7186155e4b643ec02d95cef15c5",
+      "old_sha256": "4cf6a3706ef39a06076673446a5913cf2c4d8b314500371a94fcf1abe6ad2d24"
     },
     {
-      "file": "tests/characterization/baselines/offline_multi_snr.json",
-      "old_sha256": "27bab9d6ae09f238f9b225cb6ad72b6a6a33ce65fdfe466a3b9414a408d16217",
-      "new_sha256": "0a10353af0617f70b891c408bcfd366344c4eb2832648bba5174216c78f86633",
       "difference_counts": {
-        "float": 3442,
         "discrete": 4,
-        "type": 104,
+        "float": 3442,
         "key": 0,
-        "length": 96
+        "length": 96,
+        "type": 104
       },
+      "file": "tests/characterization/baselines/offline_multi_snr.json",
       "first_changed_fields": [
         [
           ".inference_trace[0].result",
@@ -261,19 +249,19 @@
           ".inference_trace[3].emission_input.values[0][0]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "0a10353af0617f70b891c408bcfd366344c4eb2832648bba5174216c78f86633",
+      "old_sha256": "27bab9d6ae09f238f9b225cb6ad72b6a6a33ce65fdfe466a3b9414a408d16217"
     },
     {
-      "file": "tests/characterization/baselines/emission_dynamic.json",
-      "old_sha256": "a28b4a9d4e604cc35df032b5fdf40befd5679e5ffebb7eda9bbf94bbd78aa189",
-      "new_sha256": "4ed6aca09d30a363dde97388c62e6162bee2eb772e42032d7c541b90c65a980b",
       "difference_counts": {
-        "float": 1276,
         "discrete": 0,
-        "type": 4,
+        "float": 1276,
         "key": 0,
-        "length": 0
+        "length": 0,
+        "type": 4
       },
+      "file": "tests/characterization/baselines/emission_dynamic.json",
       "first_changed_fields": [
         [
           ".observe_interpolated[0].values[0][0]",
@@ -323,19 +311,19 @@
           ".observe_interpolated[1].values[0][4]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "4ed6aca09d30a363dde97388c62e6162bee2eb772e42032d7c541b90c65a980b",
+      "old_sha256": "a28b4a9d4e604cc35df032b5fdf40befd5679e5ffebb7eda9bbf94bbd78aa189"
     },
     {
-      "file": "tests/characterization/baselines/online_dynamic.json",
-      "old_sha256": "180197a4e5682b0ba27125946b2feb87b5c4675a6aac3aa02b6ca0e1eb290713",
-      "new_sha256": "939501d8da9226e1e34bbebc1b64204b9afaa1f2ed1c5ab309ef3c3c3c1596bc",
       "difference_counts": {
-        "float": 881,
         "discrete": 15,
-        "type": 5,
+        "float": 881,
         "key": 0,
-        "length": 9
+        "length": 9,
+        "type": 5
       },
+      "file": "tests/characterization/baselines/online_dynamic.json",
       "first_changed_fields": [
         [
           ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][0]",
@@ -385,19 +373,19 @@
           ".steps[0].gpmodels[0][0].observation_params.m_mean.values[2][1]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "939501d8da9226e1e34bbebc1b64204b9afaa1f2ed1c5ab309ef3c3c3c1596bc",
+      "old_sha256": "180197a4e5682b0ba27125946b2feb87b5c4675a6aac3aa02b6ca0e1eb290713"
     },
     {
-      "file": "tests/characterization/baselines/emission_static.json",
-      "old_sha256": "fbed649a597894a1b738a70a6a060d38b66b04f80be31aab353a18c81897c7e4",
-      "new_sha256": "9049269ccaae508086d1f35b18f408ac530b5db3c9c363f86603b146834748c9",
       "difference_counts": {
-        "float": 864,
         "discrete": 0,
-        "type": 2,
+        "float": 864,
         "key": 0,
-        "length": 0
+        "length": 0,
+        "type": 2
       },
+      "file": "tests/characterization/baselines/emission_static.json",
       "first_changed_fields": [
         [
           ".observe_interpolated[0].values[0][0]",
@@ -447,19 +435,19 @@
           ".observe_interpolated[1].values[0][4]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "9049269ccaae508086d1f35b18f408ac530b5db3c9c363f86603b146834748c9",
+      "old_sha256": "fbed649a597894a1b738a70a6a060d38b66b04f80be31aab353a18c81897c7e4"
     },
     {
-      "file": "tests/characterization/baselines/hdp_messages.json",
-      "old_sha256": "107e237785d7f67ab0bcf5e5a20af4ce73f766fd0862001a42d596fce2fa6c63",
-      "new_sha256": "c1b36b80e94d41c2317165265218f7d173f2951af3008f176fee9270d39bcb03",
       "difference_counts": {
-        "float": 22,
         "discrete": 0,
-        "type": 0,
+        "float": 22,
         "key": 0,
-        "length": 0
+        "length": 0,
+        "type": 0
       },
+      "file": "tests/characterization/baselines/hdp_messages.json",
       "first_changed_fields": [
         [
           ".pair_responsibilities.values[0][0][0]",
@@ -509,19 +497,19 @@
           ".log_responsibilities.values[0][1]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "c1b36b80e94d41c2317165265218f7d173f2951af3008f176fee9270d39bcb03",
+      "old_sha256": "107e237785d7f67ab0bcf5e5a20af4ce73f766fd0862001a42d596fce2fa6c63"
     },
     {
-      "file": "tests/characterization/baselines/offline_multi.json",
-      "old_sha256": "3eabfdee75ed3da0690dd46c581faead742afba58c63f6adda0fb805cee5d310",
-      "new_sha256": "de689a159d2fb77df8a2ec8fe7de72fbfa4ecee05996bd9dda85c225957bebd5",
       "difference_counts": {
-        "float": 3406,
         "discrete": 5,
-        "type": 104,
+        "float": 3406,
         "key": 0,
-        "length": 96
+        "length": 96,
+        "type": 104
       },
+      "file": "tests/characterization/baselines/offline_multi.json",
       "first_changed_fields": [
         [
           ".inference_trace[0].result",
@@ -571,19 +559,19 @@
           ".inference_trace[3].emission_input.values[0][0]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "de689a159d2fb77df8a2ec8fe7de72fbfa4ecee05996bd9dda85c225957bebd5",
+      "old_sha256": "3eabfdee75ed3da0690dd46c581faead742afba58c63f6adda0fb805cee5d310"
     },
     {
-      "file": "tests/characterization/baselines/offline_static.json",
-      "old_sha256": "6341e1fd117e7963859fc0f1852bbce8ba62884d03021a3419709c1bf4166d8c",
-      "new_sha256": "b00b0e227f84ab9e8e4e893f954ab6e492ec96c13dbc58bfde0de7f6df2b894f",
       "difference_counts": {
-        "float": 633,
         "discrete": 3,
-        "type": 3,
+        "float": 633,
         "key": 3,
-        "length": 4
+        "length": 4,
+        "type": 3
       },
+      "file": "tests/characterization/baselines/offline_static.json",
       "first_changed_fields": [
         [
           ".inference_trace",
@@ -633,19 +621,19 @@
           ".final.gpmodels[0][0].f_star[1].values[2][0]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "b00b0e227f84ab9e8e4e893f954ab6e492ec96c13dbc58bfde0de7f6df2b894f",
+      "old_sha256": "6341e1fd117e7963859fc0f1852bbce8ba62884d03021a3419709c1bf4166d8c"
     },
     {
-      "file": "tests/characterization/baselines/offline_dynamic.json",
-      "old_sha256": "a99d705355b732c4559ef07ea73ac15ad2d81c35588396cab437ec30fe8cadcb",
-      "new_sha256": "57e33aa74139c20a02948c7e70e3118281cb1341a0bb2888b62eb3a6a787b8a5",
       "difference_counts": {
-        "float": 2038,
         "discrete": 3,
-        "type": 69,
+        "float": 2038,
         "key": 0,
-        "length": 65
+        "length": 65,
+        "type": 69
       },
+      "file": "tests/characterization/baselines/offline_dynamic.json",
       "first_changed_fields": [
         [
           ".inference_trace[0].result",
@@ -695,19 +683,19 @@
           ".inference_trace[2].emission_input.values[1][0]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "57e33aa74139c20a02948c7e70e3118281cb1341a0bb2888b62eb3a6a787b8a5",
+      "old_sha256": "a99d705355b732c4559ef07ea73ac15ad2d81c35588396cab437ec30fe8cadcb"
     },
     {
-      "file": "tests/characterization/baselines/offline_warp.json",
-      "old_sha256": "e8b506f460a7857e50a62062118a6c6388cd0cccb943cdb59dfc5d5deb468513",
-      "new_sha256": "4fe29e789cd7ddcb3ddfab6bf127cf492eeb907bb7eaa10d61ac42eeffb83f39",
       "difference_counts": {
-        "float": 2071,
         "discrete": 4,
-        "type": 69,
+        "float": 2071,
         "key": 0,
-        "length": 65
+        "length": 65,
+        "type": 69
       },
+      "file": "tests/characterization/baselines/offline_warp.json",
       "first_changed_fields": [
         [
           ".inference_trace[0].result",
@@ -757,19 +745,19 @@
           ".inference_trace[2].emission_input.values[1][0]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "4fe29e789cd7ddcb3ddfab6bf127cf492eeb907bb7eaa10d61ac42eeffb83f39",
+      "old_sha256": "e8b506f460a7857e50a62062118a6c6388cd0cccb943cdb59dfc5d5deb468513"
     },
     {
-      "file": "tests/characterization/baselines/warper_scalar.json",
-      "old_sha256": "527d29759ed3df60b88c326a726c69c2591c2ae9117679ca6ce9cc579eb47b87",
-      "new_sha256": "410f9c63b21e8e7994c81f59187b903aafcd085c0e2fd1c41abb5fe5fde7dade",
       "difference_counts": {
-        "float": 114,
         "discrete": 0,
-        "type": 0,
+        "float": 114,
         "key": 0,
-        "length": 0
+        "length": 0,
+        "type": 0
       },
+      "file": "tests/characterization/baselines/warper_scalar.json",
       "first_changed_fields": [
         [
           ".calls[0].warm_start.values[0]",
@@ -819,19 +807,19 @@
           ".calls[0].result[1].values[1][0]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "410f9c63b21e8e7994c81f59187b903aafcd085c0e2fd1c41abb5fe5fde7dade",
+      "old_sha256": "527d29759ed3df60b88c326a726c69c2591c2ae9117679ca6ce9cc579eb47b87"
     },
     {
-      "file": "tests/characterization/baselines/online_fast.json",
-      "old_sha256": "6dbaa48a946326313bf048fa5566effc07598893c4c5bf3f1680a1df87c31c8e",
-      "new_sha256": "69e071fdf0f481ee32bc77e3dca7c400f9fb18145b5dbb9865e0946c22fe86c5",
       "difference_counts": {
-        "float": 891,
         "discrete": 21,
-        "type": 5,
+        "float": 891,
         "key": 0,
-        "length": 35
+        "length": 35,
+        "type": 5
       },
+      "file": "tests/characterization/baselines/online_fast.json",
       "first_changed_fields": [
         [
           ".steps[0].gpmodels[0][0].observation_params.m_mean.values[0][0]",
@@ -881,19 +869,19 @@
           ".steps[0].gpmodels[0][0].observation_params.m_mean.values[2][1]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "69e071fdf0f481ee32bc77e3dca7c400f9fb18145b5dbb9865e0946c22fe86c5",
+      "old_sha256": "6dbaa48a946326313bf048fa5566effc07598893c4c5bf3f1680a1df87c31c8e"
     },
     {
-      "file": "tests/characterization/baselines/known_failure_online_warp.json",
-      "old_sha256": "480bff5e51900715b32378e8ee4e52cb347ce4a54010e538b87a309f6321e69f",
-      "new_sha256": "18fdc0ada58f41670b683b46d6b4b938f41c15daf8ee25d0bb8a177c7ed470f2",
       "difference_counts": {
-        "float": 299,
         "discrete": 0,
-        "type": 1,
+        "float": 299,
         "key": 0,
-        "length": 0
+        "length": 0,
+        "type": 1
       },
+      "file": "tests/characterization/baselines/known_failure_online_warp.json",
       "first_changed_fields": [
         [
           ".partial_state.gpmodels[0][0].observation_params.m_mean.values[0][0]",
@@ -943,19 +931,19 @@
           ".partial_state.gpmodels[0][0].observation_params.m_mean.values[2][1]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "18fdc0ada58f41670b683b46d6b4b938f41c15daf8ee25d0bb8a177c7ed470f2",
+      "old_sha256": "480bff5e51900715b32378e8ee4e52cb347ce4a54010e538b87a309f6321e69f"
     },
     {
-      "file": "tests/characterization/baselines/known_failure_online_multi.json",
-      "old_sha256": "f186f1d185772a3d7368d78d963bfaea3a4161267a7a18e07d165bf8e6dc5724",
-      "new_sha256": "ff0bd95f8bfe01b7ac4b05feb653cdb146017d3ca64e23046a3f92436562ecb0",
       "difference_counts": {
-        "float": 1127,
         "discrete": 0,
-        "type": 4,
+        "float": 1127,
         "key": 0,
-        "length": 0
+        "length": 0,
+        "type": 4
       },
+      "file": "tests/characterization/baselines/known_failure_online_multi.json",
       "first_changed_fields": [
         [
           ".partial_state.gpmodels[0][0].var[2].values[0][0]",
@@ -1005,19 +993,19 @@
           ".partial_state.gpmodels[0][0].observation_params.m_mean.values[1][1]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "ff0bd95f8bfe01b7ac4b05feb653cdb146017d3ca64e23046a3f92436562ecb0",
+      "old_sha256": "f186f1d185772a3d7368d78d963bfaea3a4161267a7a18e07d165bf8e6dc5724"
     },
     {
-      "file": "tests/fixtures/emission_reference.json",
-      "old_sha256": "fbb0c5ff63a22cf1d890443edac0dc2419996a160b619cb48ae6964c881efaea",
-      "new_sha256": "9b94abdfb42b3d8abf11e13c95e965725185c3fa08218bc9182ce8b5cdb62ce9",
       "difference_counts": {
-        "float": 1723,
         "discrete": 4,
-        "type": 7,
+        "float": 1723,
         "key": 0,
-        "length": 0
+        "length": 0,
+        "type": 7
       },
+      "file": "tests/fixtures/emission_reference.json",
       "first_changed_fields": [
         [
           ".provenance.source",
@@ -1067,19 +1055,19 @@
           ".cases.projected.latent[1].values[0][0]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "9b94abdfb42b3d8abf11e13c95e965725185c3fa08218bc9182ce8b5cdb62ce9",
+      "old_sha256": "fbb0c5ff63a22cf1d890443edac0dc2419996a160b619cb48ae6964c881efaea"
     },
     {
-      "file": "tests/fixtures/dynamics_reference.json",
-      "old_sha256": "3923242f141af1984680ad989629a03143c8e204232d5e00ceb3edfe96787f6b",
-      "new_sha256": "0673db8a407f65e0ba6990044c1c54a0eebd93ee19ce7b15b1d0b2ed78ca8aaa",
       "difference_counts": {
-        "float": 7507,
         "discrete": 4,
-        "type": 27,
+        "float": 7507,
         "key": 5,
-        "length": 12
+        "length": 12,
+        "type": 27
       },
+      "file": "tests/fixtures/dynamics_reference.json",
       "first_changed_fields": [
         [
           ".source_sha256.GPI.py",
@@ -1129,19 +1117,19 @@
           ".cases.trajectory_linear_gates.value.steps[1].cov_f_sm[1].values[0][2]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "0673db8a407f65e0ba6990044c1c54a0eebd93ee19ce7b15b1d0b2ed78ca8aaa",
+      "old_sha256": "3923242f141af1984680ad989629a03143c8e204232d5e00ceb3edfe96787f6b"
     },
     {
-      "file": "tests/fixtures/alignment_reference.json",
-      "old_sha256": "4b58cbdff132bf6e2e86dba13536eed5c38b2bd1b2a5e669263483ea5afa8490",
-      "new_sha256": "09580b9ef6d70de771edaefa6cc2f0888d05beb603a6a5832b6db032837e454b",
       "difference_counts": {
-        "float": 1323,
         "discrete": 1,
-        "type": 0,
+        "float": 1323,
         "key": 4,
-        "length": 0
+        "length": 0,
+        "type": 0
       },
+      "file": "tests/fixtures/alignment_reference.json",
       "first_changed_fields": [
         [
           ".source_sha256.model/_state.py",
@@ -1191,19 +1179,19 @@
           ".cases.batch_changed_grid[0].state.prior_L.values[5][2]",
           "float"
         ]
-      ]
+      ],
+      "new_sha256": "09580b9ef6d70de771edaefa6cc2f0888d05beb603a6a5832b6db032837e454b",
+      "old_sha256": "4b58cbdff132bf6e2e86dba13536eed5c38b2bd1b2a5e669263483ea5afa8490"
     },
     {
-      "file": "tests/fixtures/hdp_reference.json",
-      "old_sha256": "1532c65dc088d58c752f1517b77fc2e88996ef5253862b72fd1d22aa7ab99c53",
-      "new_sha256": "9d33b7b8c9aa2857ac6e5973aea29468050f134a7e438d394120c83601fb6ee6",
       "difference_counts": {
-        "float": 123,
         "discrete": 1,
-        "type": 0,
+        "float": 123,
         "key": 4,
-        "length": 0
+        "length": 0,
+        "type": 0
       },
+      "file": "tests/fixtures/hdp_reference.json",
       "first_changed_fields": [
         [
           ".source_sha256.OptimizerRhoOmega.py",
@@ -1254,19 +1242,19 @@
           "float"
         ]
       ],
-      "note": "Independent Dirichlet E[log p] formula now shared by online, batch, stored and classification paths."
+      "new_sha256": "9d33b7b8c9aa2857ac6e5973aea29468050f134a7e438d394120c83601fb6ee6",
+      "note": "Independent Dirichlet E[log p] formula now shared by online, batch, stored and classification paths.",
+      "old_sha256": "1532c65dc088d58c752f1517b77fc2e88996ef5253862b72fd1d22aa7ab99c53"
     },
     {
-      "file": "tests/fixtures/inference_reference.json.gz",
-      "old_sha256": "33134f79eb23079a86c72fd9409eb62d4899f672ce2ac28b191681a08d6a66df",
-      "new_sha256": "9b663d0afdb3397dee590f02a69dee142fff948329033e1cae13b8461d256b52",
       "difference_counts": {
-        "float": 1266054,
         "discrete": 3240,
-        "type": 5292,
+        "float": 1266054,
         "key": 4944,
-        "length": 2919
+        "length": 2919,
+        "type": 5292
       },
+      "file": "tests/fixtures/inference_reference.json.gz",
       "first_changed_fields": [
         [
           ".reference_revision",
@@ -1316,19 +1304,19 @@
           ".environment.source_sha256.datasets/__init__.py",
           "key"
         ]
-      ]
+      ],
+      "new_sha256": "9b663d0afdb3397dee590f02a69dee142fff948329033e1cae13b8461d256b52",
+      "old_sha256": "33134f79eb23079a86c72fd9409eb62d4899f672ce2ac28b191681a08d6a66df"
     },
     {
-      "file": "tests/fixtures/inference_edge_reference.json.gz",
-      "old_sha256": "0cf0999cd3042de9dafc188f5076c736aad471d54c14478077b36ea28377adc3",
-      "new_sha256": "e18c1697b5147199c73dc695b5a5bff0823a8454cde6f85f86032a50c40bb9cc",
       "difference_counts": {
-        "float": 148999,
         "discrete": 386,
-        "type": 387,
+        "float": 148999,
         "key": 150,
-        "length": 39
+        "length": 39,
+        "type": 387
       },
+      "file": "tests/fixtures/inference_edge_reference.json.gz",
       "first_changed_fields": [
         [
           ".reference_revision",
@@ -1378,124 +1366,287 @@
           ".environment.source_sha256.datasets/__init__.py",
           "key"
         ]
-      ]
+      ],
+      "new_sha256": "e18c1697b5147199c73dc695b5a5bff0823a8454cde6f85f86032a50c40bb9cc",
+      "old_sha256": "0cf0999cd3042de9dafc188f5076c736aad471d54c14478077b36ea28377adc3"
     },
     {
-      "file": "tests/characterization/baselines/hdp_messages.json",
-      "old_sha256": "c1b36b80e94d41c2317165265218f7d173f2951af3008f176fee9270d39bcb03",
-      "new_sha256": "8a06cec665c4c3d740e44b262ebc245cabb77cee573a7d37277d772202852d6e",
       "difference_counts": {
         "dtype": 1
       },
+      "file": "tests/characterization/baselines/hdp_messages.json",
+      "new_sha256": "8a06cec665c4c3d740e44b262ebc245cabb77cee573a7d37277d772202852d6e",
+      "old_sha256": "c1b36b80e94d41c2317165265218f7d173f2951af3008f176fee9270d39bcb03",
       "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
     },
     {
+      "difference_counts": {
+        "dtype": 31
+      },
       "file": "tests/characterization/baselines/offline_dynamic.json",
-      "old_sha256": "57e33aa74139c20a02948c7e70e3118281cb1341a0bb2888b62eb3a6a787b8a5",
       "new_sha256": "6627245091f1dfdb2bb7169cc601ab9d0d15be72837bb29f0795f8a67f79cdc4",
-      "difference_counts": {
-        "dtype": 31
-      },
+      "old_sha256": "57e33aa74139c20a02948c7e70e3118281cb1341a0bb2888b62eb3a6a787b8a5",
       "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
     },
     {
+      "difference_counts": {
+        "dtype": 31
+      },
       "file": "tests/characterization/baselines/offline_multi.json",
-      "old_sha256": "de689a159d2fb77df8a2ec8fe7de72fbfa4ecee05996bd9dda85c225957bebd5",
       "new_sha256": "fe078a637472af84f1a6013c4adc7f1f8749502d8edbc6864fdb0ba4586c3879",
-      "difference_counts": {
-        "dtype": 31
-      },
+      "old_sha256": "de689a159d2fb77df8a2ec8fe7de72fbfa4ecee05996bd9dda85c225957bebd5",
       "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
     },
     {
+      "difference_counts": {
+        "dtype": 31
+      },
       "file": "tests/characterization/baselines/offline_multi_snr.json",
-      "old_sha256": "0a10353af0617f70b891c408bcfd366344c4eb2832648bba5174216c78f86633",
       "new_sha256": "92a79fe843af5cddaed3577ba9f5a91b4b532e5c72ffd04daf5949ec2a649de6",
-      "difference_counts": {
-        "dtype": 31
-      },
+      "old_sha256": "0a10353af0617f70b891c408bcfd366344c4eb2832648bba5174216c78f86633",
       "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
     },
     {
+      "difference_counts": {
+        "dtype": 31
+      },
       "file": "tests/characterization/baselines/offline_static.json",
-      "old_sha256": "b00b0e227f84ab9e8e4e893f954ab6e492ec96c13dbc58bfde0de7f6df2b894f",
       "new_sha256": "a06d80d8e0f040781b69a43e4b8f43f4e128b10de9c412568d35c661a23ea141",
-      "difference_counts": {
-        "dtype": 31
-      },
+      "old_sha256": "b00b0e227f84ab9e8e4e893f954ab6e492ec96c13dbc58bfde0de7f6df2b894f",
       "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
     },
     {
+      "difference_counts": {
+        "dtype": 31
+      },
       "file": "tests/characterization/baselines/offline_warp.json",
-      "old_sha256": "4fe29e789cd7ddcb3ddfab6bf127cf492eeb907bb7eaa10d61ac42eeffb83f39",
       "new_sha256": "441fb58546b1ecfbc9f8b570947f03f5382383c8f9ac593d998609901d8a2209",
-      "difference_counts": {
-        "dtype": 31
-      },
+      "old_sha256": "4fe29e789cd7ddcb3ddfab6bf127cf492eeb907bb7eaa10d61ac42eeffb83f39",
       "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
     },
     {
+      "difference_counts": {
+        "dtype": 29
+      },
       "file": "tests/characterization/baselines/online_dynamic.json",
-      "old_sha256": "939501d8da9226e1e34bbebc1b64204b9afaa1f2ed1c5ab309ef3c3c3c1596bc",
       "new_sha256": "1b171205e5b59629a890a28c8b93ffa7af6389ff8e09f5891a9aaf57c32d5c50",
-      "difference_counts": {
-        "dtype": 29
-      },
+      "old_sha256": "939501d8da9226e1e34bbebc1b64204b9afaa1f2ed1c5ab309ef3c3c3c1596bc",
       "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
     },
     {
+      "difference_counts": {
+        "dtype": 29
+      },
       "file": "tests/characterization/baselines/online_static.json",
-      "old_sha256": "eb8feb6d7f01b8bb268a516ae5431b3d0d5709ec0a89e99880b1fb287814e664",
       "new_sha256": "c9f53c59eb31ccb9aa4cb070035a7fd9267c910b8cfd994d7c7ba8fc11d2b645",
-      "difference_counts": {
-        "dtype": 29
-      },
+      "old_sha256": "eb8feb6d7f01b8bb268a516ae5431b3d0d5709ec0a89e99880b1fb287814e664",
       "review": "Hard pair dtype follows state dtype; no numerical/label changes in the reviewed capture."
     },
     {
-      "file": "tests/fixtures/inference_edge_reference.json.gz",
-      "old_sha256": "e18c1697b5147199c73dc695b5a5bff0823a8454cde6f85f86032a50c40bb9cc",
-      "new_sha256": "a6cb743a0f8e899ea388961018faa9057b1a5a6253f7c94106ae7b9d39d1e0f3",
       "difference_counts": {
         "dtype": 59
       },
+      "file": "tests/fixtures/inference_edge_reference.json.gz",
+      "new_sha256": "a6cb743a0f8e899ea388961018faa9057b1a5a6253f7c94106ae7b9d39d1e0f3",
+      "old_sha256": "e18c1697b5147199c73dc695b5a5bff0823a8454cde6f85f86032a50c40bb9cc",
       "review": "State and hard-pair dtype now match; all numerical values and labels match the previous fixture exactly."
     },
     {
-      "file": "tests/fixtures/inference_reference.json.gz",
-      "old_sha256": "9b663d0afdb3397dee590f02a69dee142fff948329033e1cae13b8461d256b52",
-      "new_sha256": "b49a0a14f5ae5d58af01eca58eb9b998789a4c3e4f036d9a19dee6fa6f850a63",
       "difference_counts": {
         "dtype": 2504
       },
+      "file": "tests/fixtures/inference_reference.json.gz",
+      "new_sha256": "b49a0a14f5ae5d58af01eca58eb9b998789a4c3e4f036d9a19dee6fa6f850a63",
+      "old_sha256": "9b663d0afdb3397dee590f02a69dee142fff948329033e1cae13b8461d256b52",
       "review": "State and hard-pair dtype now match; all numerical values and labels match the previous fixture exactly."
+    },
+    {
+      "difference_counts": {
+        "discrete": 131,
+        "float": 703,
+        "length": 320,
+        "type": 3
+      },
+      "file": "tests/characterization/baselines/offline_dynamic.json",
+      "new_sha256": "c87abcdabe4817b538b03452d6addc46c7e8680cfb62ddb9c4a804a5dbb2fb10",
+      "old_sha256": "6627245091f1dfdb2bb7169cc601ab9d0d15be72837bb29f0795f8a67f79cdc4",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
+    },
+    {
+      "difference_counts": {
+        "float": 29
+      },
+      "file": "tests/characterization/baselines/offline_multi.json",
+      "new_sha256": "ef2b67d37cf0c7429bb1954dad7dbc9eb86d6befb179af1d5d0061a9faae6117",
+      "old_sha256": "fe078a637472af84f1a6013c4adc7f1f8749502d8edbc6864fdb0ba4586c3879",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
+    },
+    {
+      "difference_counts": {
+        "float": 29
+      },
+      "file": "tests/characterization/baselines/offline_multi_snr.json",
+      "new_sha256": "e2263fa7f9e72b39bc5024a4d13731749aae57c9b061c452e0ab9a4036c3ef88",
+      "old_sha256": "92a79fe843af5cddaed3577ba9f5a91b4b532e5c72ffd04daf5949ec2a649de6",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
+    },
+    {
+      "difference_counts": {
+        "float": 29
+      },
+      "file": "tests/characterization/baselines/offline_warp.json",
+      "new_sha256": "331b5958110022c3c889ade14045e1ddfc5ec9c17b31587e210e5ad19714cf27",
+      "old_sha256": "441fb58546b1ecfbc9f8b570947f03f5382383c8f9ac593d998609901d8a2209",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
+    },
+    {
+      "difference_counts": {
+        "discrete": 74,
+        "float": 358,
+        "key": 83,
+        "length": 86,
+        "type": 14
+      },
+      "file": "tests/characterization/baselines/online_dynamic.json",
+      "new_sha256": "293c7409e50294dc169a2825a786bb920f6609ad56eba84529925bac25558ece",
+      "old_sha256": "1b171205e5b59629a890a28c8b93ffa7af6389ff8e09f5891a9aaf57c32d5c50",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
+    },
+    {
+      "difference_counts": {
+        "discrete": 31,
+        "float": 353,
+        "length": 83,
+        "type": 4
+      },
+      "file": "tests/characterization/baselines/online_fast.json",
+      "new_sha256": "25faeec31cf47ba98294b6255fb558661b7afb26ae3e40cfe5c1efff8c2c990f",
+      "old_sha256": "69e071fdf0f481ee32bc77e3dca7c400f9fb18145b5dbb9865e0946c22fe86c5",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
+    },
+    {
+      "difference_counts": {
+        "float": 11
+      },
+      "file": "tests/characterization/baselines/online_static.json",
+      "new_sha256": "77994ed80e52caba5919820421949a1fb5c27f27bff650dfba15254b66d6cdce",
+      "old_sha256": "c9f53c59eb31ccb9aa4cb070035a7fd9267c910b8cfd994d7c7ba8fc11d2b645",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
+    },
+    {
+      "difference_counts": {
+        "known_failure_online_warp": {
+          "float": 1
+        },
+        "offline_dynamic": {
+          "discrete": 2517,
+          "float": 8550,
+          "key": 7226,
+          "length": 5333,
+          "type": 312
+        },
+        "offline_multi": {
+          "float": 63
+        },
+        "offline_multi_snr": {
+          "float": 63
+        },
+        "offline_warp": {
+          "float": 63
+        },
+        "online_dynamic": {
+          "discrete": 578,
+          "float": 4774,
+          "key": 2063,
+          "length": 785,
+          "type": 170
+        },
+        "online_fast": {
+          "discrete": 351,
+          "float": 1733,
+          "key": 1744,
+          "length": 573,
+          "type": 92
+        },
+        "online_static": {
+          "float": 22
+        }
+      },
+      "file": "tests/fixtures/inference_reference.json.gz",
+      "new_sha256": "3a8c4afef963092175b907874271815407cc088d1a06a4bf4b6f687346f255d9",
+      "old_sha256": "b49a0a14f5ae5d58af01eca58eb9b998789a4c3e4f036d9a19dee6fa6f850a63",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
+    },
+    {
+      "difference_counts": {
+        "forced_reuse": {
+          "float": 6
+        },
+        "offline_limit": {
+          "discrete": 241,
+          "float": 1803,
+          "key": 490,
+          "length": 305,
+          "type": 61
+        }
+      },
+      "file": "tests/fixtures/inference_edge_reference.json.gz",
+      "new_sha256": "6a90817801615f9e2ed0dd924cd6000fca7bab6624b95e60041963a5caaadde8",
+      "old_sha256": "a6cb743a0f8e899ea388961018faa9057b1a5a6253f7c94106ae7b9d39d1e0f3",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
+    },
+    {
+      "difference_counts": {
+        "environment": 1,
+        "fixture_policy": 1,
+        "reviewed_changes": 1
+      },
+      "file": "tests/characterization/baselines/manifest.json",
+      "new_sha256": "c5ee77404a45dff03bf987a4bb0ad626eca7df00005dbc7e1d9e9f40510f8571",
+      "old_sha256": "ab536d1c12b8777c8660117ab6dada87c07c47cfc2f4a7a52bfd0ba44c06fb6b",
+      "review": "Explicitly requested LDS-KL/d fixture policy; previous inference references verified with explicit False."
     }
   ],
+  "fixture_policy": {
+    "birth_lds_kl_per_dimension": true,
+    "model_recipe_sha256": "8ce96ac09f9d27341cf1cc1ea0fcaaba84d62187252d35e0a55bb08cc50a53cd"
+  },
+  "hash_encoding": "SHA-256; JSON text normalizes CRLF to LF, binary gzip remains byte-exact",
+  "invariants": [
+    "With LDS-KL/d, offline_dynamic retains 1 occupied cluster; offline multi-output, SNR, warped and static fixtures retain 2 per output.",
+    "Online static growth remains [1,1,2,2]",
+    "Known online warp and multi-output failures retain their exception types",
+    "Forced online reuse now succeeds without creating clusters or losing history",
+    "Hard pairs have zero incoming mass at observation zero and source/destination marginals matching adjacent committed states.",
+    "With LDS-KL/d, dynamic online and fast-online fixtures retain one cluster throughout; explicit False reproduces their previous two-cluster outcomes."
+  ],
+  "reason": "Version 2: explicit reference concentrations and birth-score policy; current normalized Gaussian score, corrected conjugate posterior and soft weighting, current HMM transitions, current warp derivatives. Existing array comparison tolerances are unchanged; discrete scientific expectations reviewed separately. Hard pairs now follow committed marginal labels; native pair dtype matches state dtype. The reviewed old scientific captures change only pair dtype metadata. New independent invariants cover ambiguous posteriors, forced state changes, reload and both clocks; tolerances are unchanged. November 18: internal runners inherit production-default LDS-KL/d scoring. Explicit False reproduces all previous inference references; affected snapshots and discrete invariants were reviewed without changing priors or tolerances.",
+  "schema_version": 2,
   "sha256": {
-    "tests/fixtures/alignment_reference.json": "09580b9ef6d70de771edaefa6cc2f0888d05beb603a6a5832b6db032837e454b",
-    "tests/fixtures/calculation_reference.json": "787e381d1932612ae598b3cce8375e8036228edfbdaf4c7576003a2c3c8f00bb",
-    "tests/fixtures/dynamics_reference.json": "0673db8a407f65e0ba6990044c1c54a0eebd93ee19ce7b15b1d0b2ed78ca8aaa",
-    "tests/fixtures/emission_reference.json": "9b94abdfb42b3d8abf11e13c95e965725185c3fa08218bc9182ce8b5cdb62ce9",
-    "tests/fixtures/hdp_reference.json": "9d33b7b8c9aa2857ac6e5973aea29468050f134a7e438d394120c83601fb6ee6",
-    "tests/fixtures/inference_edge_reference.json.gz": "a6cb743a0f8e899ea388961018faa9057b1a5a6253f7c94106ae7b9d39d1e0f3",
-    "tests/fixtures/inference_reference.json.gz": "b49a0a14f5ae5d58af01eca58eb9b998789a4c3e4f036d9a19dee6fa6f850a63",
+    "hdpgpc/hdpgpc/examples/reference_offline.json": "a5873491b0f37226781ff83b19599c1ad9e0150e3f209e9bb81bed281c1bd5d6",
     "tests/characterization/baselines/emission_dynamic.json": "4ed6aca09d30a363dde97388c62e6162bee2eb772e42032d7c541b90c65a980b",
     "tests/characterization/baselines/emission_static.json": "9049269ccaae508086d1f35b18f408ac530b5db3c9c363f86603b146834748c9",
     "tests/characterization/baselines/hdp_messages.json": "8a06cec665c4c3d740e44b262ebc245cabb77cee573a7d37277d772202852d6e",
     "tests/characterization/baselines/known_failure_online_multi.json": "ff0bd95f8bfe01b7ac4b05feb653cdb146017d3ca64e23046a3f92436562ecb0",
     "tests/characterization/baselines/known_failure_online_warp.json": "18fdc0ada58f41670b683b46d6b4b938f41c15daf8ee25d0bb8a177c7ed470f2",
-    "tests/characterization/baselines/manifest.json": "ab536d1c12b8777c8660117ab6dada87c07c47cfc2f4a7a52bfd0ba44c06fb6b",
-    "tests/characterization/baselines/offline_dynamic.json": "6627245091f1dfdb2bb7169cc601ab9d0d15be72837bb29f0795f8a67f79cdc4",
-    "tests/characterization/baselines/offline_multi.json": "fe078a637472af84f1a6013c4adc7f1f8749502d8edbc6864fdb0ba4586c3879",
-    "tests/characterization/baselines/offline_multi_snr.json": "92a79fe843af5cddaed3577ba9f5a91b4b532e5c72ffd04daf5949ec2a649de6",
+    "tests/characterization/baselines/manifest.json": "c5ee77404a45dff03bf987a4bb0ad626eca7df00005dbc7e1d9e9f40510f8571",
+    "tests/characterization/baselines/offline_dynamic.json": "c87abcdabe4817b538b03452d6addc46c7e8680cfb62ddb9c4a804a5dbb2fb10",
+    "tests/characterization/baselines/offline_multi.json": "ef2b67d37cf0c7429bb1954dad7dbc9eb86d6befb179af1d5d0061a9faae6117",
+    "tests/characterization/baselines/offline_multi_snr.json": "e2263fa7f9e72b39bc5024a4d13731749aae57c9b061c452e0ab9a4036c3ef88",
     "tests/characterization/baselines/offline_static.json": "a06d80d8e0f040781b69a43e4b8f43f4e128b10de9c412568d35c661a23ea141",
-    "tests/characterization/baselines/offline_warp.json": "441fb58546b1ecfbc9f8b570947f03f5382383c8f9ac593d998609901d8a2209",
-    "tests/characterization/baselines/online_dynamic.json": "1b171205e5b59629a890a28c8b93ffa7af6389ff8e09f5891a9aaf57c32d5c50",
-    "tests/characterization/baselines/online_fast.json": "69e071fdf0f481ee32bc77e3dca7c400f9fb18145b5dbb9865e0946c22fe86c5",
-    "tests/characterization/baselines/online_static.json": "c9f53c59eb31ccb9aa4cb070035a7fd9267c910b8cfd994d7c7ba8fc11d2b645",
+    "tests/characterization/baselines/offline_warp.json": "331b5958110022c3c889ade14045e1ddfc5ec9c17b31587e210e5ad19714cf27",
+    "tests/characterization/baselines/online_dynamic.json": "293c7409e50294dc169a2825a786bb920f6609ad56eba84529925bac25558ece",
+    "tests/characterization/baselines/online_fast.json": "25faeec31cf47ba98294b6255fb558661b7afb26ae3e40cfe5c1efff8c2c990f",
+    "tests/characterization/baselines/online_static.json": "77994ed80e52caba5919820421949a1fb5c27f27bff650dfba15254b66d6cdce",
     "tests/characterization/baselines/warper_batch.json": "ef65a2af15dde57043fddfb19f135db0fb8b10a27fdc2e4e2b2ea1fa3046bd52",
     "tests/characterization/baselines/warper_scalar.json": "410f9c63b21e8e7994c81f59187b903aafcd085c0e2fd1c41abb5fe5fde7dade",
-    "hdpgpc/hdpgpc/examples/reference_offline.json": "a5873491b0f37226781ff83b19599c1ad9e0150e3f209e9bb81bed281c1bd5d6"
+    "tests/fixtures/alignment_reference.json": "09580b9ef6d70de771edaefa6cc2f0888d05beb603a6a5832b6db032837e454b",
+    "tests/fixtures/calculation_reference.json": "787e381d1932612ae598b3cce8375e8036228edfbdaf4c7576003a2c3c8f00bb",
+    "tests/fixtures/dynamics_reference.json": "0673db8a407f65e0ba6990044c1c54a0eebd93ee19ce7b15b1d0b2ed78ca8aaa",
+    "tests/fixtures/emission_reference.json": "9b94abdfb42b3d8abf11e13c95e965725185c3fa08218bc9182ce8b5cdb62ce9",
+    "tests/fixtures/hdp_reference.json": "9d33b7b8c9aa2857ac6e5973aea29468050f134a7e438d394120c83601fb6ee6",
+    "tests/fixtures/inference_edge_reference.json.gz": "6a90817801615f9e2ed0dd924cd6000fca7bab6624b95e60041963a5caaadde8",
+    "tests/fixtures/inference_reference.json.gz": "3a8c4afef963092175b907874271815407cc088d1a06a4bf4b6f687346f255d9"
   },
-  "hash_encoding": "SHA-256; JSON text normalizes CRLF to LF, binary gzip remains byte-exact"
+  "source_revision": "034c61b + reviewed reference fixes (2026-10-27); reviewed hard-assignment coherence fix (2026-11-11); production-default LDS-KL/d fixture policy (2026-11-18)"
 }

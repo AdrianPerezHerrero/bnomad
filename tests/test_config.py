@@ -36,6 +36,12 @@ def recipe(**overrides):
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_fixture_inherits_default_lds_kl_scaling_and_allows_opt_out(self):
+        self.assertTrue(InferenceConfig().birth_lds_kl_per_dimension)
+        self.assertEqual(recipe().inference.birth_lds_kl_per_dimension,
+                         InferenceConfig().birth_lds_kl_per_dimension)
+        self.assertFalse(recipe(birth_lds_kl_per_dimension=False).inference.birth_lds_kl_per_dimension)
+
     def test_native_construction_requires_a_typed_recipe(self):
         self.assertEqual(tuple(inspect.signature(ModelState).parameters), ('config', 'schedule'))
         self.assertFalse(hasattr(HDPGPCConfig, 'from_legacy_args'))

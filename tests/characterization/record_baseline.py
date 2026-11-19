@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import argparse
 from contextlib import redirect_stdout
+import hashlib
 import io
 import json
 from pathlib import Path
 
 from ._cases import CASES
 from ._support import encode, environment, reset_runtime, source_hashes
+from tests import model_recipe
 
 
 def main():
@@ -40,6 +42,10 @@ def main():
         raise AssertionError("Production source changed during capture")
     manifest = {"schema_version": 1, "reference_commit": args.reference_commit,
                 "cases": sorted(CASES), "environment": environment(),
+                "fixture_policy": {
+                    "birth_lds_kl_per_dimension": model_recipe.recipe_from_options().inference.birth_lds_kl_per_dimension,
+                    "model_recipe_sha256": hashlib.sha256(Path(model_recipe.__file__).read_bytes()).hexdigest(),
+                },
                 "comparison": {"discrete": "exact", "float_rtol": 1e-7, "float_atol": 1e-9}}
     (args.output / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")

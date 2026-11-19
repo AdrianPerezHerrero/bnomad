@@ -38,9 +38,14 @@ class CharacterizationTests(unittest.TestCase):
         if name == "online_static":
             self.assertEqual([s["M"] for s in actual["steps"]], [1, 1, 2, 2])
             self.assertEqual([s["actual_state"] for s in actual["steps"]], [0, 0, 1, 1])
+        if name in ("online_dynamic", "online_fast"):
+            self.assertEqual([s["M"] for s in actual["steps"]], [1, 1, 1, 1])
+            self.assertEqual([s["actual_state"] for s in actual["steps"]], [0, 0, 0, 0])
         if name.startswith("offline_"):
-            self.assertEqual(actual["final"]["M"], 2)
-            self.assertEqual(actual["final"]["occupied_clusters"], [2] * actual["final"]["n_outputs"])
+            # LDS-KL/d changes this fixture's single-output dynamic split decision.
+            count = 1 if name == "offline_dynamic" else 2
+            self.assertEqual(actual["final"]["M"], count)
+            self.assertEqual(actual["final"]["occupied_clusters"], [count] * actual["final"]["n_outputs"])
         if name.startswith("warper_"):
             warp = actual["calls"][0]["result"][0]["values"]
             self.assertTrue(any(abs(v) > 1e-3 for v in _flatten(warp)), "Fixture must exercise nonidentity warping")

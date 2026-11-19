@@ -4,9 +4,13 @@ and [latest validation audit](documentation_audit.md) for current source and che
 
 # 0.3 characterization coverage
 
-All existing numerical fixtures remain byte-identical. The native engines replay
-14 historical scenarios with 4,323 exact boundaries; the public API separately
-replays 12 scenarios and 4,129 boundaries. Recorded class names in trace IDs are
+The shared model fixture inherits production-default LDS-KL dimension scaling
+(`birth_lds_kl_per_dimension=True`). An explicit `False` remains available for
+unscaled controls. The November 18, 2026 policy change intentionally refreshes
+the affected numerical snapshots: the native engines replay 14 scenarios with
+4,401 boundaries; the public API separately replays 12 scenarios and 4,193
+boundaries. Event order, discrete values and shapes remain exact; finite floats
+retain their existing tolerances. Recorded class names in trace IDs are
 historical identifiers, not imports or compatibility classes. Typed recipes now
 construct native state directly. Component tests protect GP fitting, posterior
 state, covariance shortcuts, HDP bounds, cluster growth/pruning, LDS recurrences,
@@ -19,7 +23,17 @@ checks because those compatibility contracts intentionally end in 0.3. That migr
 comparisons and tolerances. The current audit separately documents narrowly
 scoped platform precision and interpreter-wording checks; see [reproducibility](reproducibility.md).
 
-The remainder documents historical fixture capture and the earlier extractions.
+With scaling enabled, the dynamic online and fast-online fixtures retain one
+cluster, as does the single-output `offline_dynamic` fixture. The static online
+fixture still grows as `[1, 1, 2, 2]`; multi-output, warped and static offline
+fixtures retain two clusters. These are regression expectations for this small
+configured workload, not clustering-quality guarantees. Explicitly disabling
+scaling reproduced all 14 previous inference references before the new
+expectations were promoted. Reference provenance records the fixture policy and
+its recipe hash; normal test execution never updates expectations.
+
+The remainder documents historical fixture capture and the earlier extractions;
+its old boundary counts and unscaled outcomes describe those revisions.
 Old source paths/API advice below apply only to 0.2, not current usage.
 
 ---

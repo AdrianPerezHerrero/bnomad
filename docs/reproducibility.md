@@ -52,6 +52,15 @@ of inserting the development source directory. The install gate asserts that
 source archive self-contained. Their manifest records the source fingerprints. Known online warping/multi-output failure paths remain tested
 as failures; packaging does not repair or silently bypass them.
 
+Since November 18, 2026, the shared internal test recipe inherits the production
+default `birth_lds_kl_per_dimension=True`; the determinism runner therefore
+exercises dimension-scaled LDS parameter-KL proposal scores. Reviewed internal
+snapshots record that policy change, including changed dynamic fixture cluster
+counts, with unchanged comparison tolerances. Explicit `False` controls were
+checked against the previous references. This internal runner policy is separate
+from the explicitly pinned, unscaled public version 2 reference described below.
+See [characterization coverage](characterization_tests.md).
+
 CPU determinism does not establish CUDA determinism or bitwise equality between
 different BLAS libraries, hardware or dependency patches. CUDA-specific unit
 tests skip when no device is available. Record OS, Python, CPU/GPU, drivers,
