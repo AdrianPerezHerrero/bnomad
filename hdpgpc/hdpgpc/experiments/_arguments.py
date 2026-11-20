@@ -33,6 +33,8 @@ def add_common_arguments(parser, *, defaults=None, ordered=False):
         'more_extra_sticky', 'max'), default='max')
     parser.add_argument('--transition-topology', choices=('ergodic', 'left_to_right'), default='ergodic',
                         help='Left-to-right requires HMM assignments and offline split_merge; regimes cannot recur.')
+    parser.add_argument('--ordered-hdp-solver', choices=('quadrature', 'row_ratio'), default='quadrature',
+                        help='Global stick update for left_to_right: finite differences or a direct row-ratio gradient.')
     parser.add_argument('--lds-degrees', '--lds-degrees-of-freedom', type=int, default=10)
     parser.add_argument('--lds-update', choices=('conjugate_batch', 'conjugate_sequential',
                                                'natural_gradient', 'legacy'), default=None)
@@ -61,6 +63,8 @@ def add_common_arguments(parser, *, defaults=None, ordered=False):
     parser.add_argument('--min-cluster-samples', type=int, default=1,
                         help='Minimum final assigned sample count for cluster detail plots (default: 1).')
     parser.add_argument('--projection-plots', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--projection-3d', action=argparse.BooleanOptionalAction, default=False,
+                        help='Save an interactive HTML projection for single-output fixed affine fits.')
     parser.add_argument('--lds-plots', '--plot-lds', action=argparse.BooleanOptionalAction, default=ordered)
     parser.add_argument('--lds-dynamics-plots', '--plot-lds-dynamics',
                         action=argparse.BooleanOptionalAction, default=ordered)
@@ -94,7 +98,10 @@ def validate_common(args):
     strength = getattr(args, 'constant_input_strength', 1.0)
     if not math.isfinite(strength) or strength <= 0:
         raise ValueError('constant-input-strength must be finite and positive')
-    if getattr(args, 'transition_topology', 'ergodic') == 'left_to_right' and (
+    topology = getattr(args, 'transition_topology', 'ergodic')
+    if getattr(args, 'ordered_hdp_solver', 'quadrature') == 'row_ratio' and topology != 'left_to_right':
+        raise ValueError('--ordered-hdp-solver row_ratio requires --transition-topology left_to_right')
+    if topology == 'left_to_right' and (
             args.schedule != 'offline' or args.offline_strategy != 'split_merge'):
         raise ValueError('left_to_right requires --schedule offline --offline-strategy split_merge')
     if getattr(args, 'min_cluster_samples', 1) < 1:

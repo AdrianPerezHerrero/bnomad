@@ -15,6 +15,19 @@ python examples/cas_colon_autoencoder_clustering.py --records 1 --calibration-sa
 python examples/cas_colon_autoencoder_clustering.py --records all --resume
 ```
 
+## Candidate selection
+
+Set `--offline-candidate-search` to `score_guided`, `noise_aware`, `dynamics`,
+or `combined`. The default `combined` divides the exploration budget among the
+three proposal families. Use `--proposal-family-weights 1 1 2` with `combined`
+to give dynamics twice the relative weight of each other family.
+See [offline candidate search](offline_candidate_search.md) for how the slots are allocated.
+
+```bash
+python examples/cas_colon_autoencoder_clustering.py --records 1 \
+  --transition-topology left_to_right --offline-candidate-search dynamics
+```
+
 ## What is trained
 
 The existing **tied linear autoencoder** is trained on up to 400 frames from each
@@ -81,6 +94,7 @@ agents/cas_colon_autoencoder_runs/video_1_segment_00/<run_id>/
   assignments.csv, observation_calibration.npz, training.npz
   lds_parameters.npz, latent_trajectories.npz
   clusters_output_0.png, projection.png
+  projection_dynamics_3d.html        # optional, --projection-3d
   latent_trajectories.png, autoencoder_calibration.png
 ```
 
@@ -97,6 +111,8 @@ stores calibration indices and losses; `observation_calibration.npz` contains
 the fixed decoder, offset, initial covariance and applied Sigma. These affine
 parameters also determine the encoder through the decoder pseudoinverse.
 `--no-plots` disables all figures; saving does not open GUI windows.
+Add `--projection-3d` to inspect the encoded frames, smoothed trajectories and
+LDS motion together in an interactive browser plot.
 
 Use `--min-cluster-samples 5` to hide detail panels for clusters with fewer than
 five assigned images. This filters image galleries, latent paths, detailed

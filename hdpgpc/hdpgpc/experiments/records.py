@@ -122,6 +122,7 @@ def make_config(grid, args, outputs=1, decoder=None, noise_scales=None):
         alignment=AlignmentConfig(policy=policy, x_basis_warp=grid if policy != 'none' else None),
         inference=InferenceConfig(schedule=args.schedule, warp=policy != 'none',
             offline_strategy=getattr(args, 'offline_strategy', 'legacy'),
+            ordered_hdp_solver=getattr(args, 'ordered_hdp_solver', 'quadrature'),
             offline_candidate_search=getattr(args, 'offline_candidate_search', 'combined'),
             proposal_family_weights=tuple(getattr(args, 'proposal_family_weights', (1.,1.,1.))),
             split_merge_refine_steps=getattr(args, 'split_merge_refine_steps', 1),

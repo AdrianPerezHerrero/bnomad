@@ -235,22 +235,31 @@ def _beta_kl(a, b, gamma):
         +(b-gamma)*digamma(b)-(a+b-1-gamma)*digamma(a+b))
 
 
-def linear_terms(state, counts, rho=None, omega=None, theta=None, *, order=128):
-    """E log p(v,pi,s)-E log q(v,pi), excluding chain entropy."""
-    rho = state.rho if rho is None else rho
-    omega = state.omega if omega is None else omega
-    rows, constants = prior_rows(state, rho, omega, order=order)
-    observed = allowed_counts(counts, len(rows))
-    if theta is None:
-        posterior = rows+observed
-    else:
-        theta = _array(theta)
-        i = np.arange(len(rows))
-        posterior = np.stack((theta[i, i], theta[i, i+1]), 1)
+def _row_posterior_terms(posterior):
+    """Terms constant during a global-stick coordinate update."""
     log_pi = digamma(posterior)-digamma(posterior.sum(1))[:, None]
     entropy = (betaln(posterior[:, 0], posterior[:, 1])
         +(posterior.sum(1)-2)*digamma(posterior.sum(1))
         -((posterior-1)*digamma(posterior)).sum(1))
+    return log_pi, entropy
+
+
+def linear_terms(state, counts, rho=None, omega=None, theta=None, *, order=128, _fixed_rows=None):
+    """E log p(v,pi,s)-E log q(v,pi), excluding chain entropy."""
+    rho = state.rho if rho is None else rho
+    omega = state.omega if omega is None else omega
+    rows, constants = prior_rows(state, rho, omega, order=order)
+    if _fixed_rows is not None:
+        observed, log_pi, entropy = _fixed_rows
+    else:
+        observed = allowed_counts(counts, len(rows))
+        if theta is None:
+            posterior = rows+observed
+        else:
+            theta = _array(theta)
+            i = np.arange(len(rows))
+            posterior = np.stack((theta[i, i], theta[i, i+1]), 1)
+        log_pi, entropy = _row_posterior_terms(posterior)
     a, b = shapes(_array(rho), _array(omega))
     return float(np.sum(constants+((rows+observed-1)*log_pi).sum(1)+entropy)
                  -_beta_kl(a, b, state.gamma))
@@ -261,6 +270,12 @@ def optimize_sticks(state, theta):
     a, b = shapes(_array(state.rho), _array(state.omega))
     initial = np.log(np.concatenate((a, b)))
     counts = np.zeros((len(a), len(a)))
+    fixed = {}
+    if theta is not None:
+        matrix = _array(theta)
+        index = np.arange(len(a))
+        posterior = np.stack((matrix[index, index], matrix[index, index+1]), 1)
+        fixed['_fixed_rows'] = (allowed_counts(counts, len(a)), *_row_posterior_terms(posterior))
     # An infinite rejection value makes finite differences evaluate inf-inf.
     # Keep the barrier finite and well below float64's overflow scale.
     rejected = 1e100
@@ -269,7 +284,7 @@ def optimize_sticks(state, theta):
             with np.errstate(over='raise', invalid='raise', divide='raise'):
                 left, right = np.exp(parameters).reshape(2, -1)
                 omega = left+right
-                value = -linear_terms(state, counts, left/omega, omega, theta)
+                value = -linear_terms(state, counts, left/omega, omega, theta, **fixed)
             return value if np.isfinite(value) else rejected
         except FloatingPointError:
             return rejected
@@ -282,7 +297,7 @@ def optimize_sticks(state, theta):
     left, right = np.exp(chosen).reshape(2, -1)
     try:
         with np.errstate(over='raise', invalid='raise', divide='raise'):
-            fine = linear_terms(state, counts, left/(left+right), left+right, theta, order=256)
+            fine = linear_terms(state, counts, left/(left+right), left+right, theta, order=256, **fixed)
     except FloatingPointError:
         fine = np.nan
     coarse = -objective(chosen)

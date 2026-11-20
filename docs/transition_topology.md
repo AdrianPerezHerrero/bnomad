@@ -50,6 +50,32 @@ python examples/cas_colon_mfa_clustering.py --records 1 --hmm-switch --transitio
 Add `--dynamic` to the MFA command to learn A/Gamma. Selecting an ordered
 assignment prior does not itself require or change latent LDS evolution.
 
+## Direct-gradient HDP solver
+
+Add `--ordered-hdp-solver row_ratio` to a `left_to_right` fit to use the
+experimental direct gradient for the global Beta stick update.
+In Python set `InferenceConfig(..., ordered_hdp_solver='row_ratio')`.
+The default `quadrature` uses the finite-difference solver.
+
+```bash
+python examples/cas_colon_mfa_clustering.py --records 14 --dynamic --hmm-switch \
+  --transition-topology left_to_right --offline-strategy split_merge \
+  --ordered-hdp-solver row_ratio
+```
+
+The direct solver evaluates each row and its derivatives together by Fourier
+inversion of the characteristic function of the log-odds of its stay weight.
+It optimizes the same variational objective with L-BFGS-B. Refined integration
+grids check objective and derivative agreement and verify improvement over the
+starting point. A failed check retries that update with the `quadrature` solver.
+An audited improvement can still reach the solver's iteration limit, and
+different global factors can lead to different accepted splits or merges.
+
+`results.json` and `model.ordered_hdp_diagnostics_` report the number of direct
+updates, fallback reasons and solver stops without convergence across all fit
+branches. The experiment records the solver setting in `settings.json`. For a
+matched baseline, use the same settings with `--ordered-hdp-solver quadrature`.
+
 ## Proper prior on the allowed transitions
 
 The constrained model has a different row prior from the unrestricted HDP-HMM.
@@ -123,14 +149,12 @@ normalized row base makes the global Beta factors nonconjugate. Their coordinate
 step numerically maximizes this ordered model's own ELBO contribution using
 L-BFGS-B, not the unrestricted HDP optimizer or its surrogate top-level term.
 
-Expectations use deterministic Gauss-Jacobi quadrature, with a one-dimensional
-ratio density, analytic treatment of log endpoint terms and adaptive integration
-near logarithmic density endpoints. Proposed global updates must improve their
-objective and pass a 128-versus-256-order integration audit; otherwise the
-previous global parameters are retained. This is numerical evaluation of the
-stated expectation, not an analytic closed-form global posterior. Optimizer
-diagnostics report the integration discrepancy and whether the step passed.
-It adds computational work compared with the unrestricted global update.
+The row posterior and proposal scoring use deterministic Gauss-Jacobi
+quadrature with a one-dimensional ratio density and special handling of
+logarithmic endpoints. The default `quadrature` stick solver uses these same
+expectations and checks each proposed update with a 128-versus-256-order audit.
+If that audit fails, it retains the previous global parameters. The `row_ratio`
+stick solver uses the refined Fourier grids described above.
 
 ### Truncation and the end of the record
 
@@ -151,6 +175,12 @@ without replacing the prior on the last active stage by a deterministic stay.
 - Hard assignments use Viterbi. Soft inference also reports a Viterbi-decoded
   joint path for final labels. Per-frame marginal argmax can violate ordering
   and is not used as the ordered hard path.
+- Hard inference runs Viterbi directly, without building unused soft marginals.
+  Soft refinement skips an additional potential-based decoding whose result is
+  unused. Canonical posterior-path decoding follows only stay/advance edges;
+  a bounded fit-local cache reuses paths while the state/pair tensors and their
+  mutation versions are unchanged. It holds weak references to histories and
+  is not stored in fitted models. Nonordered inputs retain the generic decoder.
 - Splits propose a temporal cut within a stage. The new stage is inserted
   immediately after its parent; model arrays, representers and responsibilities
   follow that ordering.
@@ -162,6 +192,13 @@ without replacing the prior on the last active stage by a deterministic stay.
 - Candidate fitting, parameter updates, shared-parameter handling, full objective
   comparisons, tolerances, cycle prevention and stopping retain the native
   transactional split/merge machinery.
+
+Ordered candidate ranking skips unused projected observation-likelihood scores
+and reuses fixed raw merge features within a fit. The HDP optimizer also reuses
+the expected logs and entropy of its fixed row posterior within each stick
+update. Both stick solvers perform two coordinate updates at each scoring step
+and use the same prior normalizers in the objective. Transition pairs are stored
+in the dense state-by-state format.
 
 This is ordered segmentation of one sequence. It is not a reusable anatomical
 stage model fitted jointly across multiple videos or a model with repeated states.

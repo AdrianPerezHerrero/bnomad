@@ -147,6 +147,7 @@ def initialize(state, observations):
     geometry = _initialize_affine(state, observations)
     mode = state.offline_search_diagnostics['method']
     state._offline_observations = observations.detach()
+    state._offline_merge_features = None
     state._proposal_iteration = 0
     state._offline_score_features = None
     state._offline_dynamics_features = None

@@ -146,6 +146,12 @@ class HDPGPC:
         self._require_fitted()
         return deepcopy(getattr(self._backend, 'offline_search_diagnostics', {}))
 
+    @property
+    def ordered_hdp_diagnostics_(self):
+        """Direct solver update and fallback counts across the offline fit."""
+        self._require_fitted()
+        return deepcopy(getattr(self._backend, '_ordered_hdp_summary', {}))
+
     def _include(self, grid, values):
         inference = self._config.inference
         method = (self._backend.online.update_fast if self._mode == 'online_fast'

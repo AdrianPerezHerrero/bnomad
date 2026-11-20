@@ -33,16 +33,17 @@ def pools(state, resp, latent, snr, *, ordered=False, original_seeds=None, stati
     original = state._offline_score_features
     if original is None and requested[0] > 0:
         original = screen.score_guided_features(state, state._offline_observations)
-    raw = getattr(state, 'q_last', None)
-    if raw is None or raw.shape[:2] != resp.shape:
-        raw_scores = torch.zeros_like(resp)
-    else:
-        raw_scores = state.weight_mean(raw, snr)
-    projected = screen.observation_scores(state, resp.shape[1]) if reference is not None else None
     coordinates = {'score_guided': original,
                    'noise_aware': None if reference is None else reference.features}
-    scores = {'score_guided': raw_scores,
-              'noise_aware': None if projected is None else state.weight_mean(projected, snr)}
+    if not ordered:
+        raw = getattr(state, 'q_last', None)
+        if raw is None or raw.shape[:2] != resp.shape:
+            raw_scores = torch.zeros_like(resp)
+        else:
+            raw_scores = state.weight_mean(raw, snr)
+        projected = screen.observation_scores(state, resp.shape[1]) if reference is not None else None
+        scores = {'score_guided': raw_scores,
+                  'noise_aware': None if projected is None else state.weight_mean(projected, snr)}
     for index, family in enumerate(FAMILIES[:2]):
         if requested[index] <= 0:
             continue
@@ -118,8 +119,11 @@ def merge_pools(state, resp, *, ordered=False, statistics_cache=None):
     reference = getattr(state, '_offline_proposal_geometry', None)
     raw = None
     if weights(state)[0] > 0:
-        raw = state._offline_observations.reshape(len(resp), -1)
-        raw = (raw - raw.mean(0)) / raw.std(0, unbiased=False).clamp_min(1e-8)
+        raw = getattr(state, '_offline_merge_features', None)
+        if raw is None:
+            raw = state._offline_observations.reshape(len(resp), -1)
+            raw = (raw - raw.mean(0)) / raw.std(0, unbiased=False).clamp_min(1e-8)
+            state._offline_merge_features = raw
     for index, (family, features) in enumerate((('score_guided', raw),
             ('noise_aware', None if reference is None else reference.features))):
         if weights(state)[index] > 0 and features is not None:

@@ -197,6 +197,7 @@ class InferenceConfig:
     split_merge_refine_steps: int = 3
     split_merge_stability_patience: int = 3
     split_merge_score_rtol: float = 1e-3
+    ordered_hdp_solver: Literal['quadrature', 'row_ratio'] = 'quadrature'
 
     def __post_init__(self):
         if self.offline_candidate_search == 'legacy':
@@ -345,6 +346,7 @@ class HDPGPCConfig:
                 **{name: {f.name: encode(getattr(getattr(self, name), f.name), memo) for f in fields(typ)
                        if not (name == 'inference' and (
                            (f.name == 'offline_candidate_search' and self.inference.offline_candidate_search == 'combined')
+                           or (f.name == 'ordered_hdp_solver' and self.inference.ordered_hdp_solver == 'quadrature')
                            or (f.name == 'proposal_family_weights' and tuple(self.inference.proposal_family_weights) == (1.,1.,1.))))
                        and not (name == 'dynamics' and (
                            (f.name == 'clock' and self.dynamics.clock == 'cluster-clock')

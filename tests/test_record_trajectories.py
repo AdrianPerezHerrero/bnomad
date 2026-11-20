@@ -62,19 +62,21 @@ class RecordTrajectoryTests(unittest.TestCase):
                                          clock == 'physical-clock')
                     if representation == 'autoencoder':
                         self.assertIn('autoencoder_calibration.png', report['artifacts'])
-                        projected, = run_records(parser.parse_args([*flags, '--projection-plots', '--latent-equilibrium']))
+                        projected, = run_records(parser.parse_args([
+                            *flags, '--projection-plots', '--projection-3d', '--latent-equilibrium']))
                         self.assertEqual(projected['status'], 'ok', projected.get('error'))
-                        for name in ('projection.png', 'projection_dynamics.png'):
+                        for name in ('projection.png', 'projection_dynamics.png', 'projection_dynamics_3d.html'):
                             self.assertIn(name, projected['artifacts'])
                             self.assertTrue((Path(projected['output_directory'])/name).is_file())
                     if representation == 'pca':
                         # Master plotting switch suppresses the new diagnostic too.
-                        args = parser.parse_args([*flags, '--no-plots'])
+                        args = parser.parse_args([*flags, '--no-plots', '--projection-3d'])
                         with patch('hdpgpc.diagnostics.plot_latent_trajectories',
                                    side_effect=AssertionError('Plot requested with --no-plots')):
                             quiet, = run_records(args)
                         self.assertEqual(quiet['status'], 'ok', quiet.get('error'))
                         self.assertFalse(any(name.endswith('.png') for name in quiet['artifacts']))
+                        self.assertNotIn('projection_dynamics_3d.html', quiet['artifacts'])
                         self.assertFalse(parser.parse_args([*flags, '--no-trajectory-plots']).trajectory_plots)
 
     def test_online_trajectory_request_fails_before_loading_data(self):

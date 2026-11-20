@@ -81,6 +81,7 @@ class ModelState:
         self.offline_candidate_search = options['offline_candidate_search']
         self.proposal_family_weights = options['proposal_family_weights']
         self.transition_topology = config.hdp.transition_topology
+        self.ordered_hdp_solver = config.inference.ordered_hdp_solver
         self.hdp_concentrations = {target: getattr(config.hdp, field)
             for field, target in (('gamma', 'gamma'), ('trans_alpha', 'transAlpha'),
                                   ('start_alpha', 'startAlpha'), ('kappa', 'kappa'))

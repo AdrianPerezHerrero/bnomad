@@ -20,7 +20,7 @@ from ..hdp import _topology
 from . import _ordered_messages, _proposal_search
 
 
-def _partition_key(resp, pair=None):
+def _partition_key(resp, pair=None, *, path_cache=None):
     """Compact MAP membership key, invariant to any permutation of cluster slots.
 
     The first observed member names each group. Occupancy totals alone cannot
@@ -30,7 +30,7 @@ def _partition_key(resp, pair=None):
     """
     names = {}
     labels = (resp.argmax(1) if pair is None else
-              _ordered_messages.posterior_path(resp, pair)).detach().cpu().tolist()
+              _ordered_messages.posterior_path(resp, pair, cache=path_cache)).detach().cpu().tolist()
     canonical = array('q', (names.setdefault(label, len(names)) for label in labels))
     return blake2b(canonical.tobytes(), digest_size=16).digest()
 
@@ -159,11 +159,12 @@ def _score(work):
     work._split_merge_parts = {key: float(value) for key, value in parts.items()}
 
 
-def _stage(previous, resp, pair, sources, *, force=False, initial=False, birth_seed=None, birth_slot=None):
+def _stage(previous, resp, pair, sources, *, force=False, initial=False, birth_seed=None, birth_slot=None,
+           path_cache=None):
     """Fit an isolated proposal, copying posterior state only where necessary."""
     ordered = _topology.enabled(previous)
     if ordered:
-        path = _ordered_messages.posterior_path(resp, pair)
+        path = _ordered_messages.posterior_path(resp, pair, cache=path_cache)
         ownership = torch.nn.functional.one_hot(path, resp.shape[1]).to(resp)
         if not bool((ownership.sum(0) > 0).all()) or not bool((resp.sum(0) >= 1e-8).all()):
             return None
@@ -278,7 +279,7 @@ def _stage(previous, resp, pair, sources, *, force=False, initial=False, birth_s
     return work
 
 
-def _refine(state, steps):
+def _refine(state, steps, *, path_cache=None):
     """Reuse native messages; keep the best fully scored iterate of this branch."""
     best = state
     for _ in range(steps):
@@ -294,13 +295,14 @@ def _refine(state, steps):
         state.fmsg = None  # full batch, never the online tail-message cache
         if _topology.enabled(state):
             resp, pair, _ = _ordered_messages.marginals(start, state.trans_A, evidence,
-                                               hard=state.hard_assignments)
+                                               hard=state.hard_assignments, decode_path=False)
         else:
             alpha, beta, scales = assignment_messages(state, start, state.trans_A, evidence)
             log_pair = (None if state.hard_assignments else
                         state.coupled_state_coef(alpha, beta, state.trans_A, evidence, scales))
             resp, pair = from_log_marginals(state, torch.log(alpha)+torch.log(beta), log_pair)
-        candidate = _stage(state, resp, pair, range(state.M), force=state.lds_update == 'conjugate_batch')
+        candidate = _stage(state, resp, pair, range(state.M), force=state.lds_update == 'conjugate_batch',
+                           path_cache=path_cache)
         if candidate is None:
             break
         if legacy._reallocation_improves(best._split_merge_score, candidate._split_merge_score):
@@ -315,15 +317,15 @@ def _refine(state, steps):
     return best
 
 
-def _moves(state, features, split_features=None):
+def _moves(state, features, split_features=None, *, path_cache=None):
     """Rank cheap group splits and close-cluster merges; never fit here."""
     from ._proposal_quotas import canonical_name
     if canonical_name(getattr(state, 'offline_candidate_search', 'combined')) in ('combined', 'dynamics'):
-        yield from _family_moves(state)
+        yield from _family_moves(state, path_cache=path_cache)
         return
     if _topology.enabled(state):
         from ._ordered_moves import moves
-        yield from moves(state, features if split_features is None else split_features)
+        yield from moves(state, features if split_features is None else split_features, path_cache=path_cache)
         return
     resp, pair, count = state.resp_last, state.respPair_last, state.M
     budget = state.n_explore_steps
@@ -376,12 +378,12 @@ def _moves(state, features, split_features=None):
         yield description, proposed, proposed_pair, sources
 
 
-def _family_moves(state):
+def _family_moves(state, *, path_cache=None):
     """Adapt quota-selected families to the native partition transaction format."""
     from . import _proposal_families
     resp, pair, count = state.resp_last, state.respPair_last, state.M
     ordered = _topology.enabled(state)
-    path = _ordered_messages.posterior_path(resp, pair) if ordered else None
+    path = _ordered_messages.posterior_path(resp, pair, cache=path_cache) if ordered else None
     guide = torch.nn.functional.one_hot(path, count).to(resp) if ordered else resp
     for kind, family, item in _proposal_families.structural(
             state, guide, state.q_lat_last, state.snr_last, ordered=ordered):
@@ -419,9 +421,14 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
     """Separate offline optimizer; preserve the public state/score/plot layouts."""
     state = copy(self)
     ordered = _topology.enabled(state)
+    path_cache = _ordered_messages.PathCache() if ordered else None
     if ordered and getattr(self, '_birth_diagnostic_limit', 0):
         raise ValueError('Birth-warp diagnostics do not yet support inserted ordered stages')
     state.__dict__ = self.__dict__.copy()
+    if ordered and getattr(state, 'ordered_hdp_solver', 'quadrature') == 'row_ratio':
+        from ..hdp._row_ratio import FitDiagnostics
+        # This observer is shared across branch copies. It never enters scoring.
+        state._ordered_hdp_fit_diagnostics = FitDiagnostics()
     state.warp = state.alignment.enabled(warp)
     if state.reduce_outputs:
         y_trains = state.reduce_num_outputs(y_trains)
@@ -447,19 +454,21 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
         state.gpmodels = [[state.gpmodel_deepcopy(gp) for gp in output] for output in state.gpmodels]
         state.redefine_default(state.x_train, state._split_merge_y, resp)
     _proposal_search.initialize(state, state._split_merge_y)
-    state = _stage(state, resp, pair, range(state.M), initial=True)
+    state = _stage(state, resp, pair, range(state.M), initial=True, path_cache=path_cache)
     features = state._split_merge_y.reshape(state.T, -1)
     features = (features - features.mean(0)) / features.std(0, unbiased=False).clamp_min(1e-8)
+    state._offline_merge_features = features
     split_features = _proposal_features(state)
     history, iteration, stable_iterations = [], 0, 0
-    visited = {_partition_key(state.resp_last, state.respPair_last if ordered else None): 0}
+    visited = {_partition_key(state.resp_last, state.respPair_last if ordered else None, path_cache=path_cache): 0}
     while True:
         state._proposal_iteration = iteration
-        baseline = _refine(state, state.split_merge_refine_steps)
-        visited.setdefault(_partition_key(baseline.resp_last, baseline.respPair_last if ordered else None), iteration)
+        baseline = _refine(state, state.split_merge_refine_steps, path_cache=path_cache)
+        visited.setdefault(_partition_key(baseline.resp_last, baseline.respPair_last if ordered else None,
+                                         path_cache=path_cache), iteration)
         best, chosen, chosen_record = baseline, None, None
-        for description, resp, pair, sources in _moves(baseline, features, split_features):
-            previous_iteration = visited.get(_partition_key(resp, pair if ordered else None))
+        for description, resp, pair, sources in _moves(baseline, features, split_features, path_cache=path_cache):
+            previous_iteration = visited.get(_partition_key(resp, pair if ordered else None, path_cache=path_cache))
             if previous_iteration is not None:
                 history.append(dict(description, iteration=iteration + 1, accepted=False,
                                     reason='partition cycle before refit',
@@ -471,12 +480,12 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
             record = None
             try:
                 proposal = _stage(baseline, resp, pair, sources, birth_seed=description.get('seed'),
-                                  birth_slot=description.get('birth_slot'))
+                                  birth_slot=description.get('birth_slot'), path_cache=path_cache)
                 if proposal is None:
                     history.append(dict(description, iteration=iteration + 1, accepted=False,
                                         reason='proposal has an empty MAP component'))
                     continue
-                proposal = _refine(proposal, state.split_merge_refine_steps)
+                proposal = _refine(proposal, state.split_merge_refine_steps, path_cache=path_cache)
             except (torch.linalg.LinAlgError, FloatingPointError) as error:
                 history.append(dict(description, iteration=iteration + 1, accepted=False, error=str(error)))
                 if self.verbose:
@@ -488,7 +497,8 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
                          baseline_elbo=float(baseline.elbo_last), proposal_elbo=float(proposal.elbo_last),
                          baseline_parts=baseline._split_merge_parts, proposal_parts=proposal._split_merge_parts)
             history.append(trace)
-            previous_iteration = visited.get(_partition_key(proposal.resp_last, proposal.respPair_last if ordered else None))
+            previous_iteration = visited.get(_partition_key(proposal.resp_last, proposal.respPair_last if ordered else None,
+                                                           path_cache=path_cache))
             if previous_iteration is not None:
                 trace.update(reason='partition cycle after refinement',
                              previous_iteration=previous_iteration)
@@ -526,9 +536,10 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
             if chosen_record is not None:
                 chosen_record['accepted'] = True
         iteration += 1
-        visited.setdefault(_partition_key(best.resp_last, best.respPair_last if ordered else None), iteration)
+        visited.setdefault(_partition_key(best.resp_last, best.respPair_last if ordered else None,
+                                         path_cache=path_cache), iteration)
         best.train_elbo = state.train_elbo + [best.elbo_last.detach().clone()]
-        labels = (_ordered_messages.posterior_path(best.resp_last, best.respPair_last)
+        labels = (_ordered_messages.posterior_path(best.resp_last, best.respPair_last, cache=path_cache).clone()
                   if ordered else best.resp_last.argmax(1))
         best.resp_assigned = state.resp_assigned + [labels]
         best.q = state.q + [best.q_last]
@@ -560,4 +571,8 @@ def fit(self, x_trains, y_trains, it_limit=None, warp=False):
             break
     state._split_merge_history = history
     state._birth_diagnostics = records
+    diagnostics = state.__dict__.pop('_ordered_hdp_fit_diagnostics', None)
+    if diagnostics is not None:
+        state._ordered_hdp_summary = diagnostics.summary()
+    state._offline_merge_features = None
     self.__dict__.update(state.__dict__)

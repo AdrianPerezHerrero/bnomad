@@ -9,8 +9,8 @@ from ._embedding_plots import _embedding_projection
 from ._lds_plots import model_lds_arrays
 
 
-def model_embedding_dynamics(model, codes, *, output=0):
-    """Copy a common latent PCA view and P((A_k-I)z+b_k) for each MAP sample.
+def model_embedding_dynamics(model, codes, *, output=0, dimensions=2):
+    """Copy a 2D or 3D latent PCA view and P((A_k-I)z+b_k) for each MAP sample.
 
     Codes must use the selected output's native LDS coordinates. No decoder,
     clustering or dynamics are fitted here. Each full-dimensional sample is
@@ -18,12 +18,18 @@ def model_embedding_dynamics(model, codes, *, output=0):
     in the calculation. These are conditional mean changes under final fitted
     parameters, not inferred next observations or observed velocities.
     """
+    return _embedding_dynamics(codes, model.labels_, model_lds_arrays(model, output=output),
+                               dimensions=dimensions)
+
+
+def _embedding_dynamics(codes, assignments, matrices, *, dimensions=2):
+    if not isinstance(dimensions, Integral) or dimensions not in (2, 3):
+        raise ValueError('Display dimensions must be 2 or 3')
     codes = np.asarray(codes, dtype=np.float64)
-    assignments = np.asarray(model.labels_, dtype=int).reshape(-1)
+    assignments = np.asarray(assignments, dtype=int).reshape(-1)
     if (codes.ndim != 2 or not codes.shape[1] or len(codes) < 2
             or len(assignments) != len(codes) or not np.isfinite(codes).all()):
         raise ValueError('Codes must be finite native latent rows, one per fitted assignment')
-    matrices = model_lds_arrays(model, output=output)
     change = np.empty_like(codes)
     for cluster in np.unique(assignments):
         parameters = matrices[int(cluster)]
@@ -34,7 +40,7 @@ def model_embedding_dynamics(model, codes, *, output=0):
             raise ValueError('Codes and fitted transition matrices must share the native latent dimension')
         chosen = assignments == cluster
         change[chosen] = codes[chosen] @ (A-np.eye(len(A))).T+b.reshape(1,-1)
-    coordinates, components, center, variance = _embedding_projection(codes)
+    coordinates, components, center, variance = _embedding_projection(codes, dimensions)
     return dict(coordinates=coordinates, changes=change @ components.T,
                 projection_components=components.copy(), projection_center=center.copy(),
                 explained_variance_ratio=np.asarray(variance).copy(), assignments=assignments.copy())
@@ -67,7 +73,7 @@ def _operator_fields(data, coverage):
         precision = (eigenvectors/eigenvalues) @ eigenvectors.T
         distances = np.einsum('ni,ij,nj->n',centered,precision,centered)
         fields[int(cluster)] = dict(center=center,mean_motion=mean_motion,jacobian=jacobian,
-            operator=np.eye(2)+jacobian,intercept=mean_motion-jacobian @ center,
+            operator=np.eye(xy.shape[1])+jacobian,intercept=mean_motion-jacobian @ center,
             members=len(points),rank=int(rank),rms_error=float(np.sqrt(np.mean(residual**2))),
             region_precision=precision,region_logdet=float(np.log(eigenvalues).sum()),
             region_radius_squared=max(float(np.quantile(distances,coverage,method='higher')),1.))
@@ -87,13 +93,12 @@ def _region_assignment(points, fields):
     return assigned
 
 
-def _field_arrows(fields, low, high, maximum):
+def _field_arrows(fields, low, high, maximum, *, return_owners=False):
     """Evaluate each fitted field on a regular grid, not a subset of samples."""
     budget = max(maximum,len(fields))
-    side = max(1,int(np.sqrt(budget-len(fields))))
-    gx,gy = np.meshgrid(np.linspace(low[0],high[0],side+2)[1:-1],
-                        np.linspace(low[1],high[1],side+2)[1:-1])
-    points = np.column_stack((gx.ravel(),gy.ravel()))
+    side = max(1, int(np.floor((budget-len(fields))**(1/len(low))+1e-12)))
+    axes = [np.linspace(start, stop, side+2)[1:-1] for start, stop in zip(low, high)]
+    points = np.column_stack([axis.ravel() for axis in np.meshgrid(*axes)])
     owned = _region_assignment(points,fields)
     points,owned = points[owned>=0],owned[owned>=0]
     # Small cores may fall between grid nodes. Evaluate their operator at its
@@ -107,7 +112,18 @@ def _field_arrows(fields, low, high, maximum):
         member = owned == index
         changes[member] = ((points[member]-field['center']) @ field['jacobian'].T
                            +field['mean_motion'])
-    return points,changes
+    return (points, changes, owned) if return_owners else (points, changes)
+
+
+def _cluster_colors(count):
+    palette = plt.get_cmap('tab10' if count <= 10 else 'tab20' if count <= 20 else 'turbo')
+    if count <= 10:
+        positions = np.arange(count)
+    elif count <= 20:
+        positions = np.r_[np.arange(0, 20, 2), np.arange(1, 20, 2)][:count]
+    else:
+        positions = np.mod(np.arange(count)*.6180339887498949, 1.)
+    return [palette(position) for position in positions]
 
 
 def plot_embedding_dynamics(codes, model, labels=None, *, title=None,
@@ -133,11 +149,7 @@ def plot_embedding_dynamics(codes, model, labels=None, *, title=None,
     if labels is not None and len(labels) != len(xy):
         raise ValueError('Reference labels must align with encoded samples')
     clusters, cluster_index = np.unique(assignments,return_inverse=True)
-    palette = plt.get_cmap('tab10' if len(clusters)<=10 else 'tab20' if len(clusters)<=20 else 'turbo')
-    positions = (np.arange(len(clusters)) if len(clusters)<=10 else
-                 np.r_[np.arange(0,20,2),np.arange(1,20,2)][:len(clusters)] if len(clusters)<=20
-                 else np.mod(np.arange(len(clusters))*.6180339887498949,1.))
-    colors = [palette(position) for position in positions]
+    colors = _cluster_colors(len(clusters))
     columns = min(6,len(clusters))
     legend_height = .45+.28*int(np.ceil(len(clusters)/columns))
     figure = plt.figure(figsize=(14 if labels is not None else 8,6.2+legend_height),constrained_layout=True)

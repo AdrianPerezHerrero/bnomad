@@ -438,8 +438,15 @@ class HDPVariational:
                 '''
 
         if _topology.enabled(self._state):
-            rho, omega, info = _topology.optimize_sticks(
-                self._state, self.transTheta if transTheta is None else transTheta)
+            theta = self.transTheta if transTheta is None else transTheta
+            if getattr(self._state, 'ordered_hdp_solver', 'quadrature') == 'row_ratio':
+                from ._row_ratio import optimize_sticks
+                rho, omega, info = optimize_sticks(self._state, theta)
+                diagnostics = getattr(self._state, '_ordered_hdp_fit_diagnostics', None)
+                if diagnostics is not None:
+                    diagnostics.record(info)
+            else:
+                rho, omega, info = _topology.optimize_sticks(self._state, theta)
             self.OptimizerInfo = info
             return rho, omega
         # Calculate expected log transition probability

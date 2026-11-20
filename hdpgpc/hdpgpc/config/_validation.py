@@ -30,6 +30,8 @@ def validate_inference(c):
         raise ValueError('offline_representer_selection must be sorted or fixed')
     if c.offline_strategy not in ('legacy', 'split_merge'):
         raise ValueError('offline_strategy must be legacy or split_merge')
+    if c.ordered_hdp_solver not in ('quadrature', 'row_ratio'):
+        raise ValueError('ordered_hdp_solver must be quadrature or row_ratio')
     if c.offline_candidate_search not in ('score_guided', 'noise_aware', 'dynamics', 'combined'):
         raise ValueError('offline_candidate_search must be score_guided, noise_aware, dynamics or combined')
     weights = c.proposal_family_weights
@@ -212,6 +214,8 @@ def validate(c, *, for_build=False):
             raise ValueError('hdp.' + name + ' must be finite and ' + ('nonnegative' if name == 'kappa' else 'positive'))
     if h.transition_topology not in ('ergodic', 'left_to_right'):
         raise ValueError('transition_topology must be ergodic or left_to_right')
+    if i.ordered_hdp_solver == 'row_ratio' and h.transition_topology != 'left_to_right':
+        raise ValueError('ordered_hdp_solver=row_ratio requires transition_topology=left_to_right')
     if h.transition_topology == 'left_to_right':
         if not h.hmm_switch:
             raise ValueError('left_to_right requires hmm_switch=True')

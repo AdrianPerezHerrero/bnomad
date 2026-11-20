@@ -227,6 +227,7 @@ output_directory/
       clusters_output_0.png
       projection.png
       projection_dynamics.png         # common fixed-affine latent coordinates
+      projection_dynamics_3d.html     # interactive common latent coordinates (--projection-3d)
       lds_parameters_output_0_01.png   # when requested
       lds_dynamics_output_0.png        # when requested
       warps_output_0.png               # when enabled/requested
@@ -251,6 +252,17 @@ Sparse groups identify only the slopes supported by their observed span; a
 singleton has constant mean motion. The motion is a conditional mean summary, rather than
 an observed derivative or a forecast with uncertainty. One step follows the
 selected clock. `--no-projection-plots` or `--no-plots` suppresses this figure.
+
+Add `--projection-3d` to a single-output fixed-affine run to save
+`projection_dynamics_3d.html`. Open it in a browser to rotate the latent
+space, toggle clusters, and view observations, smoothed paths, and one-step
+fields. The HTML uses three principal components for display and projects the
+full-dimensional LDS change before fitting each field. Offline runs with
+retained histories show the paths in this same basis. Hover over a path to see
+its observation time or index and whether the clock tick retained a measurement.
+The HTML includes Plotly for offline viewing in a browser with WebGL.
+`--no-plots` suppresses it.
+
 Cluster summaries share the same function and fixed panel dimensions as the
 ECG report. Ordered summaries show transitions; unordered summaries show class
 composition. LDS and warp figures retain their existing detailed diagnostics.

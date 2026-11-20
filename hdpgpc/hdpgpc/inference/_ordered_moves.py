@@ -10,7 +10,7 @@ def _pairs(resp):
     return pair
 
 
-def moves(state, features):
+def moves(state, features, *, path_cache=None):
     """Split at a time boundary, insert the child there; merge only neighbors.
 
     Split seeds are valid hard paths even when refinement uses soft marginals.
@@ -18,7 +18,7 @@ def moves(state, features):
     simply redistributing its pair tensor is not a valid initialization here.
     """
     resp, pair, count = state.resp_last, state.respPair_last, state.M
-    path = posterior_path(resp, pair)
+    path = posterior_path(resp, pair, cache=path_cache)
     budget = state.n_explore_steps
     if not budget:
         return

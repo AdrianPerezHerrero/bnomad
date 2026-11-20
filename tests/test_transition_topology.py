@@ -1,11 +1,15 @@
 """Numerical regressions for the ordered transition prior."""
+from dataclasses import replace
 import unittest
 import warnings
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
+from scipy.special import betaln, expit, roots_legendre
 
+from hdpgpc.config import HDPConfig, HDPGPCConfig, InferenceConfig
+from hdpgpc.hdp import _row_ratio, _topology
 from hdpgpc.hdp._topology import row_moments, optimize_sticks
 
 
@@ -101,6 +105,81 @@ class OrderedRowMomentsTests(unittest.TestCase):
             np.testing.assert_allclose(result,
                 (0.3061224489795924, normalizer, 0.6938775510204078),
                 rtol=1e-10, atol=1e-10)
+
+
+class RowRatioSolverTests(unittest.TestCase):
+    def problem(self):
+        a, b = np.array([2., 4.]), np.array([8., 3.])
+        state = SimpleNamespace(rho=a/(a+b), omega=a+b, gamma=6., transAlpha=100.,
+                                kappa=10., device='cpu')
+        theta, _ = _topology.posterior_matrices(state, [[8., 1.], [0., 5.]])
+        return state, theta
+
+    def test_direct_gradient_matches_independent_quadrature(self):
+        state, theta = self.problem()
+        start, args = _row_ratio._context(state, theta)
+        value, gradient = _row_ratio._value_gradient(start, *args)
+        gamma, alpha, kappa, log_pi, entropy = args
+        nodes, weights = roots_legendre(384)
+        x = 45*nodes
+        log_v, log_one_minus_v = -np.logaddexp(0., -x), -np.logaddexp(0., x)
+        ratio_log_odds = x[:, None]-log_v[None, :]
+        stay = alpha*expit(ratio_log_odds)+kappa
+        advance = alpha*expit(-ratio_log_odds)
+
+        def beta_mass(a, b):
+            return 45*weights*np.exp(a*log_v+b*log_one_minus_v-betaln(a, b))
+
+        def quadrature(point):
+            # Integrate the two independent logit sticks directly. The old
+            # hypergeometric quadrature has a numerical discontinuity near
+            # the integer parameter reached by this test's b[0] perturbation.
+            a, b = np.exp(point).reshape(2, -1)
+            total = entropy.sum()-_topology._beta_kl(a, b, gamma)
+            for i, (log_stay, log_advance) in enumerate(log_pi):
+                c, d = (a[i+1], b[i+1]) if i+1 < len(a) else (1., gamma)
+                row = -betaln(stay, advance)+(stay-1)*log_stay+(advance-1)*log_advance
+                total += beta_mass(a[i], b[i]) @ row @ beta_mass(c, d)
+            return total
+
+        shifts = 1e-4*np.eye(len(start))
+        reference = [(quadrature(start+shift)-quadrature(start-shift))/2e-4 for shift in shifts]
+        np.testing.assert_allclose(value, quadrature(start), atol=1e-8, rtol=0)
+        np.testing.assert_allclose(gradient, reference, atol=1e-6, rtol=0)
+        _, _, info = _row_ratio.optimize_sticks(state, theta)
+        self.assertFalse(info['used_fallback'])
+        self.assertTrue(info['quadrature_accepted'])
+        self.assertGreater(info['objective'], value)
+
+    def test_failed_refined_integral_calls_current_solver_from_original_state(self):
+        state, theta = self.problem()
+        original = _row_ratio._value_gradient
+
+        def fail_refinement(parameters, *args, **grid):
+            if grid:
+                raise FloatingPointError('failed test audit')
+            return original(parameters, *args)
+
+        with patch.object(_row_ratio, '_value_gradient', side_effect=fail_refinement), \
+                patch.object(_topology, 'optimize_sticks', wraps=optimize_sticks) as fallback:
+            rho, omega, info = _row_ratio.optimize_sticks(state, theta)
+        fallback.assert_called_once_with(state, theta)
+        expected_rho, expected_omega, _ = optimize_sticks(state, theta)
+        np.testing.assert_array_equal(rho, expected_rho)
+        np.testing.assert_array_equal(omega, expected_omega)
+        self.assertEqual(info['solver'], 'quadrature')
+        self.assertEqual(info['fallback_reason'], 'failed test audit')
+
+    def test_solver_choice_roundtrips_and_requires_ordered_inference(self):
+        inference = InferenceConfig(schedule='offline', offline_strategy='split_merge',
+                                    ordered_hdp_solver='row_ratio')
+        config = HDPGPCConfig(hdp=HDPConfig(transition_topology='left_to_right'), inference=inference)
+        self.assertEqual(HDPGPCConfig.from_yaml(config.to_yaml()), config)
+        with self.assertRaisesRegex(ValueError, 'requires transition_topology=left_to_right'):
+            replace(config, hdp=HDPConfig())
+        default = replace(config, inference=replace(inference, ordered_hdp_solver='quadrature'))
+        self.assertNotIn('ordered_hdp_solver', default.to_dict()['inference'])
+        self.assertEqual(HDPGPCConfig.from_dict(default.to_dict()).inference.ordered_hdp_solver, 'quadrature')
 
 
 if __name__ == '__main__':

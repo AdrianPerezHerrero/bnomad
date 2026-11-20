@@ -102,6 +102,7 @@ def make_config(grid, args, decoder=None):
         inference=InferenceConfig(
             schedule=args.schedule, warp=policy != 'none', hard_assignments=args.hard_assignments,
             offline_strategy=getattr(args, 'offline_strategy', 'legacy'),
+            ordered_hdp_solver=getattr(args, 'ordered_hdp_solver', 'quadrature'),
             offline_candidate_search=getattr(args, 'offline_candidate_search', 'combined'),
             proposal_family_weights=tuple(getattr(args, 'proposal_family_weights', (1.,1.,1.))),
             split_merge_refine_steps=getattr(args, 'split_merge_refine_steps', 1),

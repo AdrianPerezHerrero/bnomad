@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 from matplotlib.quiver import Quiver
 import numpy as np
 
-from hdpgpc.diagnostics import model_embedding_dynamics, plot_embedding_dynamics
+from hdpgpc.diagnostics import (model_embedding_dynamics, plot_embedding_dynamics,
+                               plot_embedding_dynamics_3d)
 from hdpgpc.diagnostics._embedding_plots import _embedding_projection, plot_embedding_summary
 from hdpgpc.diagnostics._embedding_dynamics import _operator_fields, _field_arrows
 
@@ -64,6 +65,31 @@ class EmbeddingDynamicsTests(unittest.TestCase):
         np.testing.assert_allclose(axis.collections[0].get_offsets(),old.axes[0].collections[0].get_offsets())
         xy,_,_,_ = _embedding_projection(codes)
         np.testing.assert_allclose(axis.collections[1].get_offsets(),xy[2:])
+
+    def test_interactive_projection_uses_same_basis_for_states_and_full_lds_changes(self):
+        codes = np.random.default_rng(12).normal(size=(20, 4))*[7., 5., 2., .1]
+        A = .85*np.eye(4)
+        A[1, 3] = 5.
+        b = np.array([.1, .0, -.2, .3])
+        fitted = model([0]*10+[1]*10, [A, np.eye(4)], [b, np.zeros(4)])
+        data = model_embedding_dynamics(fitted, codes, dimensions=3)
+        components, center = data['projection_components'], data['projection_center']
+        np.testing.assert_allclose(data['changes'][:10],
+                                   (codes[:10] @ (A-np.eye(4)).T+b) @ components.T)
+        means = codes[:5]+.2
+        rows = np.arange(0, 10, 2)
+        times = np.arange(20.)*2
+        figure = plot_embedding_dynamics_3d(data, trajectories={0: dict(indices=rows, means=means)},
+                                            times=times, clock='cluster-clock')
+        traces = {trace.name: trace for trace in figure.data}
+        path = traces['Cluster 0 smoothed path']
+        np.testing.assert_allclose(np.column_stack((path.x, path.y, path.z)),
+                                   (means-center) @ components.T)
+        np.testing.assert_array_equal(path.customdata, times[rows])
+        self.assertEqual(traces['Cluster 0 region'].type, 'surface')
+        self.assertIn('Cluster 0 one-step field', traces)
+        self.assertNotIn('Cluster 1 one-step field', traces)
+        self.assertIn('Plotly.newPlot', figure.to_html(include_plotlyjs=False))
 
     def test_constant_and_one_component_codes_stationary_dynamics_and_optional_labels(self):
         for codes in (np.ones((5,3)),np.arange(5.)[:,None]):

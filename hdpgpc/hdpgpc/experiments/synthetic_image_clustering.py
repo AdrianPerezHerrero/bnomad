@@ -99,6 +99,7 @@ def make_config(args, decoder, gamma):
         alignment=AlignmentConfig(policy='none'),
         inference=InferenceConfig(schedule='offline', warp=False,
             offline_strategy=args.offline_strategy, it_limit=args.iterations,
+            ordered_hdp_solver=getattr(args, 'ordered_hdp_solver', 'quadrature'),
             offline_candidate_search=getattr(args, 'offline_candidate_search', 'combined'),
             proposal_family_weights=tuple(getattr(args, 'proposal_family_weights', (1.,1.,1.))),
             hard_assignments=args.hard_assignments, n_explore_steps=args.exploration_steps,

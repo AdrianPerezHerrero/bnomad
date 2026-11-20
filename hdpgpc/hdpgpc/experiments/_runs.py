@@ -155,6 +155,8 @@ def log_configuration(config, args, *, source='configured'):
     from ..diagnostics import format_lds_priors
     print(f'Schedule={args.schedule}; HMM={config.hdp.hmm_switch}; topology={config.hdp.transition_topology}; '
           f'alignment={config.alignment.policy}; fit_gp={config.emission.fit_gp}')
+    if config.hdp.transition_topology == 'left_to_right':
+        print(f'Ordered HDP solver={config.inference.ordered_hdp_solver}')
     if args.schedule == 'offline':
         print(f'Offline strategy={config.inference.offline_strategy}; '
               f'candidate search={config.inference.offline_candidate_search}; '
@@ -207,7 +209,7 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
                  metadata=None, codes=None, projection_name='Latent',
                  row_metadata=None, annotation_colors=None, extra_figures=None,
                  positive_label=None, summary_plotter=None, evaluation_mask=None,
-                 equal_duration_baseline=False):
+                 equal_duration_baseline=False, latent_trajectories=None):
     """Common report/plot schema; optional diagnostics never refit the model."""
     import matplotlib.pyplot as plt
     from ..diagnostics import (cluster_label_statistics, format_confusion_matrix,
@@ -343,15 +345,34 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
         fixed_grid = getattr(observation, 'fixed_grid', None)
         if fixed_grid is None:
             fixed_grid = getattr(observation, 'pca_grid', None)
-        if (args.projection_plots and len(values)>=2 and values.shape[2]==1
+        projection_3d = getattr(args, 'projection_3d', False)
+        if ((args.projection_plots or projection_3d) and len(values)>=2 and values.shape[2]==1
                 and fixed_grid is not None and getattr(policy,'mode',None)=='fixed'
                 and getattr(observation,'family','linear')=='linear'):
             # A acts in native LDS coordinates. Display features supplied by a
             # workflow can instead be pre-projected observation coordinates.
             decoder = model._backend.gpmodels[0][int(model.cluster_ids_[0])].fixed_observation_model
             native_codes = (values[:,:,0]-decoder.offset) @ np.linalg.pinv(decoder.C).T
-            save(plot_embedding_dynamics(native_codes,model,labels,
-                 title=run.dataset,projection_name=projection_name), 'projection_dynamics.png')
+            if args.projection_plots:
+                save(plot_embedding_dynamics(native_codes,model,labels,
+                     title=run.dataset,projection_name=projection_name), 'projection_dynamics.png')
+            if projection_3d:
+                from ..diagnostics import model_latent_trajectories, plot_embedding_dynamics_3d
+                from ..diagnostics._embedding_dynamics import _embedding_dynamics
+                paths = latent_trajectories
+                if paths is None and args.schedule == 'offline':
+                    try:
+                        paths = model_latent_trajectories(model)
+                    except ValueError as error:
+                        failures['projection_dynamics_3d_trajectories'] = str(error)
+                dynamics = _embedding_dynamics(native_codes, model.labels_, matrices[0], dimensions=3)
+                sample_times = columns.get('second', columns.get('start_seconds', columns.get('source_row')))
+                figure = plot_embedding_dynamics_3d(dynamics, trajectories=paths, times=sample_times,
+                    labels=labels, title=run.dataset, clock=model.config.dynamics.clock)
+                figure.write_html(run.path / 'projection_dynamics_3d.html', include_plotlyjs=True,
+                                  config={'displaylogo': False, 'responsive': True})
+        elif projection_3d:
+            failures['projection_dynamics_3d'] = 'Requires a single-output fixed affine observation model'
         for output, group in enumerate(matrices):
             shown = {cluster: values for cluster, values in group.items() if cluster in plotted_ids}
             lds_title = (run.dataset if min_cluster_samples == 1 else
@@ -408,5 +429,12 @@ def save_results(run, model, values, labels, grid, args, *, ordered,
         report['baselines'] = {'equal_duration': {
             key: value for key, value in baseline.items()
             if key not in ('assignments', 'majority_labels')}}
+    hdp_diagnostics = getattr(model, 'ordered_hdp_diagnostics_', {})
+    if hdp_diagnostics:
+        report['ordered_hdp_solver'] = hdp_diagnostics
+        if args.verbose != 'silent':
+            print(f"Ordered HDP stick updates: {hdp_diagnostics['row_ratio_updates']} row-ratio, "
+                  f"{hdp_diagnostics['fallback_updates']} quadrature fallback(s), "
+                  f"{hdp_diagnostics['nonconverged_updates']} solver stop(s) without convergence.")
     write_json(run.path / 'results.json', report)
     return report

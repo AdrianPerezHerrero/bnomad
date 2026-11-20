@@ -335,7 +335,8 @@ def run_sequence(sequence, args, run, *, segment):
                       'source_variants': ['|'.join(names) for names in sequence.source_variants],
                       'evaluation_included': sequence.evaluation_mask},
         summary_plotter=summary_plotter, extra_figures=extra_figures,
-        evaluation_mask=sequence.evaluation_mask, equal_duration_baseline=True)
+        evaluation_mask=sequence.evaluation_mask, equal_duration_baseline=True,
+        latent_trajectories=trajectories)
 
 
 def run_cas_colon(args, parser=None):

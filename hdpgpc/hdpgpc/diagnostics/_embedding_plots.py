@@ -5,18 +5,26 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 
-def _embedding_projection(codes):
-    """The shared two-dimensional display map, including degenerate inputs."""
-    if codes.shape[1] > 1 and np.var(codes, axis=0).sum() > 1e-15:
-        projection = PCA(n_components=2, random_state=0).fit(codes)
-        return (projection.transform(codes), projection.components_, projection.mean_,
-                np.nan_to_num(projection.explained_variance_ratio_))
-    components = np.zeros((2, codes.shape[1]))
-    components[:min(2, codes.shape[1]), :min(2, codes.shape[1])] = np.eye(min(2, codes.shape[1]))
-    if codes.shape[1] > 1:
-        return np.zeros((len(codes), 2)), components, codes.mean(0), np.zeros(2)
-    return (np.column_stack((codes[:, 0], np.zeros(len(codes)))), components,
-            np.zeros(1), np.array([1.0 if np.var(codes[:, 0]) > 1e-15 else 0.0, 0.0]))
+def _embedding_projection(codes, dimensions=2):
+    """The shared PCA display map, with zero axes for unavailable components."""
+    axes = min(dimensions, *codes.shape)
+    components = np.zeros((dimensions, codes.shape[1]))
+    coordinates = np.zeros((len(codes), dimensions))
+    variance = np.zeros(dimensions)
+    center = codes.mean(0)
+    varied = np.var(codes, axis=0).sum() > 1e-15
+    if codes.shape[1] > 1 and varied:
+        projection = PCA(n_components=axes, random_state=0).fit(codes)
+        components[:axes] = projection.components_
+        coordinates[:, :axes] = projection.transform(codes)
+        variance[:axes] = np.nan_to_num(projection.explained_variance_ratio_)
+        return coordinates, components, projection.mean_, variance
+    components[:axes, :axes] = np.eye(axes)
+    if codes.shape[1] == 1:
+        coordinates[:, 0] = codes[:, 0]
+        center = np.zeros(1)
+        variance[0] = float(varied)
+    return coordinates, components, center, variance
 
 
 def plot_embedding_summary(codes, assignments, labels, metrics, *, title=None,
